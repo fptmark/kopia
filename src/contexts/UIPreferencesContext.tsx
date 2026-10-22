@@ -11,12 +11,14 @@ const DEFAULT_PREFERENCES = {
   theme: getDefaultTheme(),
   preferWebDav: false,
   fontSize: "fs-6",
+  keepAwake: "never",
 } as SerializedUIPreferences;
 const PREFERENCES_URL = "/api/v1/ui-preferences";
 
 export type Theme = "light" | "dark" | "pastel" | "ocean";
 export type PageSize = 10 | 20 | 30 | 40 | 50 | 100;
 export type FontSize = "fs-6" | "fs-5" | "fs-4";
+export type KeepAwake = "never" | "idle" | "ac";
 
 export interface UIPreferences {
   get pageSize(): PageSize;
@@ -24,11 +26,13 @@ export interface UIPreferences {
   get bytesStringBase2(): boolean;
   get defaultSnapshotViewAll(): boolean;
   get fontSize(): FontSize;
+  get keepAwake(): KeepAwake;
   setTheme: (theme: Theme) => void;
   setPageSize: (pageSize: number) => void;
   setByteStringBase: (bytesStringBase2: string) => void;
   setDefaultSnapshotViewAll: (defaultSnapshotViewAll: boolean) => void;
   setFontSize: (size: string) => void;
+  setKeepAwake: (keepAwake: string) => void;
 }
 
 interface SerializedUIPreferences {
@@ -37,6 +41,7 @@ interface SerializedUIPreferences {
   defaultSnapshotViewAll?: boolean;
   theme: Theme;
   fontSize: FontSize;
+  keepAwake?: KeepAwake;
 }
 
 export interface UIPreferenceProviderProps {
@@ -97,6 +102,11 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
   const setDefaultSnapshotViewAll = (input: boolean) =>
     setPreferences((oldPreferences) => {
       return { ...oldPreferences, defaultSnapshotViewAll: input };
+    });
+
+  const setKeepAwake = (input: string) =>
+    setPreferences((oldPreferences) => {
+      return { ...oldPreferences, keepAwake: input as KeepAwake };
     });
 
   const setFontSize = useCallback(
@@ -164,6 +174,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
     setByteStringBase,
     setDefaultSnapshotViewAll,
     setFontSize,
+    setKeepAwake,
   } as UIPreferences;
 
   return <UIPreferencesContext value={providedValue}>{props.children}</UIPreferencesContext>;

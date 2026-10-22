@@ -357,3 +357,99 @@ describe("Repository component - CLI equivalent", () => {
     });
   });
 });
+
+describe("Repository component - total size on storage", () => {
+  const saved = { totalBytes: 5e9, blobCount: 1234, computedAt: "2026-10-21T10:00:00-07:00", elapsedMs: 5000 };
+
+  test("shows the last saved size when the page opens", async () => {
+    axiosMock.onGet("/api/v1/repo/status").reply(200, connectedStatus);
+    axiosMock.onGet("/api/v1/repo/storage-usage").reply(200, saved);
+
+    renderWithContext();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("storage-usage").value).toMatch(/5 GB in 1,234 blobs \(as of /);
+    });
+    expect(screen.getByTestId("refresh-storage-usage")).toHaveTextContent("Refresh");
+  });
+
+  test("says it has not been calculated when nothing is saved", async () => {
+    axiosMock.onGet("/api/v1/repo/status").reply(200, connectedStatus);
+    axiosMock
+      .onGet("/api/v1/repo/storage-usage")
+      .reply(200, { totalBytes: 0, blobCount: 0, computedAt: "0001-01-01T00:00:00Z", elapsedMs: 0 });
+
+    renderWithContext();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("storage-usage").value).toMatch(/Not calculated yet/);
+    });
+    expect(screen.getByTestId("refresh-storage-usage")).toHaveTextContent("Calculate");
+  });
+
+  const empty = { totalBytes: 0, blobCount: 0, computedAt: "0001-01-01T00:00:00Z", elapsedMs: 0 };
+
+  test("starts a background calculation, shows progress, then the result", async () => {
+    axiosMock.onGet("/api/v1/repo/status").reply(200, connectedStatus);
+    let started = false;
+    let polls = 0;
+    axiosMock.onGet("/api/v1/repo/storage-usage").reply((config) => {
+      if (config.params.refresh === "true") {
+        started = true;
+        return [200, { ...empty, running: true, startedAt: new Date().toISOString() }];
+      }
+      if (!started) {
+        return [200, empty];
+      }
+      polls++;
+      return polls < 2
+        ? [200, { ...empty, running: true, startedAt: new Date().toISOString() }]
+        : [200, saved];
+    });
+
+    renderWithContext();
+    await waitFor(() => expect(screen.getByTestId("refresh-storage-usage")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByTestId("refresh-storage-usage"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("storage-usage").value).toMatch(/Calculating\.\.\. 0:0\d elapsed/);
+    });
+    expect(screen.getByTestId("refresh-storage-usage")).toHaveTextContent("Calculating...");
+    expect(screen.getByTestId("refresh-storage-usage")).toBeDisabled();
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("storage-usage").value).toMatch(/5 GB in 1,234 blobs/);
+      },
+      { timeout: 8000 },
+    );
+    expect(screen.getByTestId("refresh-storage-usage")).not.toBeDisabled();
+  });
+
+  test("picks up a calculation that is already running when the page opens", async () => {
+    axiosMock.onGet("/api/v1/repo/status").reply(200, connectedStatus);
+    const startedAt = new Date(Date.now() - 95000).toISOString();
+    axiosMock.onGet("/api/v1/repo/storage-usage").reply(200, { ...saved, running: true, startedAt });
+
+    renderWithContext();
+
+    // shows the elapsed time since the server started it (about 1:35), not zero
+    await waitFor(() => {
+      expect(screen.getByTestId("storage-usage").value).toMatch(/Calculating\.\.\. 1:3\d elapsed/);
+    });
+    expect(screen.getByTestId("refresh-storage-usage")).toBeDisabled();
+  });
+
+  test("shows the error of a failed calculation", async () => {
+    axiosMock.onGet("/api/v1/repo/status").reply(200, connectedStatus);
+    axiosMock.onGet("/api/v1/repo/storage-usage").reply(200, { ...empty, error: "connection lost" });
+
+    renderWithContext();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("storage-usage").value).toMatch(/Error: connection lost/);
+    });
+    expect(screen.getByTestId("refresh-storage-usage")).not.toBeDisabled();
+  });
+});

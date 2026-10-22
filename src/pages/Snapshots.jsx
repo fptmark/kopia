@@ -402,6 +402,11 @@ export class Snapshots extends Component {
                 New Snapshot
               </Button>
             </Col>
+            <Col xs="auto">
+              <Button data-testid="search-files" size="sm" variant="primary" href="/snapshots/search">
+                Search Files
+              </Button>
+            </Col>
             <Col></Col>
             <Col xs="auto">
               <Button size="sm" title="Synchronize" variant="primary">

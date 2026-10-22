@@ -15,6 +15,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faChevronCircleDown, faChevronCircleUp, faWindowClose } from "@fortawesome/free-solid-svg-icons";
 import { Logs } from "../components/Logs";
 import { AppContext } from "../contexts/AppContext";
+import { sizeDisplayName } from "../utils/formatutils";
 
 export class Repository extends Component {
   constructor() {
@@ -26,6 +27,10 @@ export class Repository extends Component {
       error: null,
       provider: "",
       description: "",
+      usage: null,
+      usageLoading: false,
+      usageError: null,
+      usageElapsedSec: 0,
     };
 
     this.mounted = false;
@@ -34,15 +39,88 @@ export class Repository extends Component {
     this.handleChange = handleChange.bind(this);
     this.fetchStatus = this.fetchStatus.bind(this);
     this.fetchStatusWithoutSpinner = this.fetchStatusWithoutSpinner.bind(this);
+    this.fetchStorageUsage = this.fetchStorageUsage.bind(this);
+    this.stopUsageTimer = this.stopUsageTimer.bind(this);
+    this.startUsageTimer = this.startUsageTimer.bind(this);
+  }
+
+  // Listing every blob can take a long time on remote storage, so this only runs on demand.
+  stopUsageTimer() {
+    if (this.usageTimer) {
+      window.clearInterval(this.usageTimer);
+      this.usageTimer = null;
+    }
+  }
+
+  // While the server calculates in the background, poll it and tick the elapsed time shown on screen.
+  startUsageTimer(startedAt) {
+    if (this.usageTimer) {
+      return;
+    }
+
+    const started = startedAt ? Date.parse(startedAt) : Date.now();
+    const elapsed = () => Math.max(0, Math.floor((Date.now() - started) / 1000));
+    this.setState({ usageElapsedSec: elapsed() });
+
+    let ticks = 0;
+    this.usageTimer = window.setInterval(() => {
+      ticks++;
+      this.setState({ usageElapsedSec: elapsed() });
+      if (ticks % 2 === 0) {
+        this.fetchStorageUsage(false);
+      }
+    }, 1000);
+  }
+
+  // The calculation runs on the server, independent of this page, so it keeps going if the user
+  // leaves. Fetching without refresh only reads the last saved result and whether one is running.
+  fetchStorageUsage(refresh) {
+    if (refresh) {
+      this.setState({ usageLoading: true, usageError: null, usageElapsedSec: 0 });
+    }
+
+    axios
+      .get("/api/v1/repo/storage-usage", { params: { refresh: refresh ? "true" : "false" } })
+      .then((result) => {
+        if (!this.mounted) {
+          return;
+        }
+
+        const d = result.data;
+        // zero totals mean nothing has been calculated yet.
+        const calculated = d.blobCount > 0 || d.totalBytes > 0;
+        this.setState({
+          usage: calculated ? d : null,
+          usageLoading: !!d.running,
+          usageError: d.running ? null : d.error || null,
+        });
+
+        if (d.running) {
+          this.startUsageTimer(d.startedAt);
+        } else {
+          this.stopUsageTimer();
+        }
+      })
+      .catch((e) => {
+        if (this.mounted && refresh) {
+          this.stopUsageTimer();
+          this.setState({
+            usageLoading: false,
+            usageError: e.response?.data?.error || String(e),
+          });
+        }
+      });
   }
 
   componentDidMount() {
     this.mounted = true;
     this.fetchStatus(this.props);
+    this.fetchStorageUsage(false);
   }
 
   componentWillUnmount() {
     this.mounted = false;
+    this.stopUsageTimer();
   }
 
   fetchStatus() {
@@ -219,6 +297,52 @@ export class Repository extends Component {
                   <Form.Group as={Col}>
                     <Form.Label className="required">Config File</Form.Label>
                     <Form.Control readOnly defaultValue={this.state.status.configFile} />
+                  </Form.Group>
+                </Row>
+                <Row>
+                  <Form.Group as={Col}>
+                    <Form.Label>Total Size on Storage</Form.Label>
+                    <InputGroup>
+                      <Form.Control
+                        readOnly
+                        data-testid="storage-usage"
+                        value={
+                          this.state.usageLoading
+                            ? "Calculating... " +
+                              Math.floor(this.state.usageElapsedSec / 60) +
+                              ":" +
+                              String(this.state.usageElapsedSec % 60).padStart(2, "0") +
+                              " elapsed (listing every file on the storage, this can take a few minutes)"
+                            : this.state.usageError
+                              ? "Error: " + this.state.usageError
+                              : this.state.usage
+                                ? sizeDisplayName(this.state.usage.totalBytes, false) +
+                                  " in " +
+                                  this.state.usage.blobCount.toLocaleString() +
+                                  " blobs (as of " +
+                                  new Date(this.state.usage.computedAt).toLocaleString() +
+                                  ")"
+                                : "Not calculated yet (press Calculate)"
+                        }
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        data-testid="refresh-storage-usage"
+                        disabled={this.state.usageLoading}
+                        onClick={() => this.fetchStorageUsage(true)}
+                      >
+                        {this.state.usageLoading ? (
+                          <>
+                            <Spinner animation="border" size="sm" /> Calculating...
+                          </>
+                        ) : this.state.usage ? (
+                          "Refresh"
+                        ) : (
+                          "Calculate"
+                        )}
+                      </Button>
+                    </InputGroup>
                   </Form.Group>
                 </Row>
                 <Row>

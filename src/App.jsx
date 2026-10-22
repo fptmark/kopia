@@ -6,6 +6,7 @@ import { React, Component } from "react";
 import { Navbar, Nav, Container } from "react-bootstrap";
 import { BrowserRouter as Router, NavLink, Navigate, Route, Routes } from "react-router";
 import { Policy } from "./pages/Policy";
+import { About } from "./pages/About";
 import { Preferences } from "./pages/Preferences";
 import { Policies } from "./pages/Policies";
 import { Repository } from "./pages/Repository";
@@ -16,8 +17,10 @@ import { SnapshotCreate } from "./pages/SnapshotCreate";
 import { SnapshotDirectory } from "./pages/SnapshotDirectory";
 import { SnapshotHistory } from "./pages/SnapshotHistory";
 import { SnapshotRestore } from "./pages/SnapshotRestore";
+import { SnapshotSearch } from "./pages/SnapshotSearch";
 import { AppContext } from "./contexts/AppContext";
 import { UIPreferenceProvider } from "./contexts/UIPreferencesContext";
+import { FailuresModalHost } from "./utils/uiutil";
 
 export default class App extends Component {
   constructor() {
@@ -35,6 +38,20 @@ export default class App extends Component {
     this.repositoryDescriptionUpdated = this.repositoryDescriptionUpdated.bind(this);
     this.fetchInitialRepositoryDescription = this.fetchInitialRepositoryDescription.bind(this);
 
+    // The server issues a new CSRF token each time it starts. A page that was opened before a restart
+    // is rejected with 401 and cannot recover, so reload it once to pick up the new token.
+    axios.interceptors.response.use(undefined, (error) => {
+      const body = error?.response?.data;
+      if (error?.response?.status === 401 && typeof body === "string" && body.includes("CSRF token")) {
+        const last = Number(sessionStorage.getItem("csrfReloadAt") || 0);
+        if (Date.now() - last > 15000) {
+          sessionStorage.setItem("csrfReloadAt", String(Date.now()));
+          window.location.reload();
+        }
+      }
+      return Promise.reject(error);
+    });
+
     const tok = document.head.querySelector('meta[name="kopia-csrf-token"]');
     if (tok && tok.content) {
       axios.defaults.headers.common["X-Kopia-Csrf-Token"] = tok.content;
@@ -44,12 +61,7 @@ export default class App extends Component {
   }
 
   componentDidMount() {
-    const av = document.getElementById("appVersion");
-    if (av) {
-      // show app version after mounting the component to avoid flashing of unstyled content.
-      av.style.display = "block";
-    }
-
+    // the version footer stays hidden; the version is shown on the About page instead.
     this.fetchInitialRepositoryDescription();
     this.taskSummaryInterval = window.setInterval(this.fetchTaskSummary, 5000);
   }
@@ -166,6 +178,9 @@ export default class App extends Component {
                   >
                     Preferences
                   </NavLink>
+                  <NavLink data-testid="tab-about" data-title="About" className="nav-link" to="/about">
+                    About
+                  </NavLink>
                 </Nav>
               </Navbar.Collapse>
             </Navbar>
@@ -178,6 +193,7 @@ export default class App extends Component {
               <Routes>
                 <Route path="snapshots" element={<Snapshots />} />
                 <Route path="snapshots/new" element={<SnapshotCreate />} />
+                <Route path="snapshots/search" element={<SnapshotSearch />} />
                 <Route path="snapshots/single-source/" element={<SnapshotHistory />} />
                 <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
                 <Route path="snapshots/dir/:oid" element={<SnapshotDirectory />} />
@@ -187,9 +203,11 @@ export default class App extends Component {
                 <Route path="tasks" element={<Tasks />} />
                 <Route path="repo" element={<Repository />} />
                 <Route path="preferences" element={<Preferences />} />
+                <Route path="about" element={<About />} />
                 <Route path="/" element={<Navigate to="/snapshots" />} />
               </Routes>
             </Container>
+            <FailuresModalHost />
           </UIPreferenceProvider>
         </AppContext>
       </Router>
