@@ -2,6 +2,7 @@ import React from "react";
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { FailuresModalHost } from "../../src/utils/uiutil";
 import { Tasks } from "../../src/pages/Tasks";
 import { UIPreferencesContext } from "../../src/contexts/UIPreferencesContext";
 import { setupAPIMock } from "../testutils/api-mocks";
@@ -38,6 +39,7 @@ const renderTasks = () => {
   return render(
     <UIPreferencesContext.Provider value={mockUIPreferences}>
       <Tasks />
+      <FailuresModalHost />
     </UIPreferencesContext.Provider>,
   );
 };
@@ -437,42 +439,6 @@ describe("Tasks history", () => {
     expect(screen.queryByTestId("load-older-tasks")).toBeNull();
   });
 
-  test("shows how many files each snapshot could not back up, linking to the details", async () => {
-    axiosMock.onGet("/api/v1/tasks").reply(200, {
-      tasks: [T(2, { description: "with failures", failedFiles: 1431 }), T(1, { description: "clean" })],
-      total: 2,
-      history: true,
-    });
-
-    renderTasks();
-
-    await waitFor(() => expect(screen.getByText("with failures")).toBeInTheDocument());
-    const failed = screen.getAllByTestId("task-failed-files");
-    expect(failed).toHaveLength(1);
-    expect(failed[0]).toHaveTextContent("1,431");
-    expect(screen.getByText("Failed files")).toBeInTheDocument();
-  });
-
-  test("shows how long each task took", async () => {
-    axiosMock.onGet("/api/v1/tasks").reply(200, {
-      tasks: [
-        T(3, { description: "short", endTime: "2026-10-01T10:00:24Z" }),
-        T(2, { description: "medium" }),
-        T(1, { description: "long", endTime: "2026-10-01T13:04:10Z" }),
-        T(4, { description: "still going", status: "RUNNING", endTime: undefined }),
-      ],
-      total: 4,
-      history: true,
-    });
-
-    renderTasks();
-
-    await waitFor(() => expect(screen.getByText("short")).toBeInTheDocument());
-    expect(screen.getByText("24s")).toBeInTheDocument();
-    expect(screen.getByText("1m 30s")).toBeInTheDocument();
-    expect(screen.getByText("3h 4m")).toBeInTheDocument();
-  });
-
   test("asks the server to filter by status, kind, text and dates", async () => {
     axiosMock
       .onGet("/api/v1/tasks")
@@ -504,27 +470,78 @@ describe("Tasks history", () => {
     expect(lastParams()).toMatchObject({ status: "FAILED", kind: "Maintenance", q: "denied", limit: 100 });
   });
 
-  test("a failed task shows its short cause and the status opens the task", async () => {
+  test("has no Took or Failed files column; the duration is part of the status", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, { tasks: [T(1, { description: "x" })], total: 1, history: true });
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("Started")).toBeInTheDocument());
+
+    expect(screen.queryByText("Took")).not.toBeInTheDocument();
+    expect(screen.queryByText("Failed files")).not.toBeInTheDocument();
+    expect(screen.getByText(/Finished in/)).toBeInTheDocument();
+  });
+
+  test("describes tasks in words instead of by mode", async () => {
     axiosMock.onGet("/api/v1/tasks").reply(200, {
       tasks: [
-        T(2, {
-          status: "FAILED",
-          kind: "Repository",
-          errorMessage: "error opening repository: unable to dial [h:22]: dial tcp 10.0.0.2:22: connect: no route to host",
-        }),
-        T(1),
+        T(3, { kind: "Repository", description: "Open" }),
+        T(2, { kind: "Snapshot", description: "me@host:/Users/me at 2026-10-22T14:00:00-07:00" }),
+        T(1, { kind: "Maintenance", description: "Periodic maintenance" }),
       ],
+      total: 3,
+      history: true,
+    });
+
+    renderTasks();
+    expect(await screen.findByText("Open the repository (server start)")).toBeInTheDocument();
+    expect(screen.getByText("Snapshot of /Users/me")).toBeInTheDocument();
+    expect(screen.getByText("Repository maintenance (periodic)")).toBeInTheDocument();
+  });
+
+  test("a failed task shows its short cause in the description and the full error behind the status", async () => {
+    const full = "error opening repository: unable to dial [h:22]: dial tcp 10.0.0.2:22: connect: no route to host";
+    axiosMock.onGet("/api/v1/tasks").reply(200, {
+      tasks: [T(2, { status: "FAILED", kind: "Repository", description: "Open", errorMessage: full }), T(1)],
       total: 2,
       history: true,
     });
 
     renderTasks();
-    await waitFor(() => expect(screen.getByText("task 2")).toBeInTheDocument());
+    expect(await screen.findByTestId("task-error-inline")).toHaveTextContent("connect: no route to host");
+    expect(screen.queryAllByTestId("task-error-inline")).toHaveLength(1); // the successful task has none
 
-    expect(screen.getByTestId("task-error-summary")).toHaveTextContent("connect: no route to host");
-    expect(screen.getByTestId("task-error-summary").getAttribute("href")).toBe("/tasks/2");
-    expect(screen.getByTestId("task-status-link").getAttribute("href")).toBe("/tasks/2");
-    expect(screen.queryAllByTestId("task-error-summary")).toHaveLength(1); // the successful task has none
+    const status = screen.getByTestId("task-status-button");
+    expect(status.getAttribute("title")).toContain("connect: no route to host");
+    expect(status.getAttribute("title")).toContain("click for details");
+    expect(screen.queryByTestId("task-error-dialog")).not.toBeInTheDocument(); // not shown until clicked
+
+    await userEvent.click(status);
+    const dialog = await screen.findByTestId("task-error-dialog");
+    expect(dialog).toHaveTextContent("connect: no route to host");
+    expect(dialog.querySelector("pre").textContent).toBe(full);
+  });
+
+  test("a snapshot that skipped files shows a warning; clicking its status lists the files", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, {
+      tasks: [T(2, { description: "skips", failedFiles: 2 }), T(1, { description: "clean" })],
+      total: 2,
+      history: true,
+    });
+    axiosMock.onGet("/api/v1/tasks/2/errors").reply(200, {
+      errors: [
+        { path: "Library/Mail/a", error: "unable to open file: open /x/a: operation not permitted" },
+        { path: "Library/Mail/b", error: "unable to open file: open /x/b: operation not permitted" },
+      ],
+    });
+
+    renderTasks();
+    const status = await screen.findByTestId("task-status-button");
+    expect(status.getAttribute("title")).toContain("2 files could not be backed up");
+    expect(screen.queryByText(/files skipped/)).not.toBeInTheDocument(); // the count is behind the icon, not in the text
+    expect(screen.queryAllByTestId("task-status-button")).toHaveLength(1);
+
+    await userEvent.click(status);
+    expect(await screen.findByTestId("snapshot-errors")).toBeInTheDocument();
   });
 
   test("search matches the error text, ignoring case", async () => {
@@ -630,16 +647,5 @@ describe("taskQuery and taskDuration", () => {
       kind: "Restore",
       q: "x",
     });
-  });
-
-  test("formats durations", async () => {
-    const { taskDuration } = await import("../../src/pages/Tasks");
-    const t = (end) => ({ startTime: "2026-10-01T10:00:00Z", endTime: end });
-    expect(taskDuration({ startTime: "2026-10-01T10:00:00Z" })).toBe("");
-    expect(taskDuration(t("2026-10-01T10:00:00Z"))).toBe("0s");
-    expect(taskDuration(t("2026-10-01T10:00:59Z"))).toBe("59s");
-    expect(taskDuration(t("2026-10-01T10:01:00Z"))).toBe("1m 0s");
-    expect(taskDuration(t("2026-10-01T11:00:00Z"))).toBe("1h 0m");
-    expect(taskDuration(t("2026-10-01T09:00:00Z"))).toBe("");
   });
 });

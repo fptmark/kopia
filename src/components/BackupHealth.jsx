@@ -59,18 +59,16 @@ export function VerifyBanner() {
 }
 
 const when = (t) =>
-  t
-    ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-    : "";
+  t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
 /** The health checks with their latest result, the iMessage recipient, and buttons to try things out. */
 export function BackupHealthPanel() {
   const { verifierIMessageTo, setVerifierIMessageTo } = use(UIPreferencesContext);
   const [status, refresh] = useVerifyStatus(10000);
-  const [recipient, setRecipient] = useState(verifierIMessageTo || "");
+  // what is being typed, or null when the field shows the saved value
+  const [draft, setDraft] = useState(null);
+  const recipient = draft ?? (verifierIMessageTo || "");
   const [message, setMessage] = useState("");
-
-  useEffect(() => setRecipient(verifierIMessageTo || ""), [verifierIMessageTo]);
 
   const post = (url, ok) =>
     axios
@@ -146,8 +144,8 @@ export function BackupHealthPanel() {
         </tbody>
       </Table>
       <p className="text-muted small">
-        Snapshot checks run every 10 minutes. The data and restore checks run once a day, early in the morning. A
-        failed check stays failed until the next full check passes.
+        Snapshot checks run every 10 minutes. The data and restore checks run once a day, early in the morning. A failed
+        check stays failed until the next full check passes.
       </p>
 
       <h6 className="mt-4">Alerts</h6>
@@ -158,8 +156,13 @@ export function BackupHealthPanel() {
           type="text"
           placeholder="phone number or Apple ID"
           value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
-          onBlur={() => recipient !== (verifierIMessageTo || "") && setVerifierIMessageTo(recipient.trim())}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft !== null && draft.trim() !== (verifierIMessageTo || "")) {
+              setVerifierIMessageTo(draft.trim());
+            }
+            setDraft(null);
+          }}
         />
         <Form.Text muted>
           Leave empty for a Mac notification only. Sent through the Messages app on this Mac; the first message asks

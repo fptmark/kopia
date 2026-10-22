@@ -1,8 +1,11 @@
 import { faExclamationTriangle } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import React, { useState, useSyncExternalStore } from "react";
+import Alert from "react-bootstrap/Alert";
 import Modal from "react-bootstrap/Modal";
+import { Link } from "react-router";
 import { sizeDisplayName } from "./formatutils.js";
+import { shortTaskError, taskErrorHint } from "./taskutil.jsx";
 
 // The failures dialog lives outside the snapshot tables: they refresh periodically and rebuild their
 // cells, which would reset any state held by a component rendered inside a cell.
@@ -19,7 +22,30 @@ function setOpenFailures(summ) {
  * @param {{numFailed: number, errors: {path: string, error: string}[]}} summ
  */
 export function showFailures(summ) {
+  setOpenTaskError(null);
   setOpenFailures(summ);
+}
+
+let openTaskError = null;
+const taskErrorListeners = new Set();
+
+function setOpenTaskError(info) {
+  openTaskError = info;
+  taskErrorListeners.forEach((l) => l());
+}
+
+/**
+ * Opens the dialog with the error of a failed task.
+ * @param {{taskId?: string, title: string, message: string}} info
+ */
+export function showTaskError(info) {
+  setOpenFailures(null);
+  setOpenTaskError(info);
+}
+
+function subscribeTaskError(listener) {
+  taskErrorListeners.add(listener);
+  return () => taskErrorListeners.delete(listener);
 }
 
 function subscribeFailures(listener) {
@@ -122,8 +148,39 @@ function FailureGroup({ group }) {
   );
 }
 
+function TaskErrorModal({ info }) {
+  const hint = taskErrorHint(info.message);
+  return (
+    <Modal show onHide={() => setOpenTaskError(null)} size="lg" scrollable>
+      <Modal.Header closeButton>
+        <Modal.Title>{info.title}</Modal.Title>
+      </Modal.Header>
+      <Modal.Body data-testid="task-error-dialog">
+        <Alert variant="danger" className="mb-3">
+          <b>Failed:</b> {shortTaskError(info.message)}
+          {hint && <div className="mt-1">{hint}</div>}
+        </Alert>
+        <div className="text-muted small mb-1">Full message</div>
+        <pre className="mb-3 text-break" style={{ whiteSpace: "pre-wrap" }}>
+          {info.message}
+        </pre>
+        {info.taskId && (
+          <Link to={"/tasks/" + info.taskId} onClick={() => setOpenTaskError(null)}>
+            Open the task and its log
+          </Link>
+        )}
+      </Modal.Body>
+    </Modal>
+  );
+}
+
 export function FailuresModalHost() {
   const summ = useSyncExternalStore(subscribeFailures, () => openFailures);
+  const taskError = useSyncExternalStore(subscribeTaskError, () => openTaskError);
+
+  if (taskError) {
+    return <TaskErrorModal info={taskError} />;
+  }
 
   if (!summ) {
     return null;

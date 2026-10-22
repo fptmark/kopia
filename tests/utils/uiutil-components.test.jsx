@@ -90,7 +90,7 @@ describe("taskStatusSymbol", () => {
     const task = { ...baseTask, status: "SUCCESS" };
     const result = taskStatusSymbol(task);
 
-    expect(result.type).toBe("p");
+    expect(result.type).toBe("span");
     expect(result.props.children[1]).toContain("Finished in");
   });
 
@@ -98,7 +98,7 @@ describe("taskStatusSymbol", () => {
     const task = { ...baseTask, status: "FAILED" };
     const result = taskStatusSymbol(task);
 
-    expect(result.type).toBe("p");
+    expect(result.type).toBe("span");
     expect(result.props.children[1]).toContain("Failed after");
   });
 
@@ -106,7 +106,7 @@ describe("taskStatusSymbol", () => {
     const task = { ...baseTask, status: "CANCELED" };
     const result = taskStatusSymbol(task);
 
-    expect(result.type).toBe("p");
+    expect(result.type).toBe("span");
     expect(result.props.children[1]).toContain("Canceled after");
   });
 

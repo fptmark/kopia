@@ -36,7 +36,40 @@ export function taskErrorHint(message) {
   return "";
 }
 
-export function taskStatusSymbol(task) {
+/**
+ * What a task did, in words. The server describes some tasks only by a mode ("Open"), a snapshot by its source and
+ * start time (the start time has its own column).
+ */
+export function taskDescription(task) {
+  const d = task.description || "";
+
+  switch (task.kind) {
+    case "Repository":
+      if (d === "Open") {
+        return "Open the repository (server start)";
+      }
+      if (d === "Connect") {
+        return "Connect to the repository";
+      }
+      return d;
+    case "Snapshot": {
+      const m = /^[^:]+:(.+) at \d{4}-\d{2}-\d{2}T\S+$/.exec(d);
+      return m ? "Snapshot of " + m[1] : d;
+    }
+    case "Maintenance":
+      return d === "Periodic maintenance" ? "Repository maintenance (periodic)" : d;
+    case "Verify":
+      return d.replace(/^Backup health check \((.+)\)$/, "Backup health check ($1)");
+    default:
+      return d;
+  }
+}
+
+/**
+ * The status of a task as an icon and text. wrapIcon lets the caller make the icon itself interactive; the icon of a
+ * failed task, or of a snapshot that skipped files, is the way to its details.
+ */
+export function taskStatusSymbol(task, wrapIcon = (icon) => icon) {
   const st = task.status;
   const dur = formatDuration(task.startTime, task.endTime, true);
 
@@ -51,24 +84,31 @@ export function taskStatusSymbol(task) {
         </>
       );
     case "SUCCESS":
+      if (task.failedFiles > 0) {
+        return (
+          <span>
+            {wrapIcon(<FontAwesomeIcon icon={faExclamationCircle} color="#d98e04" />)} Finished in {dur}
+          </span>
+        );
+      }
       return (
-        <p title={dur}>
+        <span>
           <FontAwesomeIcon icon={faCheck} color="green" /> Finished in {dur}
-        </p>
+        </span>
       );
 
     case "FAILED":
       return (
-        <p title={dur}>
-          <FontAwesomeIcon icon={faExclamationCircle} color="red" /> Failed after {dur}
-        </p>
+        <span>
+          {wrapIcon(<FontAwesomeIcon icon={faExclamationCircle} color="red" />)} Failed after {dur}
+        </span>
       );
 
     case "CANCELED":
       return (
-        <p title={dur}>
+        <span>
           <FontAwesomeIcon icon={faBan} /> Canceled after {dur}
-        </p>
+        </span>
       );
 
     default:

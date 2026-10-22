@@ -11,8 +11,8 @@ import Form from "react-bootstrap/Form";
 import Row from "react-bootstrap/Row";
 import { Link } from "react-router";
 import KopiaTable from "../components/KopiaTable";
-import { redirect } from "../utils/uiutil";
-import { shortTaskError, taskStatusSymbol } from "../utils/taskutil";
+import { shortTaskError, taskDescription, taskStatusSymbol } from "../utils/taskutil";
+import { redirect, showFailures, showTaskError } from "../utils/uiutil";
 
 const PAGE_SIZE = 100;
 const STATUSES = ["Running", "Success", "Failed", "Canceled"];
@@ -43,31 +43,31 @@ export function taskQuery({ showStatus, showKind, searchDescription, from, to })
   return q;
 }
 
-/**
- * Formats how long a task took, e.g. "3h 4m", "24s", or "" while it is still running.
- */
-export function taskDuration(task) {
-  if (!task.endTime) {
-    return "";
+function failedFilesTitle(t) {
+  return (
+    t.failedFiles.toLocaleString() +
+    (t.failedFiles === 1 ? " file" : " files") +
+    " could not be backed up (click for details)"
+  );
+}
+
+/** Opens the dialog behind a task's status icon: the error of a failed task, or the files a snapshot skipped. */
+function openTaskDetails(t) {
+  if (t.status === "FAILED" && t.errorMessage) {
+    showTaskError({ taskId: t.id, title: taskDescription(t), message: t.errorMessage });
+    return;
   }
 
-  const ms = new Date(task.endTime).getTime() - new Date(task.startTime).getTime();
-  if (!(ms >= 0)) {
-    return "";
-  }
-
-  const s = Math.round(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-
-  if (h > 0) {
-    return h + "h " + m + "m";
-  }
-  if (m > 0) {
-    return m + "m " + (s % 60) + "s";
-  }
-
-  return s + "s";
+  axios
+    .get("/api/v1/tasks/" + t.id + "/errors")
+    .then((result) => showFailures({ numFailed: t.failedFiles, errors: result.data.errors || [] }))
+    .catch((e) =>
+      showTaskError({
+        taskId: t.id,
+        title: taskDescription(t),
+        message: "Unable to load the failed files: " + e.message,
+      }),
+    );
 }
 
 export class Tasks extends Component {
@@ -249,70 +249,51 @@ export class Tasks extends Component {
         ),
       },
       {
-        header: "Took",
-        width: 90,
-        cell: (x) => <p>{taskDuration(x.row.original)}</p>,
-      },
-      {
         header: "Status",
-        width: 240,
+        width: 250,
         cell: (x) => {
           const t = x.row.original;
-          const failed = t.status === "FAILED" && t.errorMessage;
-          return (
-            <>
-              {failed ? (
-                <Link
-                  to={"/tasks/" + t.id}
-                  className="text-reset text-decoration-none"
-                  title="Open the task to see the full error"
-                  data-testid="task-status-link"
-                >
-                  {taskStatusSymbol(t)}
-                </Link>
-              ) : (
-                taskStatusSymbol(t)
-              )}
-              {failed && (
-                <Link
-                  to={"/tasks/" + t.id}
-                  className="d-block small text-danger text-break"
-                  title={t.errorMessage}
-                  data-testid="task-error-summary"
-                >
-                  {shortTaskError(t.errorMessage)}
-                </Link>
-              )}
-            </>
-          );
+          const hasError = t.status === "FAILED" && t.errorMessage;
+          if (!hasError && !(t.failedFiles > 0)) {
+            return taskStatusSymbol(t);
+          }
+          // the exclamation icon is the way to the details
+          return taskStatusSymbol(t, (icon) => (
+            <button
+              type="button"
+              className="btn btn-link p-0 align-baseline"
+              title={hasError ? shortTaskError(t.errorMessage) + " (click for details)" : failedFilesTitle(t)}
+              aria-label={hasError ? "Show the error" : "Show the files that failed"}
+              onClick={() => openTaskDetails(t)}
+              data-testid="task-status-button"
+            >
+              {icon}
+            </button>
+          ));
         },
       },
       {
-        header: "Failed files",
-        width: 110,
-        cell: (x) =>
-          x.row.original.failedFiles > 0 ? (
-            <Link
-              to={"/tasks/" + x.row.original.id}
-              className="text-danger fw-semibold"
-              title="Open the task to see which files failed"
-              data-testid="task-failed-files"
-            >
-              {x.row.original.failedFiles.toLocaleString()}
-            </Link>
-          ) : (
-            <p></p>
-          ),
-      },
-      {
         header: "Kind",
-        width: "",
+        width: 110,
         cell: (x) => <p>{x.row.original.kind}</p>,
       },
       {
         header: "Description",
         width: "",
-        cell: (x) => <p>{x.row.original.description}</p>,
+        cell: (x) => {
+          const t = x.row.original;
+          return (
+            <p title={t.description}>
+              {taskDescription(t)}
+              {t.status === "FAILED" && t.errorMessage && (
+                <span className="text-danger" data-testid="task-error-inline">
+                  {" "}
+                  · {shortTaskError(t.errorMessage)}
+                </span>
+              )}
+            </p>
+          );
+        },
       },
     ];
 
