@@ -170,7 +170,7 @@ func IterateEntriesAndFindChild(ctx context.Context, d Directory, name string) (
 }
 
 // MaxFailedEntriesPerDirectorySummary is the maximum number of failed entries per directory summary.
-const MaxFailedEntriesPerDirectorySummary = 10
+const MaxFailedEntriesPerDirectorySummary = 1000
 
 // EntryWithError describes error encountered when processing an entry.
 type EntryWithError struct {

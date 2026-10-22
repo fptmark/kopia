@@ -1,13 +1,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/natefinch/atomic"
 	"github.com/pkg/errors"
 
+	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/gather"
 	"github.com/kopia/kopia/internal/passwordpersist"
 	"github.com/kopia/kopia/internal/serverapi"
@@ -404,4 +410,120 @@ func repoErrorToAPIError(err error) *apiError {
 	default:
 		return internalServerError(errors.Wrap(err, "connect error"))
 	}
+}
+
+var (
+	storageUsageMu      sync.Mutex
+	storageUsageCached  *serverapi.StorageUsageResponse
+	storageUsageRunning bool
+	storageUsageStarted time.Time
+	storageUsageError   string
+)
+
+func storageUsageFile(dr repo.DirectRepository) string {
+	return filepath.Join(filepath.Dir(dr.ConfigFilename()), "storage-usage.json")
+}
+
+// loadStorageUsageLocked returns the last result, from memory or from disk (so it survives restarts).
+func loadStorageUsageLocked(dr repo.DirectRepository) *serverapi.StorageUsageResponse {
+	if storageUsageCached != nil {
+		return storageUsageCached
+	}
+
+	b, err := os.ReadFile(storageUsageFile(dr))
+	if err != nil {
+		return nil
+	}
+
+	var r serverapi.StorageUsageResponse
+	if json.Unmarshal(b, &r) != nil {
+		return nil
+	}
+
+	storageUsageCached = &r
+
+	return storageUsageCached
+}
+
+// storageUsageSnapshotLocked returns the last result combined with the state of any calculation in progress.
+func storageUsageSnapshotLocked(dr repo.DirectRepository) *serverapi.StorageUsageResponse {
+	var r serverapi.StorageUsageResponse
+
+	if last := loadStorageUsageLocked(dr); last != nil {
+		r = *last
+	}
+
+	r.Running = storageUsageRunning
+	if storageUsageRunning {
+		r.StartedAt = storageUsageStarted
+	}
+
+	r.Error = storageUsageError
+
+	return &r
+}
+
+// calculateStorageUsage lists all blobs in storage and sums their sizes. It runs in the background,
+// independent of the request that started it, because listing can take minutes on remote storage.
+func calculateStorageUsage(ctx context.Context, dr repo.DirectRepository) {
+	start := time.Now()
+
+	var total, count int64
+
+	err := dr.BlobReader().ListBlobs(ctx, "", func(bm blob.Metadata) error {
+		total += bm.Length
+		count++
+
+		return nil
+	})
+
+	storageUsageMu.Lock()
+	defer storageUsageMu.Unlock()
+
+	storageUsageRunning = false
+
+	if err != nil {
+		storageUsageError = err.Error()
+		userLog(ctx).Errorf("unable to calculate storage usage: %v", err)
+
+		return
+	}
+
+	storageUsageError = ""
+	storageUsageCached = &serverapi.StorageUsageResponse{
+		TotalBytes: total,
+		BlobCount:  count,
+		ComputedAt: clock.Now(),
+		ElapsedMS:  time.Since(start).Milliseconds(),
+	}
+
+	if b, err := json.Marshal(storageUsageCached); err == nil {
+		if err := atomic.WriteFile(storageUsageFile(dr), bytes.NewReader(b)); err != nil {
+			userLog(ctx).Errorf("unable to save storage usage: %v", err)
+		}
+	}
+}
+
+// handleRepoStorageUsage reports the total size of all blobs in repository storage.
+//   - ?refresh=true starts a background calculation (unless one is already running) and returns immediately.
+//   - otherwise the last result is returned with Running/StartedAt describing any calculation in progress,
+//     so a page opened later can pick up where it left off. Storage is never listed by the request itself.
+func handleRepoStorageUsage(ctx context.Context, rc requestContext) (any, *apiError) {
+	dr, ok := rc.rep.(repo.DirectRepository)
+	if !ok {
+		return nil, requestError(serverapi.ErrorStorageConnection, "no direct storage connection")
+	}
+
+	storageUsageMu.Lock()
+	defer storageUsageMu.Unlock()
+
+	if rc.req.URL.Query().Get("refresh") == "true" && !storageUsageRunning {
+		storageUsageRunning = true
+		storageUsageStarted = time.Now()
+		storageUsageError = ""
+
+		go calculateStorageUsage(context.WithoutCancel(ctx), dr)
+	}
+
+	return storageUsageSnapshotLocked(dr), nil
 }

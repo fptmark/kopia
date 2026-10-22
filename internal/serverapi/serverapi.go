@@ -19,6 +19,20 @@ import (
 )
 
 // StatusResponse is the response of 'status' HTTP API command.
+// StorageUsageResponse describes the total size of all blobs in repository storage.
+type StorageUsageResponse struct {
+	TotalBytes int64     `json:"totalBytes"`
+	BlobCount  int64     `json:"blobCount"`
+	ComputedAt time.Time `json:"computedAt"`
+	ElapsedMS  int64     `json:"elapsedMs"`
+
+	// Running is true while a calculation is in progress in the background; StartedAt is when it began.
+	Running   bool      `json:"running,omitempty"`
+	StartedAt time.Time `json:"startedAt,omitempty"`
+	// Error is the failure of the most recent calculation, if it failed.
+	Error string `json:"error,omitempty"`
+}
+
 type StatusResponse struct {
 	Connected                  bool           `json:"connected"`
 	ConfigFile                 string         `json:"configFile,omitempty"`
@@ -296,4 +310,76 @@ type UIPreferences struct {
 	PageSize               int    `json:"pageSize"`               // A page size; the actual possible values will only be provided by the frontend
 	Language               string `json:"language"`               // Specifies the language used by the UI
 	Locale                 string `json:"locale"`                 // Specifies the locale used by the UI for formatting numbers and dates
+	KeepAwake              string `json:"keepAwake"`              // Prevent macOS sleep while snapshots run: "" or "never", "idle" (any power source), "ac" (only on AC power)
+}
+
+// SearchRequest describes a search for files and directories across snapshots.
+type SearchRequest struct {
+	// Pattern is a wildcard (* and ?) matched case-insensitively against the entry name, or against
+	// the path relative to the snapshot source when it contains a slash.
+	Pattern string `json:"pattern"`
+	// From and To restrict the search to snapshots started in this range (zero means unbounded).
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+	// SourcePath optionally restricts the search to snapshots of one source path.
+	SourcePath  string `json:"sourcePath,omitempty"`
+	IncludeDirs bool   `json:"includeDirs,omitempty"`
+	MaxResults  int    `json:"maxResults,omitempty"`
+}
+
+// SearchStartResponse is returned when a search is started.
+type SearchStartResponse struct {
+	ID string `json:"id"`
+}
+
+// SearchProgress reports how far a search has got.
+type SearchProgress struct {
+	SnapshotsTotal int   `json:"snapshotsTotal"`
+	SnapshotsDone  int   `json:"snapshotsDone"`
+	Directories    int64 `json:"directories"`
+	Entries        int64 `json:"entries"`
+}
+
+// SearchResult is one version of a matching file or directory: identical content at the same path,
+// together with the first and last snapshot (within the searched range) that contained it.
+type SearchResult struct {
+	Source        string    `json:"source"`
+	Path          string    `json:"path"`
+	Name          string    `json:"name"`
+	IsDir         bool      `json:"isDir"`
+	Size          int64     `json:"size"`
+	ModTime       time.Time `json:"modTime"`
+	ObjectID      string    `json:"objectId"`
+	FirstSeen     time.Time `json:"firstSeen"`
+	LastSeen      time.Time `json:"lastSeen"`
+	SnapshotCount int       `json:"snapshotCount"`
+}
+
+// SearchStatus is the state of a search and the results found so far.
+type SearchStatus struct {
+	ID        string         `json:"id"`
+	Running   bool           `json:"running"`
+	Canceled  bool           `json:"canceled,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	Truncated bool           `json:"truncated,omitempty"`
+	StartedAt time.Time      `json:"startedAt"`
+	Progress  SearchProgress `json:"progress"`
+	Results   []SearchResult `json:"results"`
+}
+
+// SearchSourceRange describes the snapshots that exist for one source.
+type SearchSourceRange struct {
+	Source string    `json:"source"`
+	Path   string    `json:"path"`
+	Count  int       `json:"count"`
+	First  time.Time `json:"first"`
+	Last   time.Time `json:"last"`
+}
+
+// SearchRangeResponse describes the time span covered by all snapshots, so a search only offers valid dates.
+type SearchRangeResponse struct {
+	Count   int                 `json:"count"`
+	First   time.Time           `json:"first"`
+	Last    time.Time           `json:"last"`
+	Sources []SearchSourceRange `json:"sources"`
 }

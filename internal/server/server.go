@@ -141,6 +141,11 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/paths/resolve", s.handleUI(handlePathResolve)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/cli", s.handleUI(handleCLIInfo)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/repo/status", s.handleUIPossiblyNotConnected(handleRepoStatus)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/repo/storage-usage", s.handleUI(handleRepoStorageUsage)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/search-range", s.handleUI(handleSearchRange)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/search", s.handleUI(handleSearchStart)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/search/{id}", s.handleUI(handleSearchStatus)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/search/{id}", s.handleUI(handleSearchCancel)).Methods(http.MethodDelete)
 	m.HandleFunc("/api/v1/repo/sync", s.handleUI(handleRepoSync)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/repo/connect", s.handleUIPossiblyNotConnected(handleRepoConnect)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/repo/exists", s.handleUIPossiblyNotConnected(handleRepoExists)).Methods(http.MethodPost)
@@ -980,6 +985,8 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 	result.Manifest.Source = src
 
 	defer s.endUpload(ctx, src, &result)
+
+	defer s.keepAwake(ctx)()
 
 	err := errors.Wrap(s.taskmgr.Run(
 		ctx,
