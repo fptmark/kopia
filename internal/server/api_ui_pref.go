@@ -46,6 +46,34 @@ func handleGetUIPreferences(_ context.Context, rc requestContext) (any, *apiErro
 	return &p, nil
 }
 
+// mergeUIPreferences overlays the preferences a client sent on the stored ones. A setting the client did not send
+// keeps its stored value: a page that was opened before a setting existed, or that was still loading, does not
+// know about it and must not erase it.
+func mergeUIPreferences(stored, sent []byte) ([]byte, error) {
+	var in map[string]json.RawMessage
+	if err := json.Unmarshal(sent, &in); err != nil {
+		return nil, errors.Wrap(err, "malformed preferences")
+	}
+
+	out := map[string]json.RawMessage{}
+
+	if len(stored) > 0 {
+		// a damaged stored file is replaced by what was sent
+		_ = json.Unmarshal(stored, &out)
+		if out == nil {
+			out = map[string]json.RawMessage{}
+		}
+	}
+
+	for k, v := range in {
+		out[k] = v
+	}
+
+	b, err := json.Marshal(out)
+
+	return b, errors.Wrap(err, "unable to encode preferences")
+}
+
 func handleSetUIPreferences(_ context.Context, rc requestContext) (any, *apiError) {
 	var p serverapi.UIPreferences
 
@@ -54,7 +82,19 @@ func handleSetUIPreferences(_ context.Context, rc requestContext) (any, *apiErro
 		return nil, requestError(serverapi.ErrorMalformedRequest, "malformed request")
 	}
 
-	if err := atomic.WriteFile(rc.srv.getOptions().UIPreferencesFile, bytes.NewReader(rc.body)); err != nil {
+	file := rc.srv.getOptions().UIPreferencesFile
+
+	stored, err := os.ReadFile(file) //nolint:gosec
+	if err != nil && !os.IsNotExist(err) {
+		return nil, internalServerError(err)
+	}
+
+	merged, err := mergeUIPreferences(stored, rc.body)
+	if err != nil {
+		return nil, requestError(serverapi.ErrorMalformedRequest, "malformed request")
+	}
+
+	if err := atomic.WriteFile(file, bytes.NewReader(merged)); err != nil {
 		return nil, internalServerError(err)
 	}
 
