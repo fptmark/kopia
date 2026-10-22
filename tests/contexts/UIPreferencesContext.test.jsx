@@ -29,6 +29,56 @@ const TestComponent = ({ onMount }) => {
   return null;
 };
 
+describe("UIPreferencesContext saving", () => {
+  it("never saves the built-in defaults while the stored preferences are loading", async () => {
+    let release;
+    axiosMock.onGet("/api/v1/ui-preferences").reply(
+      () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve([200, { theme: "dark", fontSize: "fs-5", pageSize: 20, keepAwake: "ac", verifierIMessageTo: "+15551234567" }]);
+        }),
+    );
+
+    let captured;
+    render(
+      <UIPreferenceProvider>
+        <TestComponent onMount={(prefs) => (captured = prefs)} />
+      </UIPreferenceProvider>,
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(axiosMock.history.put).toHaveLength(0); // still loading: nothing may be written
+
+    await act(async () => release());
+    await waitFor(() => expect(captured.keepAwake).toBe("ac"));
+    expect(axiosMock.history.put).toHaveLength(0); // loading alone does not write either
+
+    // a change writes everything the server sent, including fields this page does not edit
+    await act(async () => captured.setKeepAwake("idle"));
+    await waitFor(() => expect(axiosMock.history.put).toHaveLength(1));
+    const body = JSON.parse(axiosMock.history.put[0].data);
+    expect(body.keepAwake).toBe("idle");
+    expect(body.verifierIMessageTo).toBe("+15551234567");
+    expect(body.theme).toBe("dark");
+  });
+
+  it("does not save anything when the stored preferences cannot be read", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    axiosMock.onGet("/api/v1/ui-preferences").reply(500);
+
+    render(
+      <UIPreferenceProvider>
+        <TestComponent onMount={() => {}} />
+      </UIPreferenceProvider>,
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(axiosMock.history.put).toHaveLength(0);
+    consoleSpy.mockRestore();
+  });
+});
+
 describe("UIPreferencesContext", () => {
   describe("Default values", () => {
     it("should provide default preferences when API fails", async () => {
