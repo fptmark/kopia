@@ -333,9 +333,10 @@ type UIPreferences struct {
 
 // VerifyCheck is the outcome of one backup health check.
 type VerifyCheck struct {
-	Name   string `json:"name"`
-	OK     bool   `json:"ok"`
-	Detail string `json:"detail"`
+	Name      string    `json:"name"`
+	OK        bool      `json:"ok"`
+	Detail    string    `json:"detail"`
+	CheckedAt time.Time `json:"checkedAt"` // when this check last ran
 }
 
 // VerifyStatus is the current result of the backup health checks.

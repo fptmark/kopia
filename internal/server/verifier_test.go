@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -272,4 +274,74 @@ func TestDeepDue(t *testing.T) {
 	require.True(t, deepDue(at(24, 3, 10), last(22, 10, 4)), "the next early morning")
 	require.True(t, deepDue(at(24, 3, 10), last(23, 3, 4)), "daily at the same time")
 	require.True(t, deepDue(at(23, 21, 0), last(22, 3, 0)), "36 hours late runs at any hour")
+}
+
+func TestVerifierKeepsFullCheckResultsBetweenQuickRuns(t *testing.T) {
+	n := &recordingNotifier{}
+	v := &verifier{notify: n, srv: &Server{}, known: map[string]verifyCheck{}}
+	v.status.State = "unknown"
+
+	ctx := context.Background()
+
+	// the daily full check
+	v.finish(ctx, []verifyCheck{
+		passed(checkRecent, "ok"),
+		passed(checkSample, "7744 files"),
+		passed(checkRestore, "matches"),
+	}, true)
+
+	// later quick runs only report the quick checks
+	v.finish(ctx, []verifyCheck{passed(checkReadable, "48 snapshots"), passed(checkRecent, "ok")}, false)
+
+	st := v.getStatus()
+	names := make([]string, 0, len(st.Checks))
+
+	for _, c := range st.Checks {
+		names = append(names, c.Name)
+		require.False(t, c.CheckedAt.IsZero(), c.Name)
+	}
+
+	require.Equal(t, []string{checkReadable, checkRecent, checkSample, checkRestore}, names, "listed in a fixed order, full check results kept")
+
+	// a failed full check stays failing until the next full check, quick runs do not clear it
+	v.finish(ctx, []verifyCheck{failed(checkRestore, "differs")}, true)
+	v.finish(ctx, []verifyCheck{passed(checkReadable, "48 snapshots")}, false)
+	require.Equal(t, "failing", v.getStatus().State)
+
+	v.finish(ctx, []verifyCheck{passed(checkRestore, "matches")}, true)
+	require.Equal(t, "ok", v.getStatus().State)
+}
+
+func TestVerifierStateSurvivesARestartWithoutRepeatingAlerts(t *testing.T) {
+	prefs := filepath.Join(t.TempDir(), "ui-preferences.json")
+	srv := &Server{options: Options{UIPreferencesFile: prefs}}
+	ctx := context.Background()
+
+	n1 := &recordingNotifier{}
+	v1 := &verifier{notify: n1, srv: srv, known: map[string]verifyCheck{}}
+	v1.status.State = "unknown"
+
+	v1.finish(ctx, []verifyCheck{passed(checkSample, "7744 files"), failed(checkRestore, "differs")}, true)
+	require.Len(t, n1.got, 1)
+
+	// the server restarts
+	n2 := &recordingNotifier{}
+	v2 := &verifier{notify: n2, srv: srv, known: map[string]verifyCheck{}}
+	v2.status.State = "unknown"
+	v2.loadState(ctx)
+
+	st := v2.getStatus()
+	require.Equal(t, "failing", st.State)
+	require.Len(t, st.Checks, 2, "the results of the last full check are shown after the restart")
+
+	// the same problem is found again by the first quick run: no second alert
+	v2.finish(ctx, []verifyCheck{passed(checkReadable, "48 snapshots")}, false)
+	require.Empty(t, n2.got)
+
+	// a damaged state file is ignored
+	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(prefs), "verifier-state.json"), []byte("{broken"), 0o600))
+
+	v3 := &verifier{notify: &recordingNotifier{}, srv: srv, known: map[string]verifyCheck{}}
+	v3.loadState(ctx)
+	require.Empty(t, v3.getStatus().Checks)
 }

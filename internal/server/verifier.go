@@ -1,17 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/natefinch/atomic"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -56,6 +61,29 @@ const (
 	verifyRemindEvery = 12 * time.Hour
 )
 
+// verifyCheckOrder is the order checks are listed in; unknown names go last.
+var verifyCheckOrder = []string{ //nolint:gochecknoglobals
+	checkReadable, checkRecent, checkFailedFilesName, checkSample, checkRestore,
+}
+
+const (
+	checkReadable        = "Snapshots can be read"
+	checkRecent          = "Snapshots are recent"
+	checkFailedFilesName = "Snapshots skip no unexpected files"
+	checkSample          = "Sample of stored data verifies"
+	checkRestore         = "A random file restores identically"
+)
+
+func checkRank(name string) int {
+	for i, n := range verifyCheckOrder {
+		if n == name {
+			return i
+		}
+	}
+
+	return len(verifyCheckOrder)
+}
+
 // verifyCheck is the outcome of one check.
 type verifyCheck = serverapi.VerifyCheck
 
@@ -98,7 +126,7 @@ func sortedSources[T any](by map[snapshot.SourceInfo]T) []snapshot.SourceInfo {
 
 // checkFreshness fails when the newest snapshot of a source is older than maxAge.
 func checkFreshness(now time.Time, by map[snapshot.SourceInfo][]*snapshot.Manifest, maxAge time.Duration) verifyCheck {
-	const name = "Snapshots are recent"
+	const name = checkRecent
 
 	if len(by) == 0 {
 		return failed(name, "there are no snapshots")
@@ -131,7 +159,7 @@ func failedFiles(m *snapshot.Manifest) int {
 // checkFailedFiles fails when the newest snapshot of a source skipped many files, or many more than the
 // snapshot before it (this is what losing a permission looks like: the snapshot still "succeeds").
 func checkFailedFiles(by map[snapshot.SourceInfo][]*snapshot.Manifest) verifyCheck {
-	const name = "Snapshots skip no unexpected files"
+	const name = checkFailedFilesName
 
 	var bad []string
 
@@ -350,6 +378,9 @@ type verifier struct {
 	mu sync.Mutex
 	// +checklocks:mu
 	status serverapi.VerifyStatus
+	// the latest result of every check, so the results of the daily full check stay visible between runs.
+	// +checklocks:mu
+	known map[string]verifyCheck
 	// +checklocks:mu
 	lastSignature string
 	// +checklocks:mu
@@ -362,15 +393,104 @@ type verifier struct {
 	deepRunning bool
 }
 
+// persistedVerifier is what survives a restart: the latest result of every check and what was last reported,
+// so the page is not empty after a start and an alert already sent is not sent again.
+type persistedVerifier struct {
+	Checks        []verifyCheck `json:"checks"`
+	State         string        `json:"state"`
+	Since         time.Time     `json:"since"`
+	LastSignature string        `json:"lastSignature"`
+	LastNotified  time.Time     `json:"lastNotified"`
+}
+
+func (v *verifier) stateFile() string {
+	f := v.srv.options.UIPreferencesFile
+	if f == "" {
+		return ""
+	}
+
+	return filepath.Join(filepath.Dir(f), "verifier-state.json")
+}
+
+func (v *verifier) loadState(ctx context.Context) {
+	f := v.stateFile()
+	if f == "" {
+		return
+	}
+
+	b, err := os.ReadFile(f) //nolint:gosec
+	if err != nil {
+		if !os.IsNotExist(err) {
+			userLog(ctx).Errorf("unable to read the health check state: %v", err)
+		}
+
+		return
+	}
+
+	var p persistedVerifier
+	if err := json.Unmarshal(b, &p); err != nil {
+		userLog(ctx).Errorf("ignoring a damaged health check state file: %v", err)
+		return
+	}
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	for _, c := range p.Checks {
+		v.known[c.Name] = c
+	}
+
+	v.status.Checks = sortedChecks(v.known)
+	v.status.State = p.State
+	v.status.Since = p.Since
+	v.lastSignature = p.LastSignature
+	v.lastNotified = p.LastNotified
+}
+
+func (v *verifier) saveState(ctx context.Context, p persistedVerifier) {
+	f := v.stateFile()
+	if f == "" {
+		return
+	}
+
+	b, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return
+	}
+
+	if err := atomic.WriteFile(f, bytes.NewReader(b)); err != nil {
+		userLog(ctx).Errorf("unable to save the health check state: %v", err)
+	}
+}
+
+func sortedChecks(known map[string]verifyCheck) []verifyCheck {
+	all := make([]verifyCheck, 0, len(known))
+	for _, c := range known {
+		all = append(all, c)
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		if ri, rj := checkRank(all[i].Name), checkRank(all[j].Name); ri != rj {
+			return ri < rj
+		}
+
+		return all[i].Name < all[j].Name
+	})
+
+	return all
+}
+
 func startVerifier(ctx context.Context, srv *Server, rep repo.Repository) *verifier {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 
-	v := &verifier{srv: srv, rep: rep, cancel: cancel, notify: newVerifyNotifier(srv)}
+	v := &verifier{srv: srv, rep: rep, cancel: cancel, notify: newVerifyNotifier(srv), known: map[string]verifyCheck{}}
 
 	now := clock.Now()
 	v.status = serverapi.VerifyStatus{Enabled: true, State: "unknown"}
 	v.graceUntil = now.Add(verifyWakeGrace)
 	v.lastTick = now
+
+	v.loadState(ctx)
 
 	// a restart (or a deploy) must not trigger another full check: continue from the last recorded one.
 	if tasks, _, err := srv.taskmgr.QueryTasks(ctx, uitask.TaskQuery{Kind: "Verify", Limit: 20}); err == nil {
@@ -507,16 +627,25 @@ func (v *verifier) localOnly(ms []*snapshot.Manifest) []*snapshot.Manifest {
 func (v *verifier) quick(ctx context.Context) ([]verifyCheck, []*snapshot.Manifest) {
 	ms, err := v.loadManifests(ctx)
 	if err != nil {
-		return []verifyCheck{failed("Snapshots can be read", err.Error())}, nil
+		return []verifyCheck{failed(checkReadable, err.Error())}, nil
 	}
 
 	ms = v.localOnly(ms)
 
 	v.mu.Lock()
-	checkAge := !clock.Now().Before(v.graceUntil)
+	graceUntil := v.graceUntil
 	v.mu.Unlock()
 
-	return quickChecks(clock.Now(), ms, checkAge), ms
+	now := clock.Now()
+	checkAge := !now.Before(graceUntil)
+
+	checks := []verifyCheck{passed(checkReadable, fmt.Sprintf("%d snapshots from %d sources", len(ms), len(newestFirst(ms))))}
+
+	if !checkAge {
+		checks = append(checks, passed(checkRecent, "not checked yet: waits until "+graceUntil.Local().Format("3:04 PM")+" for the first hourly snapshot after a start or wake"))
+	}
+
+	return append(checks, quickChecks(now, ms, checkAge)...), ms
 }
 
 // runQuick runs the cheap checks. A task is only recorded when the outcome changes.
@@ -602,9 +731,9 @@ func (v *verifier) deepChecks(ctx context.Context, ctrl uitask.Controller) []ver
 
 	files, bytes, err := sampleVerify(quietVerifierLogs(ctx), v.rep, latest, verifySamplePercent)
 	if err != nil {
-		checks = append(checks, failed("Sample of stored data verifies", err.Error()))
+		checks = append(checks, failed(checkSample, err.Error()))
 	} else {
-		checks = append(checks, passed("Sample of stored data verifies", fmt.Sprintf("%v%% sample: read %d files, %d bytes, all objects present in storage", verifySamplePercent, files, bytes)))
+		checks = append(checks, passed(checkSample, fmt.Sprintf("%v%% sample: read %d files, %d bytes, all objects present in storage", verifySamplePercent, files, bytes)))
 	}
 
 	ctrl.ReportProgressInfo("restoring a random file")
@@ -613,7 +742,7 @@ func (v *verifier) deepChecks(ctx context.Context, ctrl uitask.Controller) []ver
 }
 
 func (v *verifier) readBackCheck(ctx context.Context, latest map[snapshot.SourceInfo]*snapshot.Manifest) verifyCheck {
-	const name = "A random file restores identically"
+	const name = checkRestore
 
 	rnd := rand.New(rand.NewPCG(uint64(clock.Now().UnixNano()), 1)) //nolint:gosec
 
@@ -680,9 +809,20 @@ func failedSummary(checks []verifyCheck) string {
 // finish stores the outcome and sends notifications when it changed (or as a reminder while it persists).
 func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) {
 	now := clock.Now()
-	bad := failedSummary(checks)
 
 	v.mu.Lock()
+
+	if v.known == nil {
+		v.known = map[string]verifyCheck{}
+	}
+
+	for _, c := range checks {
+		c.CheckedAt = now
+		v.known[c.Name] = c
+	}
+
+	checks = sortedChecks(v.known)
+	bad := failedSummary(checks)
 
 	prevState := v.status.State
 	prevSig := v.lastSignature
@@ -713,7 +853,11 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 		v.lastNotified = now
 	}
 
+	saved := persistedVerifier{Checks: checks, State: v.status.State, Since: v.status.Since, LastSignature: v.lastSignature, LastNotified: v.lastNotified}
+
 	v.mu.Unlock()
+
+	v.saveState(ctx, saved)
 
 	if !notifyNow {
 		return
