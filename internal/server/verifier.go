@@ -26,6 +26,7 @@ import (
 	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/uitask"
+	"github.com/kopia/kopia/internal/units"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/logging"
@@ -733,7 +734,7 @@ func (v *verifier) deepChecks(ctx context.Context, ctrl uitask.Controller) []ver
 	if err != nil {
 		checks = append(checks, failed(checkSample, err.Error()))
 	} else {
-		checks = append(checks, passed(checkSample, fmt.Sprintf("%v%% sample: read %d files, %d bytes, all objects present in storage", verifySamplePercent, files, bytes)))
+		checks = append(checks, passed(checkSample, fmt.Sprintf("%v%% sample: read %d files (%v), all objects present in storage", verifySamplePercent, files, units.BytesString(bytes))))
 	}
 
 	ctrl.ReportProgressInfo("restoring a random file")
@@ -784,7 +785,7 @@ func (v *verifier) readBackCheck(ctx context.Context, latest map[snapshot.Source
 			continue
 		}
 
-		return passed(name, fmt.Sprintf("%v/%v (%d bytes) read back from the repository matches the file on disk", src.Path, rel, size))
+		return passed(name, fmt.Sprintf("%v/%v (%v) read back from the repository matches the file on disk", src.Path, rel, units.BytesString(size)))
 	}
 
 	if lastErr != nil {
