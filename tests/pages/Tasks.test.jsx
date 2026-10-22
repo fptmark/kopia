@@ -252,7 +252,7 @@ describe("Tasks component", () => {
     });
 
     // Search for "documents"
-    const searchInput = screen.getByPlaceholderText("case-sensitive search description");
+    const searchInput = screen.getByPlaceholderText("search description and errors");
     fireEvent.change(searchInput, { target: { value: "documents" } });
 
     // Should only show tasks with "documents" in description
@@ -393,10 +393,230 @@ describe("Tasks component", () => {
       const links = screen.getAllByRole("link");
       // At least one link should exist
       expect(links.length).toBeGreaterThan(0);
-      // The link text should be a relative time (from moment.js)
-      // Since the test data uses 2023-01-01, it will show something like "3 years ago"
-      const linkText = links[0].textContent;
-      expect(linkText).toMatch(/\d+ years? ago/);
+      // The link text is the absolute start time, so older tasks can be audited; the relative time is a tooltip.
+      expect(links[0].textContent).toBe("Jan 1, 2023 " + new Date("2023-01-01T10:00:00Z").toLocaleTimeString("en-US"));
+      expect(links[0].getAttribute("title")).toMatch(/\d+ years? ago/);
     });
+  });
+});
+
+describe("Tasks history", () => {
+  const T = (n, over = {}) => ({
+    id: n.toString(16),
+    kind: "Snapshot",
+    description: "task " + n,
+    status: "SUCCESS",
+    startTime: "2026-10-01T10:00:00Z",
+    endTime: "2026-10-01T10:01:30Z",
+    ...over,
+  });
+
+  const lastParams = () => {
+    const gets = axiosMock.history.get.filter((r) => r.url === "/api/v1/tasks");
+    return gets[gets.length - 1].params;
+  };
+
+  test("explains that tasks are kept permanently, with the total", async () => {
+    axiosMock
+      .onGet("/api/v1/tasks")
+      .reply(200, { tasks: [T(2), T(1)], total: 1234, history: true, kinds: ["Snapshot"] });
+
+    renderTasks();
+
+    await waitFor(() => expect(screen.getByTestId("tasks-summary")).toBeInTheDocument());
+    expect(screen.getByTestId("tasks-summary")).toHaveTextContent("Showing 2 of 1,234 tasks");
+    expect(screen.getByTestId("tasks-summary")).toHaveTextContent("kept permanently");
+  });
+
+  test("warns that tasks are lost on restart when there is no history", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, { tasks: [T(1)], total: 1, history: false });
+
+    renderTasks();
+
+    await waitFor(() => expect(screen.getByTestId("tasks-summary")).toHaveTextContent("lost when the server restarts"));
+    expect(screen.queryByTestId("load-older-tasks")).toBeNull();
+  });
+
+  test("shows how many files each snapshot could not back up, linking to the details", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, {
+      tasks: [T(2, { description: "with failures", failedFiles: 1431 }), T(1, { description: "clean" })],
+      total: 2,
+      history: true,
+    });
+
+    renderTasks();
+
+    await waitFor(() => expect(screen.getByText("with failures")).toBeInTheDocument());
+    const failed = screen.getAllByTestId("task-failed-files");
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toHaveTextContent("1,431");
+    expect(screen.getByText("Failed files")).toBeInTheDocument();
+  });
+
+  test("shows how long each task took", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, {
+      tasks: [
+        T(3, { description: "short", endTime: "2026-10-01T10:00:24Z" }),
+        T(2, { description: "medium" }),
+        T(1, { description: "long", endTime: "2026-10-01T13:04:10Z" }),
+        T(4, { description: "still going", status: "RUNNING", endTime: undefined }),
+      ],
+      total: 4,
+      history: true,
+    });
+
+    renderTasks();
+
+    await waitFor(() => expect(screen.getByText("short")).toBeInTheDocument());
+    expect(screen.getByText("24s")).toBeInTheDocument();
+    expect(screen.getByText("1m 30s")).toBeInTheDocument();
+    expect(screen.getByText("3h 4m")).toBeInTheDocument();
+  });
+
+  test("asks the server to filter by status, kind, text and dates", async () => {
+    axiosMock
+      .onGet("/api/v1/tasks")
+      .reply(200, { tasks: [T(1)], total: 1, history: true, kinds: ["Maintenance", "Snapshot"] });
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("task 1")).toBeInTheDocument());
+    expect(lastParams()).toEqual({ limit: 100 });
+
+    await userEvent.click(screen.getByText("Status: All"));
+    await userEvent.click(screen.getByText("Failed"));
+    await waitFor(() => expect(lastParams().status).toBe("FAILED"));
+
+    // kinds come from the server, so they are available even when none are in the current list
+    await userEvent.click(screen.getByText("Kind: All"));
+    expect(screen.getByText("Maintenance")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Maintenance"));
+    await waitFor(() => expect(lastParams().kind).toBe("Maintenance"));
+
+    fireEvent.change(screen.getByTestId("tasks-from"), { target: { value: "2026-10-01" } });
+    fireEvent.change(screen.getByTestId("tasks-to"), { target: { value: "2026-10-05" } });
+    await waitFor(() => {
+      expect(new Date(lastParams().from).getTime()).toBe(new Date("2026-10-01T00:00:00").getTime());
+      expect(new Date(lastParams().to).getTime()).toBe(new Date("2026-10-05T23:59:59.999").getTime());
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("search description and errors"), { target: { value: "denied" } });
+    await waitFor(() => expect(lastParams().q).toBe("denied"), { timeout: 3000 });
+    expect(lastParams()).toMatchObject({ status: "FAILED", kind: "Maintenance", q: "denied", limit: 100 });
+  });
+
+  test("search matches the error text, ignoring case", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, {
+      tasks: [T(2, { errorMessage: "open /x: Permission Denied", status: "FAILED" }), T(1)],
+      total: 2,
+      history: true,
+    });
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("task 2")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText("search description and errors"), {
+      target: { value: "permission denied" },
+    });
+
+    await waitFor(() => expect(screen.queryByText("task 1")).not.toBeInTheDocument());
+    expect(screen.getByText("task 2")).toBeInTheDocument();
+  });
+
+  test("loads older tasks beyond the first page", async () => {
+    const first = [T(5), T(4)];
+    const older = [T(3), T(2), T(1)];
+
+    axiosMock.onGet("/api/v1/tasks").reply((config) => {
+      if (config.params.before) {
+        return [200, { tasks: older, total: 5, history: true }];
+      }
+      return [200, { tasks: first, total: 5, history: true }];
+    });
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("task 4")).toBeInTheDocument());
+    expect(screen.queryByText("task 2")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("load-older-tasks"));
+
+    // continues after the last task shown
+    await waitFor(() => expect(screen.getByText("task 2")).toBeInTheDocument());
+    const withBefore = axiosMock.history.get.filter((r) => r.params && r.params.before);
+    expect(withBefore[0].params.before).toBe("4");
+
+    expect(screen.getByText("task 5")).toBeInTheDocument();
+    expect(screen.getByText("task 1")).toBeInTheDocument();
+    expect(screen.getByTestId("tasks-summary")).toHaveTextContent("Showing 5 of 5 tasks");
+    expect(screen.queryByTestId("load-older-tasks")).toBeNull();
+  });
+
+  test("a periodic refresh keeps the older tasks that were loaded", async () => {
+    axiosMock
+      .onGet("/api/v1/tasks")
+      .reply((config) =>
+        config.params.before
+          ? [200, { tasks: [T(1)], total: 3, history: true }]
+          : [200, { tasks: [T(3), T(2)], total: 3, history: true }],
+      );
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("task 3")).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId("load-older-tasks"));
+    await waitFor(() => expect(screen.getByText("task 1")).toBeInTheDocument());
+
+    await triggerIntervals();
+    await waitFor(() => expect(axiosMock.history.get.filter((r) => !r.params.before).length).toBeGreaterThan(1));
+
+    expect(screen.getByText("task 1")).toBeInTheDocument();
+    expect(screen.getByText("task 3")).toBeInTheDocument();
+  });
+
+  test("changing a filter drops the older pages", async () => {
+    axiosMock
+      .onGet("/api/v1/tasks")
+      .reply((config) =>
+        config.params.before
+          ? [200, { tasks: [T(1)], total: 3, history: true }]
+          : [200, { tasks: [T(3), T(2)], total: 3, history: true }],
+      );
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("task 3")).toBeInTheDocument());
+    await userEvent.click(screen.getByTestId("load-older-tasks"));
+    await waitFor(() => expect(screen.getByText("task 1")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByText("Status: All"));
+    await userEvent.click(screen.getByText("Success"));
+
+    await waitFor(() => expect(screen.queryByText("task 1")).not.toBeInTheDocument());
+    expect(screen.getByText("task 3")).toBeInTheDocument();
+  });
+});
+
+describe("taskQuery and taskDuration", () => {
+  test("only sends the filters that are set", async () => {
+    const { taskQuery } = await import("../../src/pages/Tasks");
+    expect(taskQuery({ showStatus: "All", showKind: "All", searchDescription: "", from: "", to: "" })).toEqual({
+      limit: 100,
+    });
+    expect(
+      taskQuery({ showStatus: "Canceled", showKind: "Restore", searchDescription: "x", from: "", to: "" }),
+    ).toEqual({
+      limit: 100,
+      status: "CANCELED",
+      kind: "Restore",
+      q: "x",
+    });
+  });
+
+  test("formats durations", async () => {
+    const { taskDuration } = await import("../../src/pages/Tasks");
+    const t = (end) => ({ startTime: "2026-10-01T10:00:00Z", endTime: end });
+    expect(taskDuration({ startTime: "2026-10-01T10:00:00Z" })).toBe("");
+    expect(taskDuration(t("2026-10-01T10:00:00Z"))).toBe("0s");
+    expect(taskDuration(t("2026-10-01T10:00:59Z"))).toBe("59s");
+    expect(taskDuration(t("2026-10-01T10:01:00Z"))).toBe("1m 0s");
+    expect(taskDuration(t("2026-10-01T11:00:00Z"))).toBe("1h 0m");
+    expect(taskDuration(t("2026-10-01T09:00:00Z"))).toBe("");
   });
 });

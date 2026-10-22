@@ -12,7 +12,7 @@ import Spinner from "react-bootstrap/Spinner";
 import { Logs } from "../components/Logs";
 import { useNavigate, useLocation, useParams } from "react-router";
 import { formatDuration, sizeDisplayName } from "../utils/formatutils";
-import { redirect } from "../utils/uiutil";
+import { redirect, showFailures } from "../utils/uiutil";
 import { GoBackButton } from "../components/GoBackButton";
 import { cancelTask } from "../utils/taskutil";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
@@ -26,6 +26,7 @@ class TaskInternal extends Component {
       isLoading: true,
       error: null,
       showLog: false,
+      failedFiles: [],
     };
 
     this.taskID = this.taskID.bind(this);
@@ -36,10 +37,12 @@ class TaskInternal extends Component {
   }
 
   componentDidMount() {
+    this.mounted = true;
     this.fetchTask();
   }
 
   componentWillUnmount() {
+    this.mounted = false;
     if (this.interval) {
       window.clearInterval(this.interval);
     }
@@ -49,10 +52,34 @@ class TaskInternal extends Component {
     return props.taskID || props.params.tid;
   }
 
+  // The server keeps the files that failed in a snapshot, so they can be examined later.
+  fetchFailedFiles() {
+    axios
+      .get("/api/v1/tasks/" + this.taskID(this.props) + "/errors")
+      .then((result) => {
+        if (this.mounted) {
+          this.setState({ failedFiles: result.data.errors || [] });
+        }
+      })
+      .catch(() => {
+        /* older servers have no record; nothing to show */
+      });
+  }
+
   fetchTask() {
     axios
       .get("/api/v1/tasks/" + this.taskID(this.props))
       .then((result) => {
+        if (
+          this.mounted &&
+          result.data.kind === "Snapshot" &&
+          result.data.status !== "RUNNING" &&
+          !this.askedForFailedFiles
+        ) {
+          this.askedForFailedFiles = true;
+          this.fetchFailedFiles();
+        }
+
         this.setState({
           task: result.data,
           isLoading: false,
@@ -214,6 +241,28 @@ class TaskInternal extends Component {
         <Row>
           <Col xs={12}>{this.summaryControl(task)}</Col>
         </Row>
+        {this.state.failedFiles.length > 0 && (
+          <Row className="mb-2">
+            <Col>
+              <Alert variant="warning" className="mb-0 d-flex align-items-center justify-content-between">
+                <span data-testid="failed-files-summary">
+                  {this.state.failedFiles.length.toLocaleString()}{" "}
+                  {this.state.failedFiles.length === 1 ? "file" : "files"} could not be backed up.
+                </span>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  data-testid="show-failed-files"
+                  onClick={() =>
+                    showFailures({ numFailed: this.state.failedFiles.length, errors: this.state.failedFiles })
+                  }
+                >
+                  Show details
+                </Button>
+              </Alert>
+            </Col>
+          </Row>
+        )}
         {task.counters && (
           <Row>
             <Col>

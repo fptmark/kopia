@@ -14,6 +14,14 @@ function setOpenFailures(summ) {
   failuresListeners.forEach((l) => l());
 }
 
+/**
+ * Opens the dialog listing failed files, grouped by cause and place.
+ * @param {{numFailed: number, errors: {path: string, error: string}[]}} summ
+ */
+export function showFailures(summ) {
+  setOpenFailures(summ);
+}
+
 function subscribeFailures(listener) {
   failuresListeners.add(listener);
   return () => failuresListeners.delete(listener);

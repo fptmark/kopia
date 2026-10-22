@@ -363,3 +363,72 @@ describe("Task component", () => {
     });
   });
 });
+
+describe("Task component - failed files of a snapshot", () => {
+  const snapshotTask = (status) => ({
+    id: "123",
+    kind: "Snapshot",
+    description: "u@h:/data",
+    status,
+    startTime: "2026-10-01T10:00:00Z",
+    endTime: status === "RUNNING" ? undefined : "2026-10-01T10:05:00Z",
+    counters: {},
+  });
+
+  test("offers the files that failed, grouped, when the snapshot has recorded errors", async () => {
+    axiosMock.onGet("/api/v1/tasks/123").reply(200, snapshotTask("SUCCESS"));
+    axiosMock.onGet("/api/v1/tasks/123/errors").reply(200, {
+      errors: [
+        { path: "Library/Accounts/a", error: "unable to open: open /Users/me/Library/Accounts/a: permission denied" },
+        { path: "Library/Accounts/b", error: "unable to open: open /Users/me/Library/Accounts/b: permission denied" },
+      ],
+    });
+
+    const { FailuresModalHost } = await import("../../src/utils/uiutil");
+    const { fireEvent } = await import("@testing-library/react");
+
+    render(
+      <UIPreferencesContext.Provider value={mockUIPreferences}>
+        <Task />
+        <FailuresModalHost />
+      </UIPreferencesContext.Provider>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("failed-files-summary")).toBeInTheDocument());
+    expect(screen.getByTestId("failed-files-summary")).toHaveTextContent("2 files could not be backed up");
+
+    fireEvent.click(screen.getByTestId("show-failed-files"));
+
+    await waitFor(() => expect(screen.getByTestId("failure-group")).toBeInTheDocument());
+    expect(screen.getByTestId("failure-group")).toHaveTextContent("permission denied: ▸ Library/Accounts (2)");
+  });
+
+  test("shows nothing extra when no file failed", async () => {
+    axiosMock.onGet("/api/v1/tasks/123").reply(200, snapshotTask("SUCCESS"));
+    axiosMock.onGet("/api/v1/tasks/123/errors").reply(200, { errors: [] });
+
+    renderTask();
+
+    await waitFor(() => expect(screen.getByText(/Snapshot|SUCCESS|Success/i)).toBeInTheDocument());
+    await waitFor(() => expect(axiosMock.history.get.some((r) => r.url === "/api/v1/tasks/123/errors")).toBe(true));
+    expect(screen.queryByTestId("failed-files-summary")).toBeNull();
+  });
+
+  test("does not look for failed files of tasks that are not snapshots or still run", async () => {
+    axiosMock.onGet("/api/v1/tasks/123").reply(200, { ...snapshotTask("SUCCESS"), kind: "Maintenance" });
+
+    renderTask();
+    await waitFor(() => expect(screen.getAllByText(/Maintenance/).length).toBeGreaterThan(0));
+    expect(axiosMock.history.get.some((r) => r.url.endsWith("/errors"))).toBe(false);
+  });
+
+  test("ignores a server without error history", async () => {
+    axiosMock.onGet("/api/v1/tasks/123").reply(200, snapshotTask("FAILED"));
+    axiosMock.onGet("/api/v1/tasks/123/errors").reply(404);
+
+    renderTask();
+
+    await waitFor(() => expect(axiosMock.history.get.some((r) => r.url === "/api/v1/tasks/123/errors")).toBe(true));
+    expect(screen.queryByTestId("failed-files-summary")).toBeNull();
+  });
+});
