@@ -1,8 +1,10 @@
 import axios from "axios";
 import { use, useCallback, useEffect, useState } from "react";
 import Alert from "react-bootstrap/Alert";
+import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
+import Table from "react-bootstrap/Table";
 import { Link } from "react-router";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 import { rfc3339TimestampForDisplay as formatDateTime } from "../utils/formatutils";
@@ -56,6 +58,11 @@ export function VerifyBanner() {
   );
 }
 
+const when = (t) =>
+  t
+    ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : "";
+
 /** The health checks with their latest result, the iMessage recipient, and buttons to try things out. */
 export function BackupHealthPanel() {
   const { verifierIMessageTo, setVerifierIMessageTo } = use(UIPreferencesContext);
@@ -75,68 +82,97 @@ export function BackupHealthPanel() {
       .catch((e) => setMessage("Failed: " + (e?.response?.data?.message || e.message)));
 
   const checks = status?.checks || [];
+  const state = status?.state;
 
   return (
-    <div data-testid="backup-health">
-      <p>
-        {!status || status.state === "unknown" ? (
-          <>No health check has completed yet.</>
-        ) : status.state === "ok" ? (
-          <span className="text-success">Healthy since {formatDateTime(status.since)}.</span>
-        ) : (
-          <span className="text-danger">Failing since {formatDateTime(status.since)}.</span>
-        )}
-        {status?.lastRun && <> Last run {formatDateTime(status.lastRun)}.</>}
-        {status?.lastDeepRun && (
-          <>
-            {" "}
-            Last full check {formatDateTime(status.lastDeepRun)}
-            {status.lastDeepTaskId && (
+    <div data-testid="backup-health" className="fw-normal">
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          {state === "ok" && <Badge bg="success">Healthy</Badge>}
+          {state === "failing" && <Badge bg="danger">Problem</Badge>}
+          {(!state || state === "unknown") && <Badge bg="secondary">Not checked yet</Badge>}
+          <span className="text-muted">
+            {state === "ok" && <>since {when(status.since)}</>}
+            {state === "failing" && <>since {when(status.since)}</>}
+            {status?.lastDeepRun && (
               <>
                 {" "}
-                (<Link to={`/tasks/${status.lastDeepTaskId}`}>details</Link>)
+                · full check {when(status.lastDeepRun)}
+                {status.lastDeepTaskId && (
+                  <>
+                    {" "}
+                    (<Link to={`/tasks/${status.lastDeepTaskId}`}>log</Link>)
+                  </>
+                )}
               </>
             )}
-            .
-          </>
-        )}
+          </span>
+        </div>
+        <div className="d-flex align-items-center gap-2">
+          {message && <span className="text-muted small">{message}</span>}
+          <Button size="sm" variant="primary" onClick={() => post("/api/v1/verify/run", "Check started.")}>
+            Run full check now
+          </Button>
+        </div>
+      </div>
+
+      <Table size="sm" className="align-middle" data-testid="health-checks">
+        <thead>
+          <tr>
+            <th style={{ width: "2rem" }}></th>
+            <th>Check</th>
+            <th>Result</th>
+            <th className="text-nowrap">Last checked</th>
+          </tr>
+        </thead>
+        <tbody>
+          {checks.length === 0 && (
+            <tr>
+              <td colSpan={4} className="text-muted">
+                The first check runs shortly after the server starts.
+              </td>
+            </tr>
+          )}
+          {checks.map((c) => (
+            <tr key={c.name} className={c.ok ? "" : "table-danger"}>
+              <td className={c.ok ? "text-success" : "text-danger"} aria-label={c.ok ? "passed" : "failed"}>
+                {c.ok ? "✓" : "✗"}
+              </td>
+              <td className="text-nowrap">{c.name}</td>
+              <td className="text-break">{c.detail}</td>
+              <td className="text-nowrap text-muted">{when(c.checkedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      <p className="text-muted small">
+        Snapshot checks run every 10 minutes. The data and restore checks run once a day, early in the morning. A
+        failed check stays failed until the next full check passes.
       </p>
 
-      <ul className="list-unstyled">
-        {checks.map((c) => (
-          <li key={c.name} className={c.ok ? "" : "text-danger"}>
-            {c.ok ? "✓" : "✗"} <strong>{c.name}</strong>: {c.detail}
-          </li>
-        ))}
-      </ul>
-
-      <Form.Group controlId="verifierIMessageTo" className="mb-3">
-        <Form.Label>Send an iMessage to when a check fails</Form.Label>
+      <h6 className="mt-4">Alerts</h6>
+      <Form.Group controlId="verifierIMessageTo" className="mb-2" style={{ maxWidth: "26rem" }}>
+        <Form.Label className="mb-1">iMessage to</Form.Label>
         <Form.Control
           size="sm"
           type="text"
-          placeholder="phone number or Apple ID (leave empty for a Mac notification only)"
+          placeholder="phone number or Apple ID"
           value={recipient}
           onChange={(e) => setRecipient(e.target.value)}
           onBlur={() => recipient !== (verifierIMessageTo || "") && setVerifierIMessageTo(recipient.trim())}
         />
         <Form.Text muted>
-          Sent through the Messages app on this Mac, so it needs to be signed in. The first message asks for permission
-          to control Messages.
+          Leave empty for a Mac notification only. Sent through the Messages app on this Mac; the first message asks
+          permission to control Messages.
         </Form.Text>
       </Form.Group>
-
-      <Button size="sm" variant="primary" className="me-2" onClick={() => post("/api/v1/verify/run", "Check started.")}>
-        Run full check now
-      </Button>
       <Button
         size="sm"
-        variant="outline-secondary"
+        variant="secondary"
         onClick={() => post("/api/v1/verify/test-notification", "Test message sent.")}
       >
         Send test message
       </Button>
-      {message && <span className="ms-3">{message}</span>}
     </div>
   );
 }

@@ -69,7 +69,7 @@ describe("BackupHealthPanel", () => {
     axios.get.mockResolvedValue({ data: failing });
     renderWithRouter(<BackupHealthPanel />);
 
-    expect(await screen.findByText(/Failing since/)).toBeInTheDocument();
+    expect(await screen.findByText("Problem")).toBeInTheDocument();
     expect(screen.getByText("Snapshots are recent")).toBeInTheDocument();
     expect(screen.getByText("Snapshots skip no unexpected files")).toBeInTheDocument();
   });
@@ -78,8 +78,26 @@ describe("BackupHealthPanel", () => {
     axios.get.mockResolvedValue({ data: healthy });
     renderWithRouter(<BackupHealthPanel />);
 
-    const link = await screen.findByText("details");
+    const link = await screen.findByText("log");
     expect(link.getAttribute("href")).toBe("/tasks/2a");
+  });
+
+  it("shows a failed check highlighted and a passing one as passed", async () => {
+    axios.get.mockResolvedValue({ data: failing });
+    renderWithRouter(<BackupHealthPanel />);
+
+    await screen.findByText("Problem");
+    expect(screen.getByLabelText("passed")).toBeInTheDocument();
+    expect(screen.getByLabelText("failed")).toBeInTheDocument();
+    expect(screen.getByText(/144 files could not be backed up/).closest("tr")).toHaveClass("table-danger");
+  });
+
+  it("says no check has run yet instead of showing an empty page", async () => {
+    axios.get.mockResolvedValue({ data: { enabled: true, state: "unknown", checks: null } });
+    renderWithRouter(<BackupHealthPanel />);
+
+    expect(await screen.findByText("Not checked yet")).toBeInTheDocument();
+    expect(screen.getByText(/first check runs shortly/)).toBeInTheDocument();
   });
 
   it("saves the iMessage recipient when the field loses focus", async () => {
