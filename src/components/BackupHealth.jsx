@@ -168,7 +168,7 @@ export function BackupHealthPanel() {
       </Form.Group>
       <Button
         size="sm"
-        variant="secondary"
+        variant="outline-primary"
         onClick={() => post("/api/v1/verify/test-notification", "Test message sent.")}
       >
         Send test message
