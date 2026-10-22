@@ -5,6 +5,7 @@ import Form from "react-bootstrap/Form";
 import Row from "react-bootstrap/Row";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
+import { BackupHealthPanel } from "../components/BackupHealth";
 import { NotificationEditor } from "../components/notifications/NotificationEditor";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 
@@ -87,6 +88,11 @@ export function Preferences() {
               </Form.Text>
             </Form.Group>
           </Row>
+        </Container>
+      </Tab>
+      <Tab eventKey="health" title="Backup health" id="tab-health">
+        <Container fluid>
+          <BackupHealthPanel />
         </Container>
       </Tab>
       <Tab eventKey="notifications" title="Notifications" id="tab-notifications">

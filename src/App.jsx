@@ -21,6 +21,7 @@ import { SnapshotSearch } from "./pages/SnapshotSearch";
 import { AppContext } from "./contexts/AppContext";
 import { UIPreferenceProvider } from "./contexts/UIPreferencesContext";
 import { FailuresModalHost } from "./utils/uiutil";
+import { VerifyBanner } from "./components/BackupHealth";
 
 export default class App extends Component {
   constructor() {
@@ -189,6 +190,8 @@ export default class App extends Component {
               <NavLink to="/repo" style={{ color: "inherit", textDecoration: "inherit" }}>
                 <h5 className="mb-4">{this.state.repoDescription}</h5>
               </NavLink>
+
+              <VerifyBanner />
 
               <Routes>
                 <Route path="snapshots" element={<Snapshots />} />
