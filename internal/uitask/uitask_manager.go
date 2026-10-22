@@ -13,6 +13,8 @@ import (
 	"github.com/kopia/kopia/repo/logging"
 )
 
+var log = logging.Module("uitask") //nolint:gochecknoglobals
+
 const (
 	maxFinishedTasks      = 50
 	maxLogMessagesPerTask = 1000
@@ -34,6 +36,9 @@ type Manager struct {
 	MaxLogMessagesPerTask int // +checklocksignore
 
 	persistentLogs bool // +checklocksignore
+
+	// +checklocks:mu
+	history HistoryStore
 }
 
 // Controller allows the task to communicate with task manager and receive signals.
@@ -155,6 +160,14 @@ func (m *Manager) TaskLog(taskID string) []json.RawMessage {
 		return append([]json.RawMessage(nil), f.LogLines...)
 	}
 
+	if m.history != nil {
+		if seq, ok := ParseTaskID(taskID); ok {
+			if lines, err := m.history.TaskLogs(seq); err == nil {
+				return lines
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -169,6 +182,14 @@ func (m *Manager) GetTask(taskID string) (Info, bool) {
 
 	if f, ok := m.finished[taskID]; ok {
 		return *f, true
+	}
+
+	if m.history != nil {
+		if seq, ok := ParseTaskID(taskID); ok {
+			if t, found, err := m.history.GetTask(seq); err == nil && found {
+				return t, true
+			}
+		}
 	}
 
 	return Info{}, false
@@ -198,6 +219,12 @@ func (m *Manager) startTask(r *runningTaskInfo) string {
 	r.TaskID = taskID
 	r.sequenceNumber = m.nextTaskID
 	m.running[taskID] = r
+
+	if m.history != nil {
+		if err := m.history.TaskStarted(r.Info); err != nil {
+			log(context.Background()).Errorf("unable to record start of task %v: %v", taskID, err)
+		}
+	}
 
 	return taskID
 }
@@ -232,6 +259,12 @@ func (m *Manager) completeTask(r *runningTaskInfo, err error) {
 
 	delete(m.running, r.TaskID)
 	m.finished[r.TaskID] = &r.Info
+
+	if m.history != nil {
+		if err := m.history.TaskFinished(r.Info, r.LogLines); err != nil {
+			log(context.Background()).Errorf("unable to record end of task %v: %v", r.TaskID, err)
+		}
+	}
 
 	// delete oldest finished tasks up to configured limit.
 	for len(m.finished) > m.MaxFinishedTasks {

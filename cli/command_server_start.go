@@ -22,6 +22,7 @@ import (
 	"github.com/kopia/kopia/internal/auth"
 	"github.com/kopia/kopia/internal/insecureserverbind"
 	"github.com/kopia/kopia/internal/server"
+	"github.com/kopia/kopia/internal/taskstore"
 	"github.com/kopia/kopia/notification"
 	"github.com/kopia/kopia/notification/sender/jsonsender"
 	"github.com/kopia/kopia/repo"
@@ -66,6 +67,9 @@ type commandServerStart struct {
 	serverStartTLSPrintFullServerCert   bool
 	uiTitlePrefix                       string
 	uiPreferencesFile                   string
+	taskHistory                         bool
+	taskHistoryFile                     string
+	taskHistoryDays                     int
 	asyncRepoConnect                    bool
 	persistentLogs                      bool
 	debugScheduler                      bool
@@ -127,6 +131,9 @@ func (c *commandServerStart) setup(svc advancedAppServices, parent commandParent
 	cmd.Flag("persistent-logs", "Persist logs in a file").Default("true").BoolVar(&c.persistentLogs)
 	cmd.Flag("ui-title-prefix", "UI title prefix").Hidden().Envar(svc.EnvName("KOPIA_UI_TITLE_PREFIX")).StringVar(&c.uiTitlePrefix)
 	cmd.Flag("ui-preferences-file", "Path to JSON file storing UI preferences").StringVar(&c.uiPreferencesFile)
+	cmd.Flag("task-history", "Keep a permanent history of tasks, their logs and snapshot errors in a SQLite database").Default("true").BoolVar(&c.taskHistory)
+	cmd.Flag("task-history-file", "Path to the SQLite task history database (default: next to the repository config file)").StringVar(&c.taskHistoryFile)
+	cmd.Flag("task-history-days", "Keep finished tasks this many days (0 keeps them forever)").Default("730").IntVar(&c.taskHistoryDays)
 
 	cmd.Flag("log-server-requests", "Log server requests").Hidden().BoolVar(&c.logServerRequests)
 	cmd.Flag("disable-csrf-token-checks", "Disable CSRF token").Hidden().BoolVar(&c.disableCSRFTokenChecks)
@@ -154,7 +161,30 @@ func (c *commandServerStart) serverStartOptions(ctx context.Context) (*server.Op
 		uiPreferencesFile = filepath.Join(filepath.Dir(c.svc.repositoryConfigFileName()), "ui-preferences.json")
 	}
 
+	var (
+		history       *taskstore.Store
+		historyBackup string
+	)
+
+	if c.taskHistory {
+		historyFile := c.taskHistoryFile
+		if historyFile == "" {
+			historyFile = filepath.Join(filepath.Dir(c.svc.repositoryConfigFileName()), "task-history.db")
+		}
+
+		history, err = taskstore.Open(historyFile)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to open task history")
+		}
+
+		historyBackup = filepath.Join(filepath.Dir(historyFile), "task-history.backup.sqlite")
+	}
+
 	return &server.Options{
+		TaskHistory:           history,
+		TaskHistoryRetention:  time.Duration(c.taskHistoryDays) * 24 * time.Hour, //nolint:mnd
+		TaskHistoryBackupFile: historyBackup,
+
 		ConfigFile:           c.svc.repositoryConfigFileName(),
 		ConnectOptions:       c.co.toRepoConnectOptions(),
 		RefreshInterval:      c.serverStartRefreshInterval,
@@ -209,6 +239,10 @@ func (c *commandServerStart) run(ctx context.Context) (reterr error) {
 	opts, err := c.serverStartOptions(ctx)
 	if err != nil {
 		return err
+	}
+
+	if opts.TaskHistory != nil {
+		defer opts.TaskHistory.Close() //nolint:errcheck
 	}
 
 	srv, err := server.New(ctx, opts)

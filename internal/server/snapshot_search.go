@@ -281,8 +281,9 @@ func (s *snapshotSearcher) walk(ctx context.Context, source string, snapTime tim
 	s.entries.Add(int64(len(children)))
 
 	var (
-		found   []*searchVersion
-		foundMu sync.Mutex
+		own     []*searchVersion // matches among the entries of this directory
+		below   []*searchVersion // matches found by the goroutines reading subdirectories
+		belowMu sync.Mutex
 		wg      sync.WaitGroup
 	)
 
@@ -294,7 +295,7 @@ func (s *snapshotSearcher) walk(ctx context.Context, source string, snapTime tim
 
 		if (!c.isDir || s.includeDirs) && s.matches(c.name, childPath) {
 			if v := s.record(source, childPath, c, snapTime); v != nil {
-				found = append(found, v)
+				own = append(own, v)
 			}
 		}
 
@@ -304,16 +305,18 @@ func (s *snapshotSearcher) walk(ctx context.Context, source string, snapTime tim
 			go func(c dirChild, childPath string) {
 				defer wg.Done()
 
-				below, _ := s.walk(ctx, source, snapTime, c.dir, childPath, c.oid)
+				sub, _ := s.walk(ctx, source, snapTime, c.dir, childPath, c.oid)
 
-				foundMu.Lock()
-				found = append(found, below...)
-				foundMu.Unlock()
+				belowMu.Lock()
+				below = append(below, sub...)
+				belowMu.Unlock()
 			}(c, childPath)
 		}
 	}
 
 	wg.Wait()
+
+	found := append(own, below...) //nolint:gocritic
 
 	s.mu.Lock()
 	s.visited[key] = found

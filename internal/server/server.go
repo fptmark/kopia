@@ -26,6 +26,7 @@ import (
 	"github.com/kopia/kopia/internal/passwordpersist"
 	"github.com/kopia/kopia/internal/scheduler"
 	"github.com/kopia/kopia/internal/serverapi"
+	"github.com/kopia/kopia/internal/taskstore"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/notification"
 	"github.com/kopia/kopia/notification/notifydata"
@@ -168,6 +169,8 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/tasks-summary", s.handleUIPossiblyNotConnected(handleTaskSummary)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks", s.handleUIPossiblyNotConnected(handleTaskList)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks/{taskID}", s.handleUIPossiblyNotConnected(handleTaskInfo)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/tasks/{taskID}/errors", s.handleUIPossiblyNotConnected(handleTaskErrors)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/repo/storage-usage-history", s.handleUI(handleStorageUsageHistory)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks/{taskID}/logs", s.handleUIPossiblyNotConnected(handleTaskLogs)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks/{taskID}/cancel", s.handleUIPossiblyNotConnected(handleTaskCancel)).Methods(http.MethodPost)
 
@@ -864,6 +867,13 @@ type Options struct {
 	MinMaintenanceInterval   time.Duration
 	EnableErrorNotifications bool
 	NotifyTemplateOptions    notifytemplate.Options
+
+	// TaskHistory, when set, keeps tasks, their logs and snapshot errors permanently.
+	TaskHistory *taskstore.Store
+	// TaskHistoryRetention is how long finished tasks are kept (zero keeps them forever).
+	TaskHistoryRetention time.Duration
+	// TaskHistoryBackupFile, when set, receives a consistent copy of the history database regularly.
+	TaskHistoryBackupFile string
 }
 
 // InitRepositoryFunc is a function that attempts to connect to/open repository.
@@ -988,16 +998,22 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 
 	defer s.keepAwake(ctx)()
 
+	var taskID string
+
 	err := errors.Wrap(s.taskmgr.Run(
 		ctx,
 		"Snapshot",
 		fmt.Sprintf("%v at %v", src, clock.Now().Format(time.RFC3339)),
 		func(ctx context.Context, ctrl uitask.Controller) error {
+			taskID = ctrl.CurrentTaskID()
+
 			return inner(ctx, ctrl, &result)
 		}), "snapshot task")
 	if err != nil {
 		result.Error = err.Error()
 	}
+
+	s.recordSnapshotResult(ctx, taskID, src, &result.Manifest)
 
 	return err
 }
@@ -1143,6 +1159,14 @@ func New(ctx context.Context, options *Options) (*Server, error) {
 	}
 
 	s.parallelSnapshotsChanged = sync.NewCond(&s.parallelSnapshotsMutex)
+
+	if options.TaskHistory != nil {
+		if err := s.taskmgr.SetHistory(options.TaskHistory); err != nil {
+			return nil, errors.Wrap(err, "unable to use task history")
+		}
+
+		go s.maintainTaskHistory(ctx)
+	}
 
 	return s, nil
 }

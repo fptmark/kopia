@@ -59,8 +59,10 @@ type Info struct {
 	ProgressInfo string                  `json:"progressInfo"`
 	ErrorMessage string                  `json:"errorMessage,omitempty"`
 	Counters     map[string]CounterValue `json:"counters"`
-	LogLines     []json.RawMessage       `json:"-"`
-	Error        error                   `json:"-"`
+	// FailedFiles is how many files a finished snapshot could not back up (from the task history).
+	FailedFiles int               `json:"failedFiles,omitempty"`
+	LogLines    []json.RawMessage `json:"-"`
+	Error       error             `json:"-"`
 
 	sequenceNumber int
 }

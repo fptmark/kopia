@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -235,4 +236,64 @@ func TestSnapshotRanges(t *testing.T) {
 	empty := snapshotRanges(nil)
 	require.Zero(t, empty.Count)
 	require.NotNil(t, empty.Sources)
+}
+
+// A wide tree is read by many goroutines at once; every version must still be counted once per snapshot,
+// including in snapshots where the directory is skipped because it did not change.
+func TestSnapshotSearch_WideTreeCountsEverySnapshot(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+
+	const (
+		dirs  = 40
+		files = 5
+	)
+
+	root := mockfs.NewDirectory()
+
+	for d := 0; d < dirs; d++ {
+		dir := root.AddDir("dir"+uitaskID(d), 0o755)
+		sub := dir.AddDir("sub", 0o755)
+
+		for f := 0; f < files; f++ {
+			dir.AddFile("f"+uitaskID(f)+".txt", []byte("content "+uitaskID(d)+uitaskID(f)), 0o644)
+			sub.AddFile("g"+uitaskID(f)+".txt", []byte("deeper "+uitaskID(d)+uitaskID(f)), 0o644)
+		}
+	}
+
+	src := snapshot.SourceInfo{
+		Host:     env.Repository.ClientOptions().Hostname,
+		UserName: env.Repository.ClientOptions().Username,
+		Path:     "/wide",
+	}
+
+	u := upload.NewUploader(env.RepositoryWriter)
+
+	var manifests []*snapshot.Manifest
+
+	for i := 1; i <= 3; i++ {
+		m, err := u.Upload(ctx, root, nil, src)
+		require.NoError(t, err)
+		require.NoError(t, env.RepositoryWriter.Flush(ctx))
+
+		m.StartTime = fs.UTCTimestamp(day(i).UnixNano())
+		manifests = append(manifests, m)
+	}
+
+	req := serverapi.SearchRequest{Pattern: "*.txt"}
+	s, err := newSnapshotSearcher(env.Repository, req, func() {})
+	require.NoError(t, err)
+
+	res := runSearch(ctx, t, s, manifests, req)
+
+	require.Len(t, res, dirs*files*2)
+
+	for _, r := range res {
+		require.Equal(t, 3, r.SnapshotCount, r.Path)
+		require.Equal(t, day(1), r.FirstSeen.UTC(), r.Path)
+		require.Equal(t, day(3), r.LastSeen.UTC(), r.Path)
+	}
+}
+
+func uitaskID(n int) string {
+	return strconv.Itoa(n)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/kopia/kopia/internal/gather"
 	"github.com/kopia/kopia/internal/passwordpersist"
 	"github.com/kopia/kopia/internal/serverapi"
+	"github.com/kopia/kopia/internal/taskstore"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/blob/throttling"
@@ -465,7 +466,7 @@ func storageUsageSnapshotLocked(dr repo.DirectRepository) *serverapi.StorageUsag
 
 // calculateStorageUsage lists all blobs in storage and sums their sizes. It runs in the background,
 // independent of the request that started it, because listing can take minutes on remote storage.
-func calculateStorageUsage(ctx context.Context, dr repo.DirectRepository) {
+func calculateStorageUsage(ctx context.Context, dr repo.DirectRepository, history *taskstore.Store) {
 	start := time.Now()
 
 	var total, count int64
@@ -497,6 +498,17 @@ func calculateStorageUsage(ctx context.Context, dr repo.DirectRepository) {
 		ElapsedMS:  time.Since(start).Milliseconds(),
 	}
 
+	if history != nil {
+		if err := history.RecordStorageUsage(taskstore.StorageUsage{
+			ComputedAt: storageUsageCached.ComputedAt,
+			TotalBytes: total,
+			BlobCount:  count,
+			ElapsedMS:  storageUsageCached.ElapsedMS,
+		}); err != nil {
+			userLog(ctx).Errorf("unable to record storage usage history: %v", err)
+		}
+	}
+
 	if b, err := json.Marshal(storageUsageCached); err == nil {
 		if err := atomic.WriteFile(storageUsageFile(dr), bytes.NewReader(b)); err != nil {
 			userLog(ctx).Errorf("unable to save storage usage: %v", err)
@@ -522,7 +534,7 @@ func handleRepoStorageUsage(ctx context.Context, rc requestContext) (any, *apiEr
 		storageUsageStarted = time.Now()
 		storageUsageError = ""
 
-		go calculateStorageUsage(context.WithoutCancel(ctx), dr)
+		go calculateStorageUsage(context.WithoutCancel(ctx), dr, rc.srv.getOptions().TaskHistory)
 	}
 
 	return storageUsageSnapshotLocked(dr), nil

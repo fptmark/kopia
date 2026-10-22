@@ -244,6 +244,23 @@ type CurrentUserResponse struct {
 // TaskListResponse contains a list of tasks.
 type TaskListResponse struct {
 	Tasks []uitask.Info `json:"tasks"`
+	// Total is how many tasks match the query, which can be more than were returned.
+	Total int `json:"total"`
+	// History is true when tasks are kept permanently (otherwise only recent ones are available).
+	History bool `json:"history"`
+	// Kinds lists the kinds of tasks that can be filtered on.
+	Kinds []string `json:"kinds,omitempty"`
+}
+
+// TaskErrorsResponse lists the files that failed in a snapshot task.
+type TaskErrorsResponse struct {
+	Errors []TaskError `json:"errors"`
+}
+
+// TaskError is a file or directory that could not be backed up.
+type TaskError struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
 }
 
 // TaskLogResponse contains a task log.
