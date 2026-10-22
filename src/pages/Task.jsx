@@ -14,7 +14,7 @@ import { useNavigate, useLocation, useParams } from "react-router";
 import { formatDuration, sizeDisplayName } from "../utils/formatutils";
 import { redirect, showFailures } from "../utils/uiutil";
 import { GoBackButton } from "../components/GoBackButton";
-import { cancelTask } from "../utils/taskutil";
+import { cancelTask, shortTaskError, taskErrorHint } from "../utils/taskutil";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 import PropTypes from "prop-types";
 
@@ -118,8 +118,15 @@ class TaskInternal extends Component {
 
       case "FAILED":
         return (
-          <Alert variant="danger">
-            <b>Error:</b> {task.errorMessage}.
+          <Alert variant="danger" data-testid="task-error">
+            <b>Error:</b> {shortTaskError(task.errorMessage)}
+            {taskErrorHint(task.errorMessage) && <div className="mt-1">{taskErrorHint(task.errorMessage)}</div>}
+            <details className="mt-2">
+              <summary>Full message</summary>
+              <pre className="mb-0 text-break" style={{ whiteSpace: "pre-wrap" }}>
+                {task.errorMessage}
+              </pre>
+            </details>
           </Alert>
         );
 

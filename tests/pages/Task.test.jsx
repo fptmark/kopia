@@ -152,7 +152,8 @@ describe("Task component", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Error:/)).toBeInTheDocument();
-      expect(screen.getByText(/Permission denied/)).toBeInTheDocument();
+      // shown in the summary and again in the expandable full message
+      expect(screen.getAllByText(/Permission denied/).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -430,5 +431,31 @@ describe("Task component - failed files of a snapshot", () => {
 
     await waitFor(() => expect(axiosMock.history.get.some((r) => r.url === "/api/v1/tasks/123/errors")).toBe(true));
     expect(screen.queryByTestId("failed-files-summary")).toBeNull();
+  });
+});
+
+describe("Task component - failed task error", () => {
+  test("shows the short cause, a hint, and the full message on demand", async () => {
+    const full =
+      "error opening repository: cannot open storage: unable to dial [h:22]: &ssh.ClientConfig{Config:ssh.Config{}}: " +
+      "dial tcp 10.0.0.2:22: connect: no route to host";
+
+    axiosMock.onGet("/api/v1/tasks/123").reply(200, {
+      id: "123",
+      kind: "Repository",
+      description: "Open",
+      status: "FAILED",
+      startTime: "2023-01-01T10:00:00Z",
+      endTime: "2023-01-01T10:00:03Z",
+      errorMessage: full,
+      counters: {},
+    });
+
+    renderTask();
+
+    const box = await screen.findByTestId("task-error");
+    expect(box).toHaveTextContent("Error: connect: no route to host");
+    expect(box).toHaveTextContent("Local Network permission");
+    expect(box.querySelector("details pre").textContent).toBe(full);
   });
 });

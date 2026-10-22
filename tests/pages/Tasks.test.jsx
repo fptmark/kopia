@@ -504,6 +504,29 @@ describe("Tasks history", () => {
     expect(lastParams()).toMatchObject({ status: "FAILED", kind: "Maintenance", q: "denied", limit: 100 });
   });
 
+  test("a failed task shows its short cause and the status opens the task", async () => {
+    axiosMock.onGet("/api/v1/tasks").reply(200, {
+      tasks: [
+        T(2, {
+          status: "FAILED",
+          kind: "Repository",
+          errorMessage: "error opening repository: unable to dial [h:22]: dial tcp 10.0.0.2:22: connect: no route to host",
+        }),
+        T(1),
+      ],
+      total: 2,
+      history: true,
+    });
+
+    renderTasks();
+    await waitFor(() => expect(screen.getByText("task 2")).toBeInTheDocument());
+
+    expect(screen.getByTestId("task-error-summary")).toHaveTextContent("connect: no route to host");
+    expect(screen.getByTestId("task-error-summary").getAttribute("href")).toBe("/tasks/2");
+    expect(screen.getByTestId("task-status-link").getAttribute("href")).toBe("/tasks/2");
+    expect(screen.queryAllByTestId("task-error-summary")).toHaveLength(1); // the successful task has none
+  });
+
   test("search matches the error text, ignoring case", async () => {
     axiosMock.onGet("/api/v1/tasks").reply(200, {
       tasks: [T(2, { errorMessage: "open /x: Permission Denied", status: "FAILED" }), T(1)],

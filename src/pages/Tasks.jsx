@@ -12,7 +12,7 @@ import Row from "react-bootstrap/Row";
 import { Link } from "react-router";
 import KopiaTable from "../components/KopiaTable";
 import { redirect } from "../utils/uiutil";
-import { taskStatusSymbol } from "../utils/taskutil";
+import { shortTaskError, taskStatusSymbol } from "../utils/taskutil";
 
 const PAGE_SIZE = 100;
 const STATUSES = ["Running", "Success", "Failed", "Canceled"];
@@ -256,7 +256,36 @@ export class Tasks extends Component {
       {
         header: "Status",
         width: 240,
-        cell: (x) => taskStatusSymbol(x.row.original),
+        cell: (x) => {
+          const t = x.row.original;
+          const failed = t.status === "FAILED" && t.errorMessage;
+          return (
+            <>
+              {failed ? (
+                <Link
+                  to={"/tasks/" + t.id}
+                  className="text-reset text-decoration-none"
+                  title="Open the task to see the full error"
+                  data-testid="task-status-link"
+                >
+                  {taskStatusSymbol(t)}
+                </Link>
+              ) : (
+                taskStatusSymbol(t)
+              )}
+              {failed && (
+                <Link
+                  to={"/tasks/" + t.id}
+                  className="d-block small text-danger text-break"
+                  title={t.errorMessage}
+                  data-testid="task-error-summary"
+                >
+                  {shortTaskError(t.errorMessage)}
+                </Link>
+              )}
+            </>
+          );
+        },
       },
       {
         header: "Failed files",
