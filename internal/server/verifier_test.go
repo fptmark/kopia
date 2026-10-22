@@ -11,6 +11,7 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/mockfs"
 	"github.com/kopia/kopia/internal/repotesting"
+	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
@@ -240,4 +241,35 @@ func TestVerifierNotifiesOnChangeAndRecoveryNotEveryRun(t *testing.T) {
 	v.finish(ctx, good, true)
 	require.Len(t, n.got, 4)
 	require.Equal(t, "ok", v.getStatus().State)
+}
+
+func TestLatestDeepRunSkipsProblemTasksAndRunningOnes(t *testing.T) {
+	at := func(h int) *time.Time { x := time.Date(2026, 10, 22, h, 0, 0, 0, time.UTC); return &x }
+
+	tasks := []uitask.Info{
+		{TaskID: "5", Description: "Backup health check (problem found)", EndTime: at(11)},
+		{TaskID: "4", Description: "Backup health check (manual)"}, // still running
+		{TaskID: "3", Description: "Backup health check (scheduled)", EndTime: at(3)},
+		{TaskID: "2", Description: "Backup health check (scheduled)", EndTime: at(1)},
+	}
+
+	end, id, ok := latestDeepRun(tasks)
+	require.True(t, ok)
+	require.Equal(t, "3", id)
+	require.Equal(t, *at(3), end)
+
+	_, _, ok = latestDeepRun(tasks[:2])
+	require.False(t, ok)
+}
+
+func TestDeepDue(t *testing.T) {
+	at := func(day, hour, min int) time.Time { return time.Date(2026, 10, day, hour, min, 0, 0, time.UTC) }
+	last := func(day, hour, min int) *time.Time { x := at(day, hour, min); return &x }
+
+	require.True(t, deepDue(at(22, 10, 0), nil), "never run")
+	require.False(t, deepDue(at(23, 3, 0), last(22, 10, 4)), "17 hours since the last run")
+	require.False(t, deepDue(at(23, 12, 0), last(22, 10, 4)), "a day later but not early morning")
+	require.True(t, deepDue(at(24, 3, 10), last(22, 10, 4)), "the next early morning")
+	require.True(t, deepDue(at(24, 3, 10), last(23, 3, 4)), "daily at the same time")
+	require.True(t, deepDue(at(23, 21, 0), last(22, 3, 0)), "36 hours late runs at any hour")
 }

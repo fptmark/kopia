@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/fs/localfs"
@@ -21,6 +23,7 @@ import (
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
+	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
@@ -37,6 +40,8 @@ const (
 	// the deep check runs once a day, in the first quick run in the hours after this local hour.
 	verifyDeepHour  = 3
 	verifyDeepEvery = 24 * time.Hour
+	// a full check that is this late runs at any hour.
+	verifyDeepOverdue = 36 * time.Hour
 
 	verifySamplePercent   = 1.0
 	verifySampleMaxErrors = 5
@@ -367,6 +372,14 @@ func startVerifier(ctx context.Context, srv *Server, rep repo.Repository) *verif
 	v.graceUntil = now.Add(verifyWakeGrace)
 	v.lastTick = now
 
+	// a restart (or a deploy) must not trigger another full check: continue from the last recorded one.
+	if tasks, _, err := srv.taskmgr.QueryTasks(ctx, uitask.TaskQuery{Kind: "Verify", Limit: 20}); err == nil {
+		if end, id, ok := latestDeepRun(tasks); ok {
+			v.status.LastDeep = &end
+			v.status.LastDeepTaskID = id
+		}
+	}
+
 	v.wg.Add(1)
 
 	go func() {
@@ -376,6 +389,36 @@ func startVerifier(ctx context.Context, srv *Server, rep repo.Repository) *verif
 	}()
 
 	return v
+}
+
+// latestDeepRun finds the end of the newest finished full check among Verify tasks (newest first).
+// Tasks recorded for a problem found by a quick check are not full checks.
+func latestDeepRun(tasks []uitask.Info) (end time.Time, taskID string, ok bool) {
+	for _, t := range tasks {
+		if t.EndTime == nil || strings.Contains(t.Description, "problem found") {
+			continue
+		}
+
+		if !ok || t.EndTime.After(end) {
+			end, taskID, ok = *t.EndTime, t.TaskID, true
+		}
+	}
+
+	return end, taskID, ok
+}
+
+// quietVerifierLogs stops the verifier from logging a line for every object it checks, which would fill the
+// task log and push out the errors.
+func quietVerifierLogs(ctx context.Context) context.Context {
+	quiet := logging.Module("verifier")(ctx).Desugar().WithOptions(zap.IncreaseLevel(zapcore.InfoLevel)).Sugar()
+
+	return logging.WithLogger(ctx, func(module string) logging.Logger {
+		if module == "verifier" {
+			return quiet
+		}
+
+		return logging.Module(module)(ctx)
+	})
 }
 
 func (v *verifier) stop() {
@@ -411,15 +454,28 @@ func (v *verifier) tick(ctx context.Context) {
 	}
 
 	v.lastTick = now
-	deepDue := v.status.LastDeep == nil || (now.Sub(*v.status.LastDeep) >= verifyDeepEvery && now.Hour() >= verifyDeepHour && now.Hour() < verifyDeepHour+6)
+	due := deepDue(now, v.status.LastDeep)
 	v.mu.Unlock()
 
-	if deepDue {
+	if due {
 		v.runDeep(ctx, "scheduled")
 		return
 	}
 
 	v.runQuick(ctx)
+}
+
+// deepDue reports whether the full check should run now: never run yet, a day has passed and it is the
+// early morning (when the machine is mostly idle), or it is long overdue because the Mac was off or
+// asleep during every early morning.
+func deepDue(now time.Time, last *time.Time) bool {
+	if last == nil {
+		return true
+	}
+
+	since := now.Sub(*last)
+
+	return since >= verifyDeepOverdue || (since >= verifyDeepEvery && now.Hour() >= verifyDeepHour && now.Hour() < verifyDeepHour+6)
 }
 
 func (v *verifier) loadManifests(ctx context.Context) ([]*snapshot.Manifest, error) {
@@ -544,7 +600,7 @@ func (v *verifier) deepChecks(ctx context.Context, ctrl uitask.Controller) []ver
 
 	ctrl.ReportProgressInfo("verifying a sample of files")
 
-	files, bytes, err := sampleVerify(ctx, v.rep, latest, verifySamplePercent)
+	files, bytes, err := sampleVerify(quietVerifierLogs(ctx), v.rep, latest, verifySamplePercent)
 	if err != nil {
 		checks = append(checks, failed("Sample of stored data verifies", err.Error()))
 	} else {
