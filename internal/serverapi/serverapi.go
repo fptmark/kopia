@@ -328,6 +328,25 @@ type UIPreferences struct {
 	Language               string `json:"language"`               // Specifies the language used by the UI
 	Locale                 string `json:"locale"`                 // Specifies the locale used by the UI for formatting numbers and dates
 	KeepAwake              string `json:"keepAwake"`              // Prevent macOS sleep while snapshots run: "" or "never", "idle" (any power source), "ac" (only on AC power)
+	VerifierIMessageTo     string `json:"verifierIMessageTo"`     // Phone number or Apple ID that receives an iMessage when the backup health check fails ("" sends none)
+}
+
+// VerifyCheck is the outcome of one backup health check.
+type VerifyCheck struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"`
+}
+
+// VerifyStatus is the current result of the backup health checks.
+type VerifyStatus struct {
+	Enabled        bool          `json:"enabled"`
+	State          string        `json:"state"` // "unknown" until the first run, then "ok" or "failing"
+	Since          time.Time     `json:"since"` // when the state last changed
+	LastRun        *time.Time    `json:"lastRun,omitempty"`
+	LastDeep       *time.Time    `json:"lastDeepRun,omitempty"`
+	LastDeepTaskID string        `json:"lastDeepTaskId,omitempty"`
+	Checks         []VerifyCheck `json:"checks"`
 }
 
 // SearchRequest describes a search for files and directories across snapshots.

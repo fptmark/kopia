@@ -68,6 +68,7 @@ type commandServerStart struct {
 	uiTitlePrefix                       string
 	uiPreferencesFile                   string
 	taskHistory                         bool
+	verifier                            bool
 	taskHistoryFile                     string
 	taskHistoryDays                     int
 	asyncRepoConnect                    bool
@@ -131,6 +132,7 @@ func (c *commandServerStart) setup(svc advancedAppServices, parent commandParent
 	cmd.Flag("persistent-logs", "Persist logs in a file").Default("true").BoolVar(&c.persistentLogs)
 	cmd.Flag("ui-title-prefix", "UI title prefix").Hidden().Envar(svc.EnvName("KOPIA_UI_TITLE_PREFIX")).StringVar(&c.uiTitlePrefix)
 	cmd.Flag("ui-preferences-file", "Path to JSON file storing UI preferences").StringVar(&c.uiPreferencesFile)
+	cmd.Flag("verifier", "Run backup health checks (recent snapshots, failed files, sample verification, restore of a random file) and notify about failures").Default("true").BoolVar(&c.verifier)
 	cmd.Flag("task-history", "Keep a permanent history of tasks, their logs and snapshot errors in a SQLite database").Default("true").BoolVar(&c.taskHistory)
 	cmd.Flag("task-history-file", "Path to the SQLite task history database (default: next to the repository config file)").StringVar(&c.taskHistoryFile)
 	cmd.Flag("task-history-days", "Keep finished tasks this many days (0 keeps them forever)").Default("730").IntVar(&c.taskHistoryDays)
@@ -181,6 +183,7 @@ func (c *commandServerStart) serverStartOptions(ctx context.Context) (*server.Op
 	}
 
 	return &server.Options{
+		EnableVerifier:        c.verifier,
 		TaskHistory:           history,
 		TaskHistoryRetention:  time.Duration(c.taskHistoryDays) * 24 * time.Hour, //nolint:mnd
 		TaskHistoryBackupFile: historyBackup,

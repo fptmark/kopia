@@ -97,6 +97,8 @@ type Server struct {
 	// +checklocks:serverMutex
 	maint *srvMaintenance
 	// +checklocks:serverMutex
+	verify *verifier
+	// +checklocks:serverMutex
 	sourceManagers map[snapshot.SourceInfo]*sourceManager
 	// +checklocks:serverMutex
 	mounts map[object.ID]mount.Controller
@@ -143,6 +145,9 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/cli", s.handleUI(handleCLIInfo)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/repo/status", s.handleUIPossiblyNotConnected(handleRepoStatus)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/repo/storage-usage", s.handleUI(handleRepoStorageUsage)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/verify/status", s.handleUIPossiblyNotConnected(handleVerifyStatus)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/verify/run", s.handleUI(handleVerifyRun)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/verify/test-notification", s.handleUI(handleVerifyTestNotification)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/search-range", s.handleUI(handleSearchRange)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/search", s.handleUI(handleSearchStart)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/search/{id}", s.handleUI(handleSearchStatus)).Methods(http.MethodGet)
@@ -639,6 +644,11 @@ func (s *Server) SetRepository(ctx context.Context, rep repo.Repository) error {
 			s.maint.stop(ctx)
 			s.maint = nil
 		}
+
+		if s.verify != nil {
+			s.verify.stop()
+			s.verify = nil
+		}
 	}
 
 	s.rep = rep
@@ -654,6 +664,10 @@ func (s *Server) SetRepository(ctx context.Context, rep repo.Repository) error {
 	}
 
 	s.maint = maybeStartMaintenanceManager(ctx, s.rep, s, s.options.MinMaintenanceInterval)
+
+	if s.options.EnableVerifier {
+		s.verify = startVerifier(ctx, s, s.rep)
+	}
 
 	s.sched = scheduler.Start(context.WithoutCancel(ctx), s.getSchedulerItems, scheduler.Options{
 		TimeNow:        clock.Now,
@@ -868,6 +882,9 @@ type Options struct {
 	EnableErrorNotifications bool
 	NotifyTemplateOptions    notifytemplate.Options
 
+	// EnableVerifier runs the backup health checks (freshness, failed files, sample verification, restore
+	// of a random file) and notifies about failures.
+	EnableVerifier bool
 	// TaskHistory, when set, keeps tasks, their logs and snapshot errors permanently.
 	TaskHistory *taskstore.Store
 	// TaskHistoryRetention is how long finished tasks are kept (zero keeps them forever).
