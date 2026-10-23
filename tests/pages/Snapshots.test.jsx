@@ -308,8 +308,8 @@ describe("Snapshots component", () => {
 
     const { unmount } = renderSnapshots();
 
-    expect(await screen.findByDisplayValue("2")).toBeInTheDocument();
-    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hr");
+    await waitFor(() => expect(screen.getByLabelText("Snapshot frequency value")).toHaveTextContent("2"));
+    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveTextContent("hr");
 
     unmount();
   });

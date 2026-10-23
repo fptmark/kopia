@@ -1,4 +1,4 @@
-.when-field {
+.segmented-field {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -10,14 +10,14 @@
   user-select: none;
 }
 
-.when-field .when-segment {
+.segmented-field .segment {
   padding: 0 0.25rem;
   border-radius: 0.25rem;
   cursor: default;
   outline: none;
 }
 
-.when-field .when-segment:focus {
+.segmented-field .segment:focus {
   background: #0d6efd;
   color: #fff;
 }

@@ -302,6 +302,48 @@ describe("SnapshotSearch page", () => {
     await waitFor(() => expect(screen.getAllByTestId("search-result")).toHaveLength(1));
   });
 
+  test("has a Clear button that removes the results and keeps the search form", async () => {
+    sessionStorage.setItem("snapshotSearchId", "s1");
+    axiosMock.onGet("/api/v1/search/s1").reply(200, finished([result()]));
+    axiosMock.onDelete("/api/v1/search/s1").reply(200, {});
+
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId("search-result")).toHaveLength(1));
+    await userEvent.type(screen.getByTestId("search-pattern"), "report*");
+
+    await userEvent.click(screen.getByTestId("clear-results"));
+
+    await waitFor(() => expect(screen.queryByTestId("search-results")).toBeNull());
+    expect(screen.queryByTestId("search-progress")).toBeNull();
+    expect(screen.queryByTestId("clear-results")).toBeNull();
+    expect(sessionStorage.getItem("snapshotSearchId")).toBeNull();
+    expect(axiosMock.history.delete.map((d) => d.url)).toEqual(["/api/v1/search/s1"]);
+    expect(screen.getByTestId("search-pattern")).toHaveValue("report*"); // the form stays, ready to search again
+    expect(screen.getByTestId("start-search")).toBeInTheDocument();
+  });
+
+  test("Clear also appears with no matches or an error, but not while searching", async () => {
+    sessionStorage.setItem("snapshotSearchId", "s1");
+    axiosMock.onGet("/api/v1/search/s1").reply(200, finished([]));
+
+    const { unmount } = renderPage();
+    await waitFor(() => expect(screen.getByTestId("no-results")).toBeInTheDocument());
+    expect(screen.getByTestId("clear-results")).toBeInTheDocument();
+    unmount();
+
+    axiosMock.reset();
+    axiosMock.onGet("/api/v1/search-range").reply(200, { count: 0, sources: [] });
+    axiosMock.onGet("/api/v1/search/s1").reply(200, {
+      ...finished([result()]),
+      running: true,
+      progress: { snapshotsTotal: 30, snapshotsDone: 12, directories: 1, entries: 1 },
+    });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("search-progress")).toHaveTextContent("snapshot 12 of 30"));
+    expect(screen.queryByTestId("clear-results")).toBeNull();
+  });
+
   test("forgets a search the server no longer knows", async () => {
     sessionStorage.setItem("snapshotSearchId", "gone");
     axiosMock.onGet("/api/v1/search/gone").reply(404, { code: "NOT_FOUND", error: "search not found" });

@@ -9,6 +9,10 @@ vi.mock("axios");
 
 const POLICY = "/api/v1/policy?userName=&host=&path=";
 
+const press = (el, key) => fireEvent.keyDown(el, { key });
+const typeKeys = (el, keys) => [...keys].forEach((k) => press(el, k));
+const leave = (el) => fireEvent.blur(el);
+
 function renderIt(props = {}) {
   return render(
     <MemoryRouter>
@@ -22,49 +26,47 @@ function mockPolicy(policy = { scheduling: { intervalSeconds: 3600 }, retention:
   axios.put.mockResolvedValue({ data: {} });
 }
 
+const value = () => screen.getByLabelText("Snapshot frequency value");
+const unit = () => screen.getByLabelText("Snapshot frequency unit");
+
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
 
 describe("SnapshotFrequency", () => {
-  it("shows the frequency in the global policy", async () => {
+  it("shows the frequency in the global policy as a number and a unit", async () => {
     mockPolicy();
     renderIt();
 
-    expect(await screen.findByDisplayValue("1")).toBeInTheDocument();
-    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hr");
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    expect(unit()).toHaveTextContent("hr");
     expect(axios.get).toHaveBeenCalledWith(POLICY);
   });
 
-  it("shows minutes for a period that is not whole hours", async () => {
+  it("shows minutes for a period that is not whole hours, and days for whole days", async () => {
     mockPolicy({ scheduling: { intervalSeconds: 5400 } });
-    renderIt();
+    const { unmount } = renderIt();
+    await waitFor(() => expect(value()).toHaveTextContent("90"));
+    expect(unit()).toHaveTextContent("min");
+    unmount();
 
-    expect(await screen.findByDisplayValue("90")).toBeInTheDocument();
-    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("min");
-  });
-
-  it("shows days for a whole number of days", async () => {
     mockPolicy({ scheduling: { intervalSeconds: 2 * 86400 } });
     renderIt();
-
-    expect(await screen.findByDisplayValue("2")).toBeInTheDocument();
-    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("days");
+    await waitFor(() => expect(value()).toHaveTextContent("2"));
+    expect(unit()).toHaveTextContent("days");
   });
 
-  it("saves a typed number when the field is left, without disturbing the rest of the policy", async () => {
+  it("saves an edit when the field is left, without disturbing the rest of the policy", async () => {
     mockPolicy();
     const onSaved = vi.fn();
     renderIt({ onSaved });
 
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    typeKeys(value(), "6");
+    expect(axios.put).not.toHaveBeenCalled(); // not on every key
 
-    fireEvent.change(input, { target: { value: "6" } });
-    expect(axios.put).not.toHaveBeenCalled(); // not on every keystroke
-    fireEvent.blur(input);
-
+    leave(value());
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
     expect(axios.put).toHaveBeenCalledWith(POLICY, {
       scheduling: { intervalSeconds: 21600 },
@@ -74,50 +76,62 @@ describe("SnapshotFrequency", () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it("saves when the unit changes, and when Enter is pressed", async () => {
+  it("saves a new unit and when Enter is pressed", async () => {
     mockPolicy();
     renderIt();
 
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
-
-    fireEvent.change(screen.getByLabelText("Snapshot frequency unit"), { target: { value: "days" } });
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    press(unit(), "d");
+    leave(unit());
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
     expect(axios.put.mock.calls[0][1].scheduling.intervalSeconds).toBe(86400);
 
-    fireEvent.change(input, { target: { value: "3" } });
-    input.focus();
-    fireEvent.keyDown(input, { key: "Enter" });
+    value().focus(); // Enter leaves the part that has the focus
+    typeKeys(value(), "3");
+    press(value(), "Enter");
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
     expect(axios.put.mock.calls[1][1].scheduling.intervalSeconds).toBe(3 * 86400);
+  });
+
+  it("accepts minutes, and refuses less than a minute", async () => {
+    mockPolicy();
+    renderIt();
+
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    press(unit(), "m");
+    leave(unit());
+    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
+    expect(axios.put.mock.calls[0][1].scheduling.intervalSeconds).toBe(60);
+
+    press(unit(), "s");
+    leave(unit());
+    expect(await screen.findByText(/at least 1 minute, at most 365 days/)).toBeInTheDocument();
+    expect(axios.put).toHaveBeenCalledTimes(1);
+    expect(unit()).toHaveTextContent("min");
   });
 
   it("does not save when nothing changed", async () => {
     mockPolicy();
     renderIt();
 
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
-    fireEvent.blur(input);
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    typeKeys(value(), "1");
+    leave(value());
 
     expect(axios.put).not.toHaveBeenCalled();
   });
 
-  it("refuses a value that is not an interval and puts the saved one back", async () => {
+  it("clears the frequency when the number is erased, leaving the rest of the policy", async () => {
     mockPolicy();
     renderIt();
 
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    press(value(), "Backspace");
+    leave(value());
 
-    for (const bad of ["0", "abc", "0.01"]) {
-      fireEvent.change(input, { target: { value: bad } });
-      fireEvent.blur(input);
-      expect(await screen.findByText(/at least 1 minute, at most 365 days/)).toBeInTheDocument();
-      expect(input).toHaveValue("1");
-    }
-
-    expect(axios.put).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(axios.put).toHaveBeenCalledWith(POLICY, { scheduling: {}, retention: { keepLatest: 5 } }),
+    );
   });
 
   it("shows why a save failed", async () => {
@@ -125,41 +139,11 @@ describe("SnapshotFrequency", () => {
     axios.put.mockRejectedValue({ response: { data: { message: "repository is read-only" } } });
     renderIt();
 
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
-    fireEvent.change(input, { target: { value: "2" } });
-    fireEvent.blur(input);
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
+    typeKeys(value(), "2");
+    leave(value());
 
     expect(await screen.findByText(/Not saved: repository is read-only/)).toBeInTheDocument();
-  });
-
-  it("clears the frequency when the number is emptied, leaving the rest of the policy", async () => {
-    mockPolicy();
-    renderIt();
-
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
-    fireEvent.change(input, { target: { value: "" } });
-    fireEvent.blur(input);
-
-    await waitFor(() =>
-      expect(axios.put).toHaveBeenCalledWith(POLICY, { scheduling: {}, retention: { keepLatest: 5 } }),
-    );
-  });
-
-  it("accepts seconds and minutes too", async () => {
-    mockPolicy();
-    renderIt();
-
-    const input = await screen.findByLabelText("Snapshot frequency");
-    await waitFor(() => expect(input).toHaveValue("1"));
-
-    fireEvent.change(screen.getByLabelText("Snapshot frequency unit"), { target: { value: "min" } });
-    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
-    expect(axios.put.mock.calls[0][1].scheduling.intervalSeconds).toBe(60);
-
-    fireEvent.change(screen.getByLabelText("Snapshot frequency unit"), { target: { value: "sec" } });
-    expect(await screen.findByText(/at least 1 minute/)).toBeInTheDocument(); // 1 sec is too often
   });
 
   it("creates the global policy's schedule when there is none yet", async () => {
@@ -167,9 +151,10 @@ describe("SnapshotFrequency", () => {
     axios.put.mockResolvedValue({ data: {} });
     renderIt();
 
-    const input = await screen.findByLabelText("Snapshot frequency");
-    fireEvent.change(input, { target: { value: "1" } });
-    fireEvent.blur(input);
+    await waitFor(() => expect(value()).toHaveTextContent("—"));
+    typeKeys(value(), "1");
+    press(unit(), "h");
+    leave(unit());
 
     await waitFor(() => expect(axios.put).toHaveBeenCalledWith(POLICY, { scheduling: { intervalSeconds: 3600 } }));
   });
@@ -182,7 +167,7 @@ describe("SnapshotFrequency", () => {
     cleanup();
 
     renderIt({ sources: [{ schedule: { intervalSeconds: 3600 } }] });
-    await screen.findByDisplayValue("1");
+    await waitFor(() => expect(value()).toHaveTextContent("1"));
     expect(screen.queryByText(/own schedule/)).not.toBeInTheDocument();
   });
 });

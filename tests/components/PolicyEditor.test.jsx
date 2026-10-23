@@ -175,16 +175,20 @@ it("edits the snapshot frequency as a number and a unit, and shows the effective
     </MemoryRouter>,
   );
 
-  await waitFor(() => expect(getByLabelText("Snapshot frequency")).toHaveValue("1"));
-  expect(getByLabelText("Snapshot frequency unit")).toHaveValue("hr");
+  await waitFor(() => expect(getByLabelText("Snapshot frequency value")).toHaveTextContent("1"));
+  expect(getByLabelText("Snapshot frequency unit")).toHaveTextContent("hr");
   await waitFor(() => expect(getByTestId("effective-scheduling.intervalSeconds").value).toBe("1 hr"));
 
-  // there is no fixed list of frequencies: any number of seconds, minutes, hours or days
+  // two selectable parts, not free text: arrows move between them, keys change them
+  const value = getByLabelText("Snapshot frequency value");
   const unit = getByLabelText("Snapshot frequency unit");
-  expect([...unit.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["sec", "min", "hr", "days"]);
-
-  fireEvent.change(getByLabelText("Snapshot frequency"), { target: { value: "90" } });
-  fireEvent.change(unit, { target: { value: "min" } });
+  value.focus();
+  fireEvent.keyDown(value, { key: "9" });
+  fireEvent.keyDown(value, { key: "0" });
+  fireEvent.keyDown(value, { key: "ArrowRight" });
+  expect(unit).toHaveFocus();
+  fireEvent.keyDown(unit, { key: "m" });
+  fireEvent.blur(unit);
 
   await waitFor(() => expect(getByTestId("effective-scheduling.intervalSeconds").value).toBe("90 min"));
 
@@ -193,7 +197,7 @@ it("edits the snapshot frequency as a number and a unit, and shows the effective
   expect(JSON.parse(serverMock.history.put[0].data).scheduling.intervalSeconds).toBe(5400);
 });
 
-it("clears the snapshot frequency when the number is emptied", async () => {
+it("clears the snapshot frequency when the number is erased", async () => {
   const url = "userName=some-user&host=some-host&path=some-path";
 
   serverMock.onGet("/api/v1/policy?" + url).reply(200, { scheduling: { intervalSeconds: 3600 } });
@@ -208,12 +212,12 @@ it("clears the snapshot frequency when the number is emptied", async () => {
     </MemoryRouter>,
   );
 
-  await waitFor(() => expect(getByLabelText("Snapshot frequency")).toHaveValue("1"));
+  await waitFor(() => expect(getByLabelText("Snapshot frequency value")).toHaveTextContent("1"));
 
-  const input = getByLabelText("Snapshot frequency");
-  fireEvent.change(input, { target: { value: "" } });
-  fireEvent.blur(input);
-  await waitFor(() => expect(input).toHaveValue(""));
+  const value = getByLabelText("Snapshot frequency value");
+  fireEvent.keyDown(value, { key: "Backspace" });
+  fireEvent.blur(value);
+  await waitFor(() => expect(value).toHaveTextContent("—"));
 
   fireEvent.click(getByTestId("button-save"));
   await waitFor(() => expect(serverMock.history.put.length).toEqual(1));

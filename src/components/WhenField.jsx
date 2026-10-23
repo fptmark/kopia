@@ -1,6 +1,5 @@
-import { useRef } from "react";
-import "../css/WhenField.css";
 import { joinTime, ordinal, parseTime, WEEKDAYS } from "../utils/rollup";
+import { SegmentedField } from "./SegmentedField";
 
 const DAYS = WEEKDAYS.map((n) => n.slice(0, 3));
 
@@ -36,11 +35,8 @@ export function typeLetter(names, current, letter) {
  * typing; left and right arrows move between the parts. freq is daily, weekly or monthly.
  */
 export function WhenField({ name, freq, weekday = 0, dom = 1, time, onChange }) {
-  const segmentsRef = useRef([]);
-  const bufferRef = useRef("");
   const tm = parseTime(time);
 
-  const focus = (i) => segmentsRef.current[i]?.focus();
   const setTime = (patch) => {
     const t = { ...tm, ...patch };
     onChange({ time: joinTime(t.h, 0, t.ap) });
@@ -49,7 +45,7 @@ export function WhenField({ name, freq, weekday = 0, dom = 1, time, onChange }) 
   const parts = [];
   if (freq === "weekly") {
     parts.push({
-      label: "Day of week",
+      ariaLabel: `Day of week for ${name}`,
       text: DAYS[weekday] ?? DAYS[0],
       type: (key) => {
         const i = typeLetter(DAYS, weekday, key);
@@ -60,37 +56,37 @@ export function WhenField({ name, freq, weekday = 0, dom = 1, time, onChange }) 
   }
   if (freq === "monthly") {
     parts.push({
-      label: "Day of month",
+      ariaLabel: `Day of month for ${name}`,
       text: dom === 0 ? "Last" : ordinal(dom),
-      type: (key) => {
+      type: (key, buffer) => {
         if (key.toLowerCase() === "l") {
           return { set: () => onChange({ dom: 0 }), done: true };
         }
         if (!/^[0-9]$/.test(key)) {
           return null;
         }
-        const r = typeNumber(bufferRef.current, key, 28);
-        bufferRef.current = r.buffer;
+        const r = typeNumber(buffer.current, key, 28);
+        buffer.current = r.buffer;
         return r.value === null ? null : { set: () => onChange({ dom: r.value }), done: r.done };
       },
       step: (d) => onChange({ dom: (dom + d + 29) % 29 }),
     });
   }
   parts.push({
-    label: "Hour",
+    ariaLabel: `Hour for ${name}`,
     text: String(tm.h),
-    type: (key) => {
+    type: (key, buffer) => {
       if (!/^[0-9]$/.test(key)) {
         return null;
       }
-      const r = typeNumber(bufferRef.current, key, 12);
-      bufferRef.current = r.buffer;
+      const r = typeNumber(buffer.current, key, 12);
+      buffer.current = r.buffer;
       return r.value === null ? null : { set: () => setTime({ h: r.value }), done: r.done };
     },
     step: (d) => setTime({ h: ((tm.h - 1 + d + 12) % 12) + 1 }),
   });
   parts.push({
-    label: "AM or PM",
+    ariaLabel: `AM or PM for ${name}`,
     text: tm.ap,
     type: (key) => {
       const k = key.toLowerCase();
@@ -102,51 +98,5 @@ export function WhenField({ name, freq, weekday = 0, dom = 1, time, onChange }) 
     step: () => setTime({ ap: tm.ap === "AM" ? "PM" : "AM" }),
   });
 
-  const onKeyDown = (i, e) => {
-    if (e.key === "ArrowLeft") {
-      bufferRef.current = "";
-      focus(Math.max(0, i - 1));
-    } else if (e.key === "ArrowRight") {
-      bufferRef.current = "";
-      focus(Math.min(parts.length - 1, i + 1));
-    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      parts[i].step(e.key === "ArrowUp" ? 1 : -1);
-    } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      const r = parts[i].type(e.key);
-      if (r) {
-        r.set();
-        if (r.done) {
-          bufferRef.current = "";
-          focus(Math.min(parts.length - 1, i + 1));
-        }
-      }
-    } else {
-      return; // Tab and the rest behave as usual
-    }
-    e.preventDefault();
-  };
-
-  return (
-    <span className="when-field" role="group" aria-label={`When for ${name}`}>
-      {parts.map((p, i) => (
-        <span
-          key={p.label}
-          ref={(el) => {
-            segmentsRef.current[i] = el;
-          }}
-          className="when-segment"
-          role="spinbutton"
-          tabIndex={0}
-          aria-label={`${p.label} for ${name}`}
-          aria-valuetext={p.text}
-          onKeyDown={(e) => onKeyDown(i, e)}
-          onBlur={() => {
-            bufferRef.current = "";
-          }}
-        >
-          {p.text}
-        </span>
-      ))}
-    </span>
-  );
+  return <SegmentedField ariaLabel={`When for ${name}`} parts={parts} />;
 }

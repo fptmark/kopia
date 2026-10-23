@@ -250,6 +250,16 @@ export function SnapshotSearch() {
     axios.delete("/api/v1/search/" + searchId).then(refresh);
   };
 
+  // clears the results from the page (and lets the server drop them); the search form is left as it is
+  const clearResults = () => {
+    if (searchId) {
+      axios.delete("/api/v1/search/" + searchId).catch(() => {
+        /* the server may already have forgotten it */
+      });
+    }
+    forgetSearch();
+  };
+
   const results = status?.results || [];
   const sources = new Set(results.map((r) => r.source));
   const p = status?.progress;
@@ -418,6 +428,11 @@ export function SnapshotSearch() {
               {results.length.toLocaleString()} {results.length === 1 ? "result" : "results"} in {p.snapshotsDone} of{" "}
               {p.snapshotsTotal} snapshots ({p.directories.toLocaleString()} folders read).
             </span>
+          )}
+          {!running && (
+            <Button size="sm" variant="secondary" className="ms-3" onClick={clearResults} data-testid="clear-results">
+              Clear
+            </Button>
           )}
         </div>
       )}
