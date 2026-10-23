@@ -40,11 +40,13 @@ func handleVerifyRun(ctx context.Context, rc requestContext) (any, *apiError) {
 // handleVerifyTestNotification sends a test message so the notification setup can be checked.
 func handleVerifyTestNotification(ctx context.Context, rc requestContext) (any, *apiError) {
 	srv, ok := rc.srv.(*Server)
-	if !ok || srv.currentVerifier() == nil {
-		return nil, requestError(serverapi.ErrorNotConnected, "the health check is not running")
+	if !ok || srv.notifyHub == nil {
+		return nil, requestError(serverapi.ErrorNotConnected, "notifications are not set up")
 	}
 
-	srv.currentVerifier().notify.Notify(ctx, "Backup test message", "This is a test of the backup alerts.")
+	if err := srv.notifyHub.SendTest(ctx, ""); err != nil {
+		return nil, internalServerError(err)
+	}
 
 	return serverapi.Empty{}, nil
 }

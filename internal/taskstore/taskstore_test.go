@@ -462,3 +462,49 @@ func TestReadableViewsForTheCommandLine(t *testing.T) {
 	require.Equal(t, "a", task)
 	require.Equal(t, "p/q", p)
 }
+
+func TestNotificationLogKeepsNewestFirst(t *testing.T) {
+	s, _ := openStore(t)
+
+	for i, status := range []string{"sent", "failed"} {
+		require.NoError(t, s.RecordNotification(taskstore.NotificationEntry{
+			SentAt: t0.Add(time.Duration(i) * time.Hour), Destination: "iphone", Event: "failed", Mode: "now", Status: status, Attempts: i + 1, Error: "e",
+		}))
+	}
+
+	got, err := s.Notifications(10)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, "failed", got[0].Status)
+	require.Equal(t, 2, got[0].Attempts)
+	require.True(t, got[0].SentAt.Equal(t0.Add(time.Hour)))
+
+	got, err = s.Notifications(1)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+}
+
+func TestDatabaseFromAnEarlierVersionGainsTheNotificationLog(t *testing.T) {
+	s, path := openStore(t)
+	record(t, s, info(1, "Snapshot", "kept", uitask.StatusSuccess, t0))
+	require.NoError(t, s.Close())
+
+	// make it look like a version 1 database
+	db, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	_, err = db.Exec("DROP TABLE notification_log")
+	require.NoError(t, err)
+	_, err = db.Exec("PRAGMA user_version = 1")
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err = taskstore.Open(path)
+	require.NoError(t, err)
+
+	defer s.Close() //nolint:errcheck
+
+	_, total, err := s.ListTasks(uitask.TaskQuery{})
+	require.NoError(t, err)
+	require.Equal(t, 1, total, "existing history is untouched")
+	require.NoError(t, s.RecordNotification(taskstore.NotificationEntry{SentAt: t0, Destination: "d", Event: "x", Mode: "now", Status: "sent", Attempts: 1}))
+}

@@ -24,6 +24,7 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/fs/localfs"
 	"github.com/kopia/kopia/internal/clock"
+	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/internal/units"
@@ -372,7 +373,6 @@ type verifier struct {
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	notify verifyNotifier
 
 	runMu sync.Mutex // serializes check runs
 
@@ -484,7 +484,7 @@ func sortedChecks(known map[string]verifyCheck) []verifyCheck {
 func startVerifier(ctx context.Context, srv *Server, rep repo.Repository) *verifier {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 
-	v := &verifier{srv: srv, rep: rep, cancel: cancel, notify: newVerifyNotifier(srv), known: map[string]verifyCheck{}}
+	v := &verifier{srv: srv, rep: rep, cancel: cancel, known: map[string]verifyCheck{}}
 
 	now := clock.Now()
 	v.status = serverapi.VerifyStatus{Enabled: true, State: "unknown"}
@@ -854,6 +854,7 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 		v.lastNotified = now
 	}
 
+	since := v.status.Since
 	saved := persistedVerifier{Checks: checks, State: v.status.State, Since: v.status.Since, LastSignature: v.lastSignature, LastNotified: v.lastNotified}
 
 	v.mu.Unlock()
@@ -864,9 +865,12 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 		return
 	}
 
-	title, body := "Backup problem", bad
-	if bad == "" {
-		title, body = "Backup is healthy again", "All backup health checks pass."
+	ev := notifyhub.Event{ID: notifyhub.EventHealth, Since: since, Recovered: bad == ""}
+
+	for _, c := range checks {
+		if !c.OK {
+			ev.Checks = append(ev.Checks, healthCheckCode(c.Name))
+		}
 	}
 
 	// a failure found by a quick check, outside a recorded task, gets its own task so the details stay in
@@ -884,8 +888,26 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 		})
 	}
 
-	userLog(ctx).Warnf("verifier: %v: %v", title, body)
-	v.notify.Notify(ctx, title, body)
+	userLog(ctx).Warnf("verifier: %v", bad)
+	v.srv.emit(ctx, ev)
+}
+
+// healthCheckCode maps a check to the code notifications use, so no detail text can reach a message.
+func healthCheckCode(name string) notifyhub.HealthCheck {
+	switch name {
+	case checkReadable:
+		return notifyhub.CheckReadable
+	case checkRecent:
+		return notifyhub.CheckRecent
+	case checkFailedFilesName:
+		return notifyhub.CheckSkips
+	case checkSample:
+		return notifyhub.CheckSample
+	case checkRestore:
+		return notifyhub.CheckRestore
+	}
+
+	return notifyhub.CheckReadable
 }
 
 func (v *verifier) getStatus() serverapi.VerifyStatus {

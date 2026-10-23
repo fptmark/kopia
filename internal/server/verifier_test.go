@@ -12,6 +12,7 @@ import (
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/mockfs"
+	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/repotesting"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/repo/blob"
@@ -203,13 +204,14 @@ func TestSampleVerifyDetectsMissingDataInStorage(t *testing.T) {
 
 type recordingNotifier struct{ got []string }
 
-func (r *recordingNotifier) Notify(_ context.Context, title, body string) {
+func (r *recordingNotifier) Emit(_ context.Context, e notifyhub.Event) {
+	title, body := notifyhub.Render(e)
 	r.got = append(r.got, title+": "+body)
 }
 
 func TestVerifierNotifiesOnChangeAndRecoveryNotEveryRun(t *testing.T) {
 	n := &recordingNotifier{}
-	v := &verifier{notify: n, srv: &Server{}}
+	v := &verifier{srv: &Server{notifier: n}}
 	v.status.State = "unknown"
 
 	ctx := context.Background()
@@ -278,7 +280,7 @@ func TestDeepDue(t *testing.T) {
 
 func TestVerifierKeepsFullCheckResultsBetweenQuickRuns(t *testing.T) {
 	n := &recordingNotifier{}
-	v := &verifier{notify: n, srv: &Server{}, known: map[string]verifyCheck{}}
+	v := &verifier{srv: &Server{notifier: n}, known: map[string]verifyCheck{}}
 	v.status.State = "unknown"
 
 	ctx := context.Background()
@@ -314,11 +316,10 @@ func TestVerifierKeepsFullCheckResultsBetweenQuickRuns(t *testing.T) {
 
 func TestVerifierStateSurvivesARestartWithoutRepeatingAlerts(t *testing.T) {
 	prefs := filepath.Join(t.TempDir(), "ui-preferences.json")
-	srv := &Server{options: Options{UIPreferencesFile: prefs}}
 	ctx := context.Background()
 
 	n1 := &recordingNotifier{}
-	v1 := &verifier{notify: n1, srv: srv, known: map[string]verifyCheck{}}
+	v1 := &verifier{srv: &Server{options: Options{UIPreferencesFile: prefs}, notifier: n1}, known: map[string]verifyCheck{}}
 	v1.status.State = "unknown"
 
 	v1.finish(ctx, []verifyCheck{passed(checkSample, "7744 files"), failed(checkRestore, "differs")}, true)
@@ -326,7 +327,7 @@ func TestVerifierStateSurvivesARestartWithoutRepeatingAlerts(t *testing.T) {
 
 	// the server restarts
 	n2 := &recordingNotifier{}
-	v2 := &verifier{notify: n2, srv: srv, known: map[string]verifyCheck{}}
+	v2 := &verifier{srv: &Server{options: Options{UIPreferencesFile: prefs}, notifier: n2}, known: map[string]verifyCheck{}}
 	v2.status.State = "unknown"
 	v2.loadState(ctx)
 
@@ -341,7 +342,7 @@ func TestVerifierStateSurvivesARestartWithoutRepeatingAlerts(t *testing.T) {
 	// a damaged state file is ignored
 	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(prefs), "verifier-state.json"), []byte("{broken"), 0o600))
 
-	v3 := &verifier{notify: &recordingNotifier{}, srv: srv, known: map[string]verifyCheck{}}
+	v3 := &verifier{srv: &Server{options: Options{UIPreferencesFile: prefs}, notifier: &recordingNotifier{}}, known: map[string]verifyCheck{}}
 	v3.loadState(ctx)
 	require.Empty(t, v3.getStatus().Checks)
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/kopia/kopia/internal/auth"
 	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/mount"
+	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/passwordpersist"
 	"github.com/kopia/kopia/internal/scheduler"
 	"github.com/kopia/kopia/internal/serverapi"
@@ -98,6 +99,10 @@ type Server struct {
 	maint *srvMaintenance
 	// +checklocks:serverMutex
 	verify *verifier
+
+	// notifier receives events for the notification destinations; notifyHub is the real one (nil in tests).
+	notifier  eventSink
+	notifyHub *notifyhub.Hub
 	// +checklocks:serverMutex
 	sourceManagers map[snapshot.SourceInfo]*sourceManager
 	// +checklocks:serverMutex
@@ -936,8 +941,12 @@ func (s *Server) InitRepositoryAsync(ctx context.Context, mode string, initializ
 			cancel()
 		})
 
+		endWatch := s.watchRepositoryOpen(ctx)
+
 		// run initializer in cancelable context.
 		rep, err := initializer(cctx)
+
+		endWatch(err == nil && cctx.Err() == nil)
 
 		if cctx.Err() != nil {
 			// context canceled
@@ -1032,17 +1041,30 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 
 	s.recordSnapshotResult(ctx, taskID, src, &result.Manifest)
 
+	var failedFiles, totalFiles int64
+
+	if rs := result.Manifest.RootEntry; rs != nil && rs.DirSummary != nil {
+		failedFiles, totalFiles = int64(rs.DirSummary.FatalErrorCount), rs.DirSummary.TotalFileCount
+	}
+
+	s.emitSnapshotOutcome(ctx, src.Path, err, failedFiles, totalFiles)
+
 	return err
 }
 
 func (s *Server) runMaintenanceTask(ctx context.Context, dr repo.DirectRepository) error {
-	return errors.Wrap(s.taskmgr.Run(ctx, "Maintenance", "Periodic maintenance", func(ctx context.Context, _ uitask.Controller) error {
+	err := s.taskmgr.Run(ctx, "Maintenance", "Periodic maintenance", func(ctx context.Context, _ uitask.Controller) error {
 		return repo.DirectWriteSession(ctx, dr, repo.WriteSessionOptions{
 			Purpose: "periodicMaintenance",
 		}, func(ctx context.Context, w repo.DirectRepositoryWriter) error {
 			return snapshotmaintenance.Run(ctx, w, maintenance.ModeAuto, false, maintenance.SafetyFull)
 		})
-	}), "unable to run maintenance")
+	})
+	if err != nil && ctx.Err() == nil {
+		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed})
+	}
+
+	return errors.Wrap(err, "unable to run maintenance")
 }
 
 // +checklocksread:s.serverMutex
@@ -1176,6 +1198,8 @@ func New(ctx context.Context, options *Options) (*Server, error) {
 	}
 
 	s.parallelSnapshotsChanged = sync.NewCond(&s.parallelSnapshotsMutex)
+
+	s.setupNotifications(ctx)
 
 	if options.TaskHistory != nil {
 		if err := s.taskmgr.SetHistory(options.TaskHistory); err != nil {

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	schemaVersion = 1
+	schemaVersion = 2
 
 	defaultListLimit = 50
 	maxListLimit     = 1000
@@ -135,6 +135,21 @@ SELECT printf('%x', t.seq) AS task, datetime(t.start_time / 1000000000, 'unixepo
 FROM snapshot_errors e JOIN tasks t ON t.seq = e.task_seq;
 `
 
+// schemaV2 adds the record of notifications sent.
+const schemaV2 = `
+CREATE TABLE notification_log (
+	seq         INTEGER PRIMARY KEY AUTOINCREMENT,
+	sent_at     INTEGER NOT NULL, -- unix nanoseconds, UTC
+	destination TEXT    NOT NULL,
+	event       TEXT    NOT NULL,
+	mode        TEXT    NOT NULL, -- now or roll
+	status      TEXT    NOT NULL, -- sent or failed
+	attempts    INTEGER NOT NULL,
+	error       TEXT    NOT NULL
+);
+CREATE INDEX notification_log_by_time ON notification_log (sent_at);
+`
+
 func (s *Store) migrate() error {
 	var v int
 
@@ -155,11 +170,32 @@ func (s *Store) migrate() error {
 			return errors.Wrap(err, "unable to create task history tables")
 		}
 
+		if _, err := tx.Exec(schemaV2); err != nil {
+			return errors.Wrap(err, "unable to create notification log")
+		}
+
 		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
 			return errors.Wrap(err, "unable to set task history version")
 		}
 
 		return errors.Wrap(tx.Commit(), "unable to commit task history setup")
+	case v == 1:
+		tx, err := s.db.Begin()
+		if err != nil {
+			return errors.Wrap(err, "unable to start task history upgrade")
+		}
+
+		defer tx.Rollback() //nolint:errcheck
+
+		if _, err := tx.Exec(schemaV2); err != nil {
+			return errors.Wrap(err, "unable to create notification log")
+		}
+
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
+			return errors.Wrap(err, "unable to set task history version")
+		}
+
+		return errors.Wrap(tx.Commit(), "unable to commit task history upgrade")
 	case v == schemaVersion:
 		return nil
 	default:
