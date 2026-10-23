@@ -13,6 +13,8 @@ const DESTINATIONS_URL = "/api/v1/notifications/destinations";
 const MAIL_ACCOUNTS_URL = "/api/v1/notifications/email-accounts";
 const LOG_URL = "/api/v1/notifications/log?limit=15";
 const LOG_POLL_MS = 30000;
+const DEFAULT_REPEAT_HOURS = 12;
+const MAX_REPEAT_HOURS = 720;
 
 // the kinds of destination that can be added, and what a new one is called
 const TYPES = {
@@ -141,6 +143,10 @@ export function NotificationDestinations() {
   const [status, setStatus] = useState({ kind: "", text: "" });
   const [log, setLog] = useState([]);
   const [mailAccounts, setMailAccounts] = useState([]);
+  const [repeatHours, setRepeatHours] = useState(DEFAULT_REPEAT_HOURS);
+  // what is being typed in the repeat period field, or null while it shows the saved value
+  const [repeatDraft, setRepeatDraft] = useState(null);
+  const repeatRef = useRef(DEFAULT_REPEAT_HOURS);
   const latestRef = useRef([]);
   const saveSeqRef = useRef(0);
 
@@ -161,6 +167,8 @@ export function NotificationDestinations() {
       .then((r) => {
         const list = r.data?.destinations || [];
         latestRef.current = list;
+        repeatRef.current = r.data?.repeatHours || DEFAULT_REPEAT_HOURS;
+        setRepeatHours(repeatRef.current);
         setDests(list);
       })
       .catch((e) => setLoadError(errorText(e)));
@@ -187,7 +195,7 @@ export function NotificationDestinations() {
   const persist = (list) => {
     const seq = ++saveSeqRef.current;
     return axios
-      .put(DESTINATIONS_URL, { destinations: list })
+      .put(DESTINATIONS_URL, { repeatHours: repeatRef.current, destinations: list })
       .then(() => {
         if (seq === saveSeqRef.current) {
           setStatus({ kind: "ok", text: "Saved." });
@@ -207,6 +215,25 @@ export function NotificationDestinations() {
     if (save) {
       persist(list);
     }
+  };
+
+  const saveRepeat = () => {
+    const text = (repeatDraft ?? String(repeatHours)).trim();
+    setRepeatDraft(null);
+    const n = Number(text);
+    if (text === repeatHours.toString()) {
+      return;
+    }
+    if (!Number.isInteger(n) || n < 1 || n > MAX_REPEAT_HOURS) {
+      setStatus({
+        kind: "error",
+        text: `The repeat period must be a whole number of hours, 1 to ${MAX_REPEAT_HOURS}.`,
+      });
+      return;
+    }
+    repeatRef.current = n;
+    setRepeatHours(n);
+    persist(latestRef.current);
   };
 
   const replace = (d, save) =>
@@ -280,7 +307,7 @@ export function NotificationDestinations() {
               </th>
               <th scope="col">Address</th>
               <th scope="col" style={{ width: "11rem" }}>
-                Failures
+                Failures (immediate)
               </th>
               <th scope="col" style={{ width: "13rem" }}>
                 Success
@@ -368,11 +395,21 @@ export function NotificationDestinations() {
         </Table>
       )}
 
-      <p className="text-muted small">
-        Failures are always sent as they happen. One that keeps happening is sent once and again after 12 hours, and you
-        are told when it ends. Messages contain counts, source folders and times only; file names and error details stay
-        on this Mac, in the Tasks page. Email is sent through the Mail app on this Mac.
-      </p>
+      <div className="small text-muted mb-3 d-flex align-items-center gap-1 flex-wrap">
+        Repeated failures are sent once every
+        <Form.Control
+          size="sm"
+          type="text"
+          inputMode="numeric"
+          aria-label="Repeat period in hours"
+          value={repeatDraft ?? String(repeatHours)}
+          onChange={(e) => setRepeatDraft(e.target.value)}
+          onBlur={saveRepeat}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          style={{ width: "4.5rem" }}
+        />
+        hours per destination.
+      </div>
 
       <section data-testid="recent-messages">
         <h6>Recent messages</h6>
