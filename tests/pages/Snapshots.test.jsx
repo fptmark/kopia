@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Snapshots } from "../../src/pages/Snapshots";
 import { UIPreferencesContext } from "../../src/contexts/UIPreferencesContext";
@@ -276,30 +276,62 @@ describe("Snapshots component", () => {
     unmount();
   });
 
-  test("shows overdue badge for past due snapshots", async () => {
-    const overdueResponse = {
-      ...mockSourcesResponse,
-      sources: [
-        {
-          source: {
-            path: "/home/user/overdue",
-            host: "testhost",
-            userName: "testuser",
-          },
-          status: "IDLE",
-          lastSnapshot: null,
-          nextSnapshotTime: "2020-01-01T10:00:00Z", // Past date
-        },
-      ],
-    };
-
-    axiosMock.onGet("/api/v1/sources").reply(200, overdueResponse);
+  test("has no Next Snapshot column", async () => {
+    axiosMock.onGet("/api/v1/sources").reply(200, mockSourcesResponse);
 
     const { unmount } = renderSnapshots();
 
     await waitFor(() => {
-      expect(screen.getByText("overdue")).toBeInTheDocument();
+      expect(screen.getByText("/home/user/documents")).toBeInTheDocument();
     });
+    expect(screen.queryByText("Next Snapshot")).not.toBeInTheDocument();
+    expect(screen.getByText("Last Snapshot")).toBeInTheDocument();
+
+    unmount();
+  });
+
+  test("shows the snapshot frequency of the global policy above the list", async () => {
+    axiosMock.onGet("/api/v1/sources").reply(200, mockSourcesResponse);
+    axiosMock.onGet(/\/api\/v1\/policy\?/).reply(200, { scheduling: { intervalSeconds: 7200 } });
+
+    const { unmount } = renderSnapshots();
+
+    expect(await screen.findByDisplayValue("2")).toBeInTheDocument();
+    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hours");
+
+    unmount();
+  });
+
+  test("shows an overdue badge when the newest snapshot is older than the schedule allows", async () => {
+    const at = (ageHours) => new Date(Date.now() - ageHours * 3600 * 1000).toISOString();
+    const source = (name, ageHours, intervalSeconds, status = "IDLE") => ({
+      source: { path: "/home/user/" + name, host: "testhost", userName: "testuser" },
+      status,
+      lastSnapshot: { startTime: at(ageHours), stats: { totalSize: 1 }, rootEntry: { summ: { files: 1, dirs: 1 } } },
+      schedule: { intervalSeconds },
+    });
+
+    axiosMock.onGet("/api/v1/sources").reply(200, {
+      ...mockSourcesResponse,
+      sources: [
+        source("hourly-late", 5, 3600),
+        source("hourly-fine", 0.5, 3600),
+        source("daily-fine", 30, 86400),
+        source("daily-late", 60, 86400),
+        source("paused-late", 9, 3600, "PAUSED"),
+      ],
+    });
+
+    const { unmount } = renderSnapshots();
+
+    await waitFor(() => expect(screen.getByText("/home/user/hourly-late")).toBeInTheDocument());
+
+    const row = (name) => screen.getByText("/home/user/" + name).closest("tr");
+    expect(within(row("hourly-late")).getByText("overdue")).toBeInTheDocument();
+    expect(within(row("daily-late")).getByText("overdue")).toBeInTheDocument();
+    expect(within(row("hourly-fine")).queryByText("overdue")).not.toBeInTheDocument();
+    expect(within(row("daily-fine")).queryByText("overdue")).not.toBeInTheDocument();
+    expect(within(row("paused-late")).queryByText("overdue")).not.toBeInTheDocument();
 
     unmount();
   });
@@ -399,7 +431,7 @@ describe("Snapshots component", () => {
     unmount();
   });
 
-  test("shows paused status in next snapshot time", async () => {
+  test("marks a paused source with a paused badge", async () => {
     const pausedResponse = {
       ...mockSourcesResponse,
       sources: [

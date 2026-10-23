@@ -13,8 +13,10 @@ import { Link } from "react-router";
 import KopiaTable from "../components/KopiaTable";
 import { compare, formatOwnerName, sizeDisplayName } from "../utils/formatutils";
 import { errorAlert, redirect, sizeWithFailures } from "../utils/uiutil";
+import { isOverdue } from "../utils/snapshotutil";
 import { policyEditorURL, sourceQueryStringParams } from "../utils/policyutil";
 import { CLIEquivalent } from "../components/CLIEquivalent";
+import { SnapshotFrequency } from "../components/SnapshotFrequency";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 
 const localSnapshots = "Local Snapshots";
@@ -248,23 +250,26 @@ export class Snapshots extends Component {
       });
   }
 
-  nextSnapshotTimeCell(x) {
-    if (!x.cell.getValue()) {
-      if (x.row.original.status === "PAUSED") {
-        return "paused";
-      }
+  lastSnapshotCell(x) {
+    const t = x.cell.getValue();
+    const paused = x.row.original.status === "PAUSED";
 
+    if (!t && !paused) {
       return "";
     }
 
-    if (x.row.original.status === "UPLOADING") {
-      return "";
-    }
+    const overdue = !paused && isOverdue(t, x.row.original.schedule?.intervalSeconds, moment());
 
     return (
-      <p title={moment(x.cell.getValue()).toLocaleString()}>
-        {moment(x.cell.getValue()).fromNow()}
-        {moment(x.cell.getValue()).isBefore(moment()) && (
+      <p title={t ? moment(t).toLocaleString() : ""}>
+        {t ? moment(t).fromNow() : ""}
+        {paused && (
+          <>
+            {t && <>&nbsp;</>}
+            <Badge bg="warning">paused</Badge>
+          </>
+        )}
+        {overdue && (
           <>
             &nbsp;
             <Badge bg="secondary">overdue</Badge>
@@ -347,19 +352,7 @@ export class Snapshots extends Component {
         header: "Last Snapshot",
         width: 160,
         accessorFn: (x) => (x.lastSnapshot ? x.lastSnapshot.startTime : null),
-        cell: (x) =>
-          x.cell.getValue() ? (
-            <p title={moment(x.cell.getValue()).toLocaleString()}>{moment(x.cell.getValue()).fromNow()}</p>
-          ) : (
-            ""
-          ),
-      },
-      {
-        id: "nextSnapshotTime",
-        header: "Next Snapshot",
-        width: 160,
-        accessorFn: (x) => x.nextSnapshotTime,
-        cell: (x) => this.nextSnapshotTimeCell(x),
+        cell: (x) => this.lastSnapshotCell(x),
       },
       {
         id: "status",
@@ -406,6 +399,9 @@ export class Snapshots extends Component {
               <Button data-testid="search-files" size="sm" variant="primary" href="/snapshots/search">
                 Search Files
               </Button>
+            </Col>
+            <Col xs="auto" className="d-flex align-items-center">
+              <SnapshotFrequency sources={sources} onSaved={this.fetchSourcesWithoutSpinner} />
             </Col>
             <Col></Col>
             <Col xs="auto">
