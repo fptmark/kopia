@@ -97,6 +97,8 @@ func TestIgnoredErrorsAreHiddenFromTasks(t *testing.T) {
 
 	before := errsOf()
 	require.Equal(t, "/data", before.Source)
+	require.Equal(t, "u", before.UserName)
+	require.Equal(t, "h", before.Host)
 	require.Len(t, before.Errors, 3)
 	require.Equal(t, ignoreerr.KindPermission, before.Errors[0].Kind)
 	require.False(t, before.Errors[0].Ignored)

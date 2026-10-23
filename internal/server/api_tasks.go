@@ -158,6 +158,7 @@ func handleTaskErrors(_ context.Context, rc requestContext) (any, *apiError) {
 
 	src, _ := h.SnapshotSource(rc.muxVar("taskID"))
 	resp.Source = sourcePath(src)
+	resp.UserName, resp.Host = sourceUserHost(src)
 
 	var ignored *ignoreerr.Store
 	if srv, ok := rc.srv.(*Server); ok {

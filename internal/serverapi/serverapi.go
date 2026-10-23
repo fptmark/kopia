@@ -255,8 +255,11 @@ type TaskListResponse struct {
 // TaskErrorsResponse lists the files that failed in a snapshot task.
 type TaskErrorsResponse struct {
 	// Source is the folder of the snapshot source; the paths of the errors are relative to it.
-	Source string      `json:"source"`
-	Errors []TaskError `json:"errors"`
+	Source string `json:"source"`
+	// UserName and Host complete the source, to find its policy.
+	UserName string      `json:"userName"`
+	Host     string      `json:"host"`
+	Errors   []TaskError `json:"errors"`
 }
 
 // TaskError is a file or directory that could not be backed up.

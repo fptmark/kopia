@@ -110,6 +110,18 @@ func sourcePath(src string) string {
 	return src
 }
 
+// sourceUserHost is the user and host of a source written as user@host:/path.
+func sourceUserHost(src string) (user, host string) {
+	i := strings.Index(src, ":")
+	if i < 0 {
+		return "", ""
+	}
+
+	user, host, _ = strings.Cut(src[:i], "@")
+
+	return user, host
+}
+
 // buildSummary collects what happened between from and to for a periodic summary, from the task history.
 func (s *Server) buildSummary(_ context.Context, from, to time.Time, _ string) (notifyhub.Summary, error) {
 	var sum notifyhub.Summary
