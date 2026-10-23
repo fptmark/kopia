@@ -137,7 +137,7 @@ describe("App Component - Navigation", () => {
     await renderAndWait(<App />);
 
     expect(screen.getByTestId("tab-snapshots")).toBeInTheDocument();
-    expect(screen.getByTestId("tab-restore")).toBeInTheDocument();
+    expect(screen.getByTestId("tab-files")).toBeInTheDocument();
     expect(screen.getByTestId("tab-policies")).toBeInTheDocument();
     expect(screen.getByTestId("tab-tasks")).toBeInTheDocument();
     expect(screen.getByTestId("tab-repo")).toBeInTheDocument();
@@ -153,14 +153,14 @@ describe("App Component - Navigation", () => {
     expect(snapshotsTab).toHaveAttribute("href", "/snapshots");
   });
 
-  test("has a List/Restore tab, between Snapshots and Policies, that opens the file search", async () => {
+  test("has a Files tab, between Snapshots and Policies", async () => {
     await renderAndWait(<App />);
 
-    const tab = screen.getByTestId("tab-restore");
-    expect(tab).toHaveTextContent("List/Restore");
-    expect(tab).toHaveAttribute("href", "/restore");
+    const tab = screen.getByTestId("tab-files");
+    expect(tab).toHaveTextContent("Files");
+    expect(tab).toHaveAttribute("href", "/files");
 
-    const order = ["tab-snapshots", "tab-restore", "tab-policies"].map((id) => screen.getByTestId(id));
+    const order = ["tab-snapshots", "tab-files", "tab-policies"].map((id) => screen.getByTestId(id));
     expect(order[0].compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(order[1].compareDocumentPosition(order[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
@@ -227,7 +227,7 @@ describe("App Component - Repository State", () => {
     await renderAndWait(<App />);
 
     expect(screen.getByTestId("tab-snapshots").className).toContain("disabled");
-    expect(screen.getByTestId("tab-restore").className).toContain("disabled");
+    expect(screen.getByTestId("tab-files").className).toContain("disabled");
     expect(screen.getByTestId("tab-policies").className).toContain("disabled");
     expect(screen.getByTestId("tab-tasks").className).toContain("disabled");
   });

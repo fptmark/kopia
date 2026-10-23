@@ -264,7 +264,7 @@ function FailuresDialog({ summ }) {
             <Link to="/preferences" onClick={() => setOpenFailures(null)}>
               Preferences
             </Link>{" "}
-            → Notifications.
+            → Ignored errors.
           </div>
         )}
         {errors.length < summ.numFailed + (summ.ignored || 0) && (

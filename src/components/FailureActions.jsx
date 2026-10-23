@@ -94,8 +94,8 @@ export function IgnoreDialog({ source, target, onClose, onDone }) {
           </Form.Select>
         </Form.Group>
         <div className="text-muted small">
-          Ignored errors stay in the snapshot record. They stop counting as failures and stop causing alerts. Manage
-          them under Preferences → Notifications.
+          Ignored errors stay in the snapshot record, but no longer count as failures or cause alerts. Manage them under
+          Preferences → Ignored errors.
         </div>
         {error && (
           <div className="text-danger mt-2" role="alert">

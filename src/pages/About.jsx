@@ -8,8 +8,8 @@ const CUSTOM_FEATURES = [
   "Repository page shows total size on storage",
   "Preferences > Scheduling: keep Mac awake during snapshots",
   "About page (version moved here from the page footer)",
-  "List/Restore tab: find files and folders across snapshots, grouped by version with first/last snapshot dates",
-  "Notifications: iMessage, email and Mac alerts for failures, with immediate or periodic success summaries",
+  "Files tab: List/Restore finds files and folders across snapshots, grouped by version with first/last snapshot dates; Excluded lists every policy ignore pattern",
+  "Notifications: iMessage, email and Mac alerts for failures, with immediate or periodic success summaries; ignore rules hide errors that are not worth reporting",
   "Backup health: daily restore check and alerts when backups go stale",
   "Snapshot frequency as a number and a unit (sec, min, hr, days) on the Snapshots page and in policies",
 ];

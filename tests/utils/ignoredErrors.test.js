@@ -1,6 +1,12 @@
 import axios from "axios";
 import { vi } from "vitest";
-import { addIgnoredError, excludeFromBackup, excludePattern } from "../../src/utils/ignoredErrors";
+import {
+  addIgnoredError,
+  addIgnorePattern,
+  excludeFromBackup,
+  excludePattern,
+  removeIgnorePattern,
+} from "../../src/utils/ignoredErrors";
 
 vi.mock("axios");
 
@@ -67,5 +73,41 @@ describe("addIgnoredError", () => {
 
     await expect(addIgnoredError({ path: "a", scope: "file" })).resolves.toEqual({ id: "a" });
     expect(axios.post).toHaveBeenCalledWith("/api/v1/ignored-errors", { path: "a", scope: "file" });
+  });
+});
+
+describe("removeIgnorePattern", () => {
+  const target = { userName: "", host: "", path: "" };
+
+  it("removes one pattern and keeps the others", async () => {
+    axios.get.mockResolvedValue({ data: { files: { ignore: ["/a", "/b"] }, retention: { keepLatest: 3 } } });
+    axios.put.mockResolvedValue({ data: {} });
+
+    await removeIgnorePattern(target, "/a");
+
+    expect(axios.put).toHaveBeenCalledWith("/api/v1/policy?userName=&host=&path=", {
+      files: { ignore: ["/b"] },
+      retention: { keepLatest: 3 },
+    });
+  });
+
+  it("leaves no empty list behind", async () => {
+    axios.get.mockResolvedValue({ data: { files: { ignore: ["/a"] } } });
+    axios.put.mockResolvedValue({ data: {} });
+
+    await removeIgnorePattern(target, "/a");
+
+    expect(axios.put.mock.calls[0][1]).toEqual({ files: {} });
+  });
+});
+
+describe("addIgnorePattern", () => {
+  it("adds a pattern as typed", async () => {
+    axios.get.mockResolvedValue({ data: {} });
+    axios.put.mockResolvedValue({ data: {} });
+
+    await addIgnorePattern({ userName: "", host: "", path: "" }, "*.tmp");
+
+    expect(axios.put.mock.calls[0][1]).toEqual({ files: { ignore: ["*.tmp"] } });
   });
 });

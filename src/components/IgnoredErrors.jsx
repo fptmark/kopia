@@ -5,26 +5,16 @@ import { KIND_LABELS, listIgnoredErrors, removeIgnoredError } from "../utils/ign
 
 const errorText = (e) => e?.response?.data?.message || e?.message || "unknown error";
 
-function what(rule) {
-  const kind = rule.kind ? KIND_LABELS[rule.kind] || rule.kind : "any error";
-  if (rule.scope === "file") {
-    return kind + " on this file";
-  }
-  return kind + (rule.path ? " in this folder" : " in this source");
-}
+const day = (t) => new Date(t).toLocaleDateString();
 
-function expiry(rule) {
+function until(rule) {
   if (!rule.expires) {
     return "Never";
   }
-  const date = new Date(rule.expires).toLocaleDateString();
-  return rule.expired ? "Expired " + date : date;
+  return rule.expired ? "Expired " + day(rule.expires) : day(rule.expires);
 }
 
-/**
- * The errors that are not reported: hidden from failure counts and alerts, though the snapshot still records
- * them. Rules are added from the failed files dialog of a snapshot.
- */
+/** The errors that are not reported, one rule per row. Rules are added from the failed files of a snapshot. */
 export function IgnoredErrors() {
   const [rules, setRules] = useState(null);
   const [message, setMessage] = useState("");
@@ -42,17 +32,8 @@ export function IgnoredErrors() {
       .then(load)
       .catch((e) => setMessage("Not removed: " + errorText(e)));
 
-  if (rules === null && !message) {
-    return null;
-  }
-
   return (
-    <div className="mt-4" data-testid="ignored-errors">
-      <h6>Ignored errors</h6>
-      <div className="text-muted small mb-2">
-        Hidden from failure counts and alerts. The snapshot still records them. Add one with Ignore in the failed files
-        of a snapshot, on the Tasks page.
-      </div>
+    <div data-testid="ignored-errors">
       {message && (
         <div className="text-danger small mb-2" role="alert">
           {message}
@@ -65,8 +46,10 @@ export function IgnoredErrors() {
             <tr>
               <th>Source</th>
               <th>Path</th>
-              <th>Ignores</th>
-              <th>Hides now</th>
+              <th>Scope</th>
+              <th>Error</th>
+              <th className="text-end">Hides</th>
+              <th>Added</th>
               <th>Until</th>
               <th />
             </tr>
@@ -74,18 +57,20 @@ export function IgnoredErrors() {
           <tbody>
             {rules.map((r) => (
               <tr key={r.id} className={r.expired ? "text-muted" : ""} data-testid="ignored-error-row">
-                <td>{r.source ? <code>{r.source}</code> : "Any source"}</td>
+                <td>{r.source ? <code>{r.source}</code> : "Any"}</td>
                 <td>
                   <code style={{ wordBreak: "break-all" }}>{r.path || "(whole source)"}</code>
                 </td>
-                <td>{what(r)}</td>
-                <td>{r.expired ? "—" : r.hides.toLocaleString()}</td>
-                <td>{expiry(r)}</td>
+                <td>{r.scope}</td>
+                <td>{r.kind ? KIND_LABELS[r.kind] || r.kind : "any"}</td>
+                <td className="text-end">{r.expired ? "—" : r.hides.toLocaleString()}</td>
+                <td>{day(r.created)}</td>
+                <td>{until(r)}</td>
                 <td className="text-end">
                   <Button
                     size="sm"
                     variant="secondary"
-                    aria-label={"Remove the rule for " + r.path}
+                    aria-label={"Remove the rule for " + (r.path || "the whole source")}
                     onClick={() => remove(r)}
                   >
                     Remove

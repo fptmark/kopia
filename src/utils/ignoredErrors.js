@@ -32,13 +32,9 @@ export function excludePattern(path) {
   return "/" + path.replace(/^\/+/, "").replace(/([\\*?[\]])/g, "\\$1");
 }
 
-/**
- * Adds an exclusion for path (relative to the source) to the source's own policy, and returns the pattern.
- * source is {userName, host, path}.
- */
-export function excludeFromBackup(source, path) {
-  const url = "/api/v1/policy?" + sourceQueryStringParams(source);
-  const pattern = excludePattern(path);
+/** Changes the ignore patterns of one policy; change maps the list of patterns to the new one. */
+function editIgnorePatterns(target, change) {
+  const url = "/api/v1/policy?" + sourceQueryStringParams(target);
 
   return axios
     .get(url)
@@ -46,12 +42,33 @@ export function excludeFromBackup(source, path) {
     .then((r) => {
       const policy = r.data || {};
       const files = { ...policy.files };
-      const ignore = files.ignore || [];
-      if (!ignore.includes(pattern)) {
-        files.ignore = [...ignore, pattern];
+      const ignore = change(files.ignore || []);
+      if (ignore.length > 0) {
+        files.ignore = ignore;
+      } else {
+        delete files.ignore;
       }
       policy.files = files;
       return axios.put(url, policy);
-    })
-    .then(() => pattern);
+    });
+}
+
+/** Adds a pattern to the ignore rules of the policy of target ({userName, host, path}). */
+export function addIgnorePattern(target, pattern) {
+  return editIgnorePatterns(target, (ignore) => (ignore.includes(pattern) ? ignore : [...ignore, pattern]));
+}
+
+/** Removes a pattern from the ignore rules of the policy of target. */
+export function removeIgnorePattern(target, pattern) {
+  return editIgnorePatterns(target, (ignore) => ignore.filter((p) => p !== pattern));
+}
+
+/**
+ * Adds an exclusion for path (relative to the source) to the source's own policy, and returns the pattern.
+ * source is {userName, host, path}.
+ */
+export function excludeFromBackup(source, path) {
+  const pattern = excludePattern(path);
+
+  return addIgnorePattern(source, pattern).then(() => pattern);
 }

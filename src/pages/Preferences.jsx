@@ -99,6 +99,10 @@ export function Preferences() {
       <Tab eventKey="notifications" title="Notifications" id="tab-notifications">
         <Container fluid>
           <NotificationDestinations />
+        </Container>
+      </Tab>
+      <Tab eventKey="ignored" title="Ignored errors" id="tab-ignored">
+        <Container fluid>
           <IgnoredErrors />
         </Container>
       </Tab>

@@ -17,7 +17,7 @@ import { SnapshotCreate } from "./pages/SnapshotCreate";
 import { SnapshotDirectory } from "./pages/SnapshotDirectory";
 import { SnapshotHistory } from "./pages/SnapshotHistory";
 import { SnapshotRestore } from "./pages/SnapshotRestore";
-import { SnapshotSearch } from "./pages/SnapshotSearch";
+import { Files } from "./pages/Files";
 import { AppContext } from "./contexts/AppContext";
 import { UIPreferenceProvider } from "./contexts/UIPreferencesContext";
 import { FailuresModalHost } from "./utils/uiutil";
@@ -147,13 +147,13 @@ export default class App extends Component {
                   </span>
                   <span className="d-inline-block" data-toggle="tooltip" title="Repository is not connected">
                     <NavLink
-                      data-testid="tab-restore"
+                      data-testid="tab-files"
                       title=""
-                      data-title="List/Restore"
+                      data-title="Files"
                       className={isRepositoryConnected ? "nav-link" : "nav-link disabled"}
-                      to="/restore"
+                      to="/files"
                     >
-                      List/Restore
+                      Files
                     </NavLink>
                   </span>
                   <span className="d-inline-block" data-toggle="tooltip" title="Repository is not connected">
@@ -207,8 +207,9 @@ export default class App extends Component {
               <Routes>
                 <Route path="snapshots" element={<Snapshots />} />
                 <Route path="snapshots/new" element={<SnapshotCreate />} />
-                <Route path="restore" element={<SnapshotSearch />} />
-                <Route path="snapshots/search" element={<Navigate to="/restore" replace />} />
+                <Route path="files" element={<Files />} />
+                <Route path="restore" element={<Navigate to="/files" replace />} />
+                <Route path="snapshots/search" element={<Navigate to="/files" replace />} />
                 <Route path="snapshots/single-source/" element={<SnapshotHistory />} />
                 <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
                 <Route path="snapshots/dir/:oid" element={<SnapshotDirectory />} />

@@ -50,13 +50,18 @@ describe("IgnoredErrors", () => {
     const rows = await screen.findAllByTestId("ignored-error-row");
     expect(rows).toHaveLength(3);
     expect(rows[0]).toHaveTextContent("Library/Accounts");
-    expect(rows[0]).toHaveTextContent("permission denied in this folder");
-    expect(rows[0]).toHaveTextContent("12");
+    expect([...rows[0].querySelectorAll("td")].map((c) => c.textContent).slice(0, 5)).toEqual([
+      "/Users/me",
+      "Library/Accounts",
+      "folder",
+      "permission denied",
+      "12",
+    ]);
     expect(rows[0]).toHaveTextContent("Never");
-    expect(rows[1]).toHaveTextContent("Any source");
+    expect(rows[1]).toHaveTextContent("Any");
     expect(rows[1]).toHaveTextContent("(whole source)");
     expect(rows[1]).toHaveTextContent("Expired");
-    expect(rows[2]).toHaveTextContent("any error on this file");
+    expect([...rows[2].querySelectorAll("td")].map((c) => c.textContent).slice(2, 5)).toEqual(["file", "any", "1"]);
   });
 
   it("says when nothing is ignored", async () => {
