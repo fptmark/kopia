@@ -60,9 +60,11 @@ type Info struct {
 	ErrorMessage string                  `json:"errorMessage,omitempty"`
 	Counters     map[string]CounterValue `json:"counters"`
 	// FailedFiles is how many files a finished snapshot could not back up (from the task history).
-	FailedFiles int               `json:"failedFiles,omitempty"`
-	LogLines    []json.RawMessage `json:"-"`
-	Error       error             `json:"-"`
+	FailedFiles int `json:"failedFiles,omitempty"`
+	// IgnoredFiles is how many of the failed files are hidden by ignore rules; FailedFiles does not count them.
+	IgnoredFiles int               `json:"ignoredFiles,omitempty"`
+	LogLines     []json.RawMessage `json:"-"`
+	Error        error             `json:"-"`
 
 	sequenceNumber int
 }

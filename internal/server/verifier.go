@@ -24,6 +24,7 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/fs/localfs"
 	"github.com/kopia/kopia/internal/clock"
+	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/uitask"
@@ -176,28 +177,43 @@ func checkFreshness(now time.Time, by map[snapshot.SourceInfo][]*snapshot.Manife
 	return passed(name, fmt.Sprintf("newest snapshot of each of %d sources is recent enough for its schedule", len(by)))
 }
 
-func failedFiles(m *snapshot.Manifest) int {
+// failedFiles counts the files a snapshot could not back up, not counting those hidden by ignore rules.
+func failedFiles(m *snapshot.Manifest, ignored *ignoreerr.Store) int {
 	if m.RootEntry == nil || m.RootEntry.DirSummary == nil {
 		return 0
 	}
 
-	return int(m.RootEntry.DirSummary.FatalErrorCount)
+	return max(0, int(m.RootEntry.DirSummary.FatalErrorCount)-ignoredFailures(ignored, m.Source.Path, m.RootEntry.DirSummary))
+}
+
+// ignoredFailures counts the recorded failed entries of a snapshot that ignore rules hide.
+func ignoredFailures(ignored *ignoreerr.Store, source string, sum *fs.DirectorySummary) int {
+	if sum == nil {
+		return 0
+	}
+
+	var fails []ignoreerr.Failure
+	for _, e := range sum.FailedEntries {
+		fails = append(fails, ignoreerr.Failure{Path: e.EntryPath, Error: e.Error})
+	}
+
+	return ignored.CountIgnored(source, fails)
 }
 
 // checkFailedFiles fails when the newest snapshot of a source skipped many files, or many more than the
 // snapshot before it (this is what losing a permission looks like: the snapshot still "succeeds").
-func checkFailedFiles(by map[snapshot.SourceInfo][]*snapshot.Manifest) verifyCheck {
+func checkFailedFiles(by map[snapshot.SourceInfo][]*snapshot.Manifest, ignored *ignoreerr.Store) verifyCheck {
 	const name = checkFailedFilesName
 
 	var bad []string
 
 	for _, src := range sortedSources(by) {
 		l := by[src]
-		newest := failedFiles(l[0])
+		newest := failedFiles(l[0], ignored)
 
 		prev := newest
 		if len(l) > 1 {
-			prev = failedFiles(l[1])
+			prev = failedFiles(l[1], ignored)
 		}
 
 		switch {
@@ -216,7 +232,7 @@ func checkFailedFiles(by map[snapshot.SourceInfo][]*snapshot.Manifest) verifyChe
 }
 
 // quickChecks are the checks that only read snapshot manifests.
-func quickChecks(now time.Time, ms []*snapshot.Manifest, checkAge bool, limit func(snapshot.SourceInfo) time.Duration) []verifyCheck {
+func quickChecks(now time.Time, ms []*snapshot.Manifest, checkAge bool, limit func(snapshot.SourceInfo) time.Duration, ignored *ignoreerr.Store) []verifyCheck {
 	by := newestFirst(ms)
 
 	var checks []verifyCheck
@@ -225,7 +241,7 @@ func quickChecks(now time.Time, ms []*snapshot.Manifest, checkAge bool, limit fu
 		checks = append(checks, checkFreshness(now, by, limit))
 	}
 
-	return append(checks, checkFailedFiles(by))
+	return append(checks, checkFailedFiles(by, ignored))
 }
 
 // entryAt follows the slash separated relative path below root.
@@ -672,7 +688,7 @@ func (v *verifier) quick(ctx context.Context) ([]verifyCheck, []*snapshot.Manife
 		checks = append(checks, passed(checkRecent, "not checked yet: waits until "+graceUntil.Local().Format("3:04 PM")+" for the first hourly snapshot after a start or wake"))
 	}
 
-	return append(checks, quickChecks(now, ms, checkAge, v.limitFor)...), ms
+	return append(checks, quickChecks(now, ms, checkAge, v.limitFor, v.srv.ignoredErrors())...), ms
 }
 
 // runQuick runs the cheap checks. A task is only recorded when the outcome changes.

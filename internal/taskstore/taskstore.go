@@ -656,3 +656,50 @@ func (s *Store) Kinds() ([]string, error) {
 
 	return out, errors.Wrap(rows.Err(), "unable to read task kinds")
 }
+
+// SnapshotSource returns the source (user@host:/path) a snapshot task ran for.
+func (s *Store) SnapshotSource(taskID string) (string, error) {
+	seq, ok := uitask.ParseTaskID(taskID)
+	if !ok {
+		return "", errors.Errorf("invalid task ID %q", taskID)
+	}
+
+	var src string
+
+	err := s.db.QueryRow(`SELECT source FROM tasks WHERE seq = ?`, seq).Scan(&src)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+
+	return src, errors.Wrap(err, "unable to read the task source")
+}
+
+// SourceError is a failed file of a snapshot, with the source it belongs to.
+type SourceError struct {
+	Source string
+	SnapshotError
+}
+
+// LatestSnapshotErrors returns the failed files of the newest finished snapshot of every source.
+func (s *Store) LatestSnapshotErrors() ([]SourceError, error) {
+	rows, err := s.db.Query(`SELECT t.source, e.path, e.error FROM snapshot_errors e JOIN tasks t ON t.seq = e.task_seq
+WHERE t.seq IN (SELECT MAX(seq) FROM tasks WHERE source <> '' AND kind = 'Snapshot' AND status = 'SUCCESS' GROUP BY source)`)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to read snapshot errors")
+	}
+
+	defer rows.Close() //nolint:errcheck
+
+	var out []SourceError
+
+	for rows.Next() {
+		var e SourceError
+		if err := rows.Scan(&e.Source, &e.Path, &e.Error); err != nil {
+			return nil, errors.Wrap(err, "unable to read snapshot errors")
+		}
+
+		out = append(out, e)
+	}
+
+	return out, errors.Wrap(rows.Err(), "unable to read snapshot errors")
+}

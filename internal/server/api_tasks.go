@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/uitask"
 )
@@ -64,6 +65,10 @@ func handleTaskList(ctx context.Context, rc requestContext) (any, *apiError) {
 		tasks = []uitask.Info{}
 	}
 
+	for i := range tasks {
+		hideIgnoredFailures(rc, &tasks[i])
+	}
+
 	resp := serverapi.TaskListResponse{Tasks: tasks, Total: total}
 
 	if h := rc.srv.getOptions().TaskHistory; h != nil {
@@ -85,7 +90,44 @@ func handleTaskInfo(_ context.Context, rc requestContext) (any, *apiError) {
 		return nil, notFoundError("task not found")
 	}
 
+	hideIgnoredFailures(rc, &t)
+
 	return t, nil
+}
+
+// hideIgnoredFailures moves the failed files that ignore rules hide out of the task's failed count.
+func hideIgnoredFailures(rc requestContext, t *uitask.Info) {
+	srv, ok := rc.srv.(*Server)
+	if !ok || srv.ignored == nil || t.FailedFiles == 0 || len(srv.ignored.Rules()) == 0 {
+		return
+	}
+
+	h := srv.getOptions().TaskHistory
+	if h == nil {
+		return
+	}
+
+	src, err := h.SnapshotSource(t.TaskID)
+	if err != nil {
+		return
+	}
+
+	errs, err := h.SnapshotErrors(t.TaskID)
+	if err != nil {
+		return
+	}
+
+	n := 0
+
+	for _, e := range errs {
+		if srv.ignored.Ignored(sourcePath(src), e.Path, e.Error) {
+			n++
+		}
+	}
+
+	n = min(n, t.FailedFiles)
+	t.FailedFiles -= n
+	t.IgnoredFiles = n
 }
 
 func handleTaskSummary(_ context.Context, rc requestContext) (any, *apiError) {
@@ -114,8 +156,20 @@ func handleTaskErrors(_ context.Context, rc requestContext) (any, *apiError) {
 		return nil, internalServerError(err)
 	}
 
+	src, _ := h.SnapshotSource(rc.muxVar("taskID"))
+	resp.Source = sourcePath(src)
+
+	var ignored *ignoreerr.Store
+	if srv, ok := rc.srv.(*Server); ok {
+		ignored = srv.ignored
+	}
+
 	for _, e := range errs {
-		resp.Errors = append(resp.Errors, serverapi.TaskError{Path: e.Path, Error: e.Error})
+		resp.Errors = append(resp.Errors, serverapi.TaskError{
+			Path: e.Path, Error: e.Error,
+			Kind:    ignoreerr.KindOf(e.Error),
+			Ignored: ignored.Ignored(resp.Source, e.Path, e.Error),
+		})
 	}
 
 	return resp, nil

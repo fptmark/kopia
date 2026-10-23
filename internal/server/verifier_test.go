@@ -108,7 +108,7 @@ func TestVerifyCheckFailedFiles(t *testing.T) {
 			ms = append(ms, manifestAt(home, now.Add(time.Duration(i)*time.Hour), f))
 		}
 
-		return checkFailedFiles(newestFirst(ms))
+		return checkFailedFiles(newestFirst(ms), nil)
 	}
 
 	require.True(t, check(0, 0, 0).OK)
@@ -130,9 +130,9 @@ func TestVerifyQuickChecksSkipsFreshnessDuringGrace(t *testing.T) {
 	home := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/home"}
 	ms := []*snapshot.Manifest{manifestAt(home, now.Add(-8*time.Hour), 0)}
 
-	require.Len(t, quickChecks(now, ms, true, defaultLimit), 2)
-	require.False(t, quickChecks(now, ms, true, defaultLimit)[0].OK)
-	require.Len(t, quickChecks(now, ms, false, defaultLimit), 1)
+	require.Len(t, quickChecks(now, ms, true, defaultLimit, nil), 2)
+	require.False(t, quickChecks(now, ms, true, defaultLimit, nil)[0].OK)
+	require.Len(t, quickChecks(now, ms, false, defaultLimit, nil), 1)
 }
 
 type verifyTestEnv struct {

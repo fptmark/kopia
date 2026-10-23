@@ -22,6 +22,7 @@ import (
 
 	"github.com/kopia/kopia/internal/auth"
 	"github.com/kopia/kopia/internal/clock"
+	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/mount"
 	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/passwordpersist"
@@ -103,6 +104,8 @@ type Server struct {
 	// notifier receives events for the notification destinations; notifyHub is the real one (nil in tests).
 	notifier  eventSink
 	notifyHub *notifyhub.Hub
+	// ignored holds the rules for errors that are not reported (nil when there is no preferences file).
+	ignored *ignoreerr.Store
 	// +checklocks:serverMutex
 	sourceManagers map[snapshot.SourceInfo]*sourceManager
 	// +checklocks:serverMutex
@@ -153,6 +156,9 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/verify/status", s.handleUIPossiblyNotConnected(handleVerifyStatus)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/verify/run", s.handleUI(handleVerifyRun)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/verify/test-notification", s.handleUI(handleVerifyTestNotification)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/ignored-errors", s.handleUIPossiblyNotConnected(handleIgnoredErrorsList)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/ignored-errors", s.handleUIPossiblyNotConnected(handleIgnoredErrorsAdd)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/ignored-errors/{id}", s.handleUIPossiblyNotConnected(handleIgnoredErrorsRemove)).Methods(http.MethodDelete)
 	m.HandleFunc("/api/v1/notifications/destinations", s.handleUIPossiblyNotConnected(handleNotificationDestinationsGet)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/notifications/destinations", s.handleUIPossiblyNotConnected(handleNotificationDestinationsPut)).Methods(http.MethodPut)
 	m.HandleFunc("/api/v1/notifications/destinations/{id}/test", s.handleUIPossiblyNotConnected(handleNotificationDestinationTest)).Methods(http.MethodPost)
@@ -1051,13 +1057,13 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 
 	s.recordSnapshotResult(ctx, taskID, src, &result.Manifest)
 
-	var failedFiles, totalFiles int64
+	var failedCount, totalFiles int64
 
 	if rs := result.Manifest.RootEntry; rs != nil && rs.DirSummary != nil {
-		failedFiles, totalFiles = int64(rs.DirSummary.FatalErrorCount), rs.DirSummary.TotalFileCount
+		failedCount, totalFiles = int64(failedFiles(&result.Manifest, s.ignored)), rs.DirSummary.TotalFileCount
 	}
 
-	s.emitSnapshotOutcome(ctx, src.Path, err, failedFiles, totalFiles, clock.Now().Sub(started))
+	s.emitSnapshotOutcome(ctx, src.Path, err, failedCount, totalFiles, clock.Now().Sub(started))
 
 	return err
 }
@@ -1209,6 +1215,7 @@ func New(ctx context.Context, options *Options) (*Server, error) {
 
 	s.parallelSnapshotsChanged = sync.NewCond(&s.parallelSnapshotsMutex)
 
+	s.setupIgnoredErrors(ctx)
 	s.setupNotifications(ctx)
 
 	if s.notifyHub != nil {

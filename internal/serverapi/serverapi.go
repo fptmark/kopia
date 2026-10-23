@@ -254,6 +254,8 @@ type TaskListResponse struct {
 
 // TaskErrorsResponse lists the files that failed in a snapshot task.
 type TaskErrorsResponse struct {
+	// Source is the folder of the snapshot source; the paths of the errors are relative to it.
+	Source string      `json:"source"`
 	Errors []TaskError `json:"errors"`
 }
 
@@ -261,6 +263,9 @@ type TaskErrorsResponse struct {
 type TaskError struct {
 	Path  string `json:"path"`
 	Error string `json:"error"`
+	// Kind is the cause (permission, missing, busy or other) and Ignored says an ignore rule hides the error.
+	Kind    string `json:"kind"`
+	Ignored bool   `json:"ignored,omitempty"`
 }
 
 // TaskLogResponse contains a task log.
