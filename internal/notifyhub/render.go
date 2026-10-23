@@ -130,7 +130,8 @@ func SampleImmediate(d Destination, source string) []Message {
 	out := []Message{}
 
 	for _, id := range AllEvents {
-		if d.ModeFor(id) != ModeNow {
+		// the watchdog is not running yet, so it is not previewed either
+		if d.ModeFor(id) != ModeNow || id == EventWatchdog {
 			continue
 		}
 

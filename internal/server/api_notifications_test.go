@@ -112,6 +112,7 @@ func TestNotificationTestAndLogAndPreview(t *testing.T) {
 
 	require.Contains(t, titles, "Snapshot failed")
 	require.NotContains(t, titles, "Files skipped", "the Mac popup default is not told about skipped files")
+	require.NotContains(t, titles, "Backup server is not running", "the watchdog does not exist yet")
 
 	_, apiErr = handleNotificationPreview(ctx, rcFor(s, http.MethodGet, "/?destination=zzz", "", nil))
 	require.NotNil(t, apiErr)
