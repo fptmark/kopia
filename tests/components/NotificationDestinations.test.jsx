@@ -142,25 +142,24 @@ describe("NotificationDestinations", () => {
     expect(await screen.findByText(/Not saved: destination "x" needs a phone number/)).toBeInTheDocument();
   });
 
-  it("shows the time only for summaries, and edits it as hour and AM/PM", async () => {
+  it("shows the time only for summaries, as one field, and saves 24-hour time", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    expect(await screen.findByLabelText("Hour for This Mac")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Hour for This Mac")).toHaveTextContent("8");
     expect(screen.queryByLabelText("Hour for iPhone")).not.toBeInTheDocument(); // success is off
     expect(screen.queryByText(/Next:/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Minute for This Mac")).not.toBeInTheDocument(); // on the hour
 
-    fireEvent.change(screen.getByLabelText("Hour for This Mac"), { target: { value: "7" } });
+    fireEvent.keyDown(screen.getByLabelText("Hour for This Mac"), { key: "7" });
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
     expect(lastPut()[1].success.time).toBe("07:00");
 
-    fireEvent.change(screen.getByLabelText("AM or PM for This Mac"), { target: { value: "PM" } });
+    fireEvent.keyDown(screen.getByLabelText("AM or PM for This Mac"), { key: "p" });
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
     expect(lastPut()[1].success.time).toBe("19:00");
   });
 
-  it("shows the day picker that matches the frequency, and none for immediate or off", async () => {
+  it("shows the day part that matches the frequency, and none for immediate or off", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
@@ -168,17 +167,13 @@ describe("NotificationDestinations", () => {
     expect(screen.queryByLabelText("Day of week for This Mac")).not.toBeInTheDocument();
 
     fireEvent.change(choice, { target: { value: "weekly" } });
-    const day = await screen.findByLabelText("Day of week for This Mac");
-    expect(
-      within(day)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+    expect(await screen.findByLabelText("Day of week for This Mac")).toHaveTextContent("Mon");
+
+    fireEvent.keyDown(screen.getByLabelText("Day of week for This Mac"), { key: "f" });
+    await waitFor(() => expect(lastPut()[1].success).toMatchObject({ freq: "weekly", weekday: 4 }));
 
     fireEvent.change(choice, { target: { value: "monthly" } });
-    expect(await screen.findByLabelText("Day of month for This Mac")).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Day of month for This Mac")).getByText("Last")).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Day of month for This Mac")).getByText("22nd")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Day of month for This Mac")).toHaveTextContent("1st");
 
     fireEvent.change(choice, { target: { value: "now" } });
     await waitFor(() => expect(screen.queryByLabelText("Hour for This Mac")).not.toBeInTheDocument());

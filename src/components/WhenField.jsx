@@ -1,0 +1,152 @@
+import { useRef } from "react";
+import "../css/WhenField.css";
+import { joinTime, ordinal, parseTime, WEEKDAYS } from "../utils/rollup";
+
+const DAYS = WEEKDAYS.map((n) => n.slice(0, 3));
+
+/**
+ * Types a number into a field that holds 1..max, the way a date picker does: a first digit that could still
+ * grow into a valid number waits, anything else is final. Returns the new value, and whether the field is done.
+ */
+export function typeNumber(buffer, digit, max) {
+  let next = buffer + digit;
+  if (Number(next) > max || Number(next) === 0) {
+    next = digit;
+  }
+  const n = Number(next);
+  if (n < 1 || n > max) {
+    return { value: null, buffer: "", done: false };
+  }
+  return { value: n, buffer: next, done: n * 10 > max };
+}
+
+/** The next name starting with the letter, after the current one (so repeated presses cycle: T, T = Tue, Thu). */
+export function typeLetter(names, current, letter) {
+  const l = letter.toLowerCase();
+  const matches = names.map((n, i) => [n, i]).filter(([n]) => n.toLowerCase().startsWith(l));
+  if (matches.length === 0) {
+    return -1;
+  }
+  const after = matches.find(([, i]) => i > current);
+  return (after || matches[0])[1];
+}
+
+/**
+ * A date-picker style field for when a summary is sent: each part is highlighted when selected and edited by
+ * typing; left and right arrows move between the parts. freq is daily, weekly or monthly.
+ */
+export function WhenField({ name, freq, weekday = 0, dom = 1, time, onChange }) {
+  const segmentsRef = useRef([]);
+  const bufferRef = useRef("");
+  const tm = parseTime(time);
+
+  const focus = (i) => segmentsRef.current[i]?.focus();
+  const setTime = (patch) => {
+    const t = { ...tm, ...patch };
+    onChange({ time: joinTime(t.h, 0, t.ap) });
+  };
+
+  const parts = [];
+  if (freq === "weekly") {
+    parts.push({
+      label: "Day of week",
+      text: DAYS[weekday] ?? DAYS[0],
+      type: (key) => {
+        const i = typeLetter(DAYS, weekday, key);
+        return i >= 0 ? { set: () => onChange({ weekday: i }), done: true } : null;
+      },
+      step: (d) => onChange({ weekday: (weekday + d + 7) % 7 }),
+    });
+  }
+  if (freq === "monthly") {
+    parts.push({
+      label: "Day of month",
+      text: dom === 0 ? "Last" : ordinal(dom),
+      type: (key) => {
+        if (key.toLowerCase() === "l") {
+          return { set: () => onChange({ dom: 0 }), done: true };
+        }
+        if (!/^[0-9]$/.test(key)) {
+          return null;
+        }
+        const r = typeNumber(bufferRef.current, key, 28);
+        bufferRef.current = r.buffer;
+        return r.value === null ? null : { set: () => onChange({ dom: r.value }), done: r.done };
+      },
+      step: (d) => onChange({ dom: (dom + d + 29) % 29 }),
+    });
+  }
+  parts.push({
+    label: "Hour",
+    text: String(tm.h),
+    type: (key) => {
+      if (!/^[0-9]$/.test(key)) {
+        return null;
+      }
+      const r = typeNumber(bufferRef.current, key, 12);
+      bufferRef.current = r.buffer;
+      return r.value === null ? null : { set: () => setTime({ h: r.value }), done: r.done };
+    },
+    step: (d) => setTime({ h: ((tm.h - 1 + d + 12) % 12) + 1 }),
+  });
+  parts.push({
+    label: "AM or PM",
+    text: tm.ap,
+    type: (key) => {
+      const k = key.toLowerCase();
+      if (k === "a" || k === "p") {
+        return { set: () => setTime({ ap: k === "a" ? "AM" : "PM" }), done: false };
+      }
+      return null;
+    },
+    step: () => setTime({ ap: tm.ap === "AM" ? "PM" : "AM" }),
+  });
+
+  const onKeyDown = (i, e) => {
+    if (e.key === "ArrowLeft") {
+      bufferRef.current = "";
+      focus(Math.max(0, i - 1));
+    } else if (e.key === "ArrowRight") {
+      bufferRef.current = "";
+      focus(Math.min(parts.length - 1, i + 1));
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      parts[i].step(e.key === "ArrowUp" ? 1 : -1);
+    } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const r = parts[i].type(e.key);
+      if (r) {
+        r.set();
+        if (r.done) {
+          bufferRef.current = "";
+          focus(Math.min(parts.length - 1, i + 1));
+        }
+      }
+    } else {
+      return; // Tab and the rest behave as usual
+    }
+    e.preventDefault();
+  };
+
+  return (
+    <span className="when-field" role="group" aria-label={`When for ${name}`}>
+      {parts.map((p, i) => (
+        <span
+          key={p.label}
+          ref={(el) => {
+            segmentsRef.current[i] = el;
+          }}
+          className="when-segment"
+          role="spinbutton"
+          tabIndex={0}
+          aria-label={`${p.label} for ${name}`}
+          aria-valuetext={p.text}
+          onKeyDown={(e) => onKeyDown(i, e)}
+          onBlur={() => {
+            bufferRef.current = "";
+          }}
+        >
+          {p.text}
+        </span>
+      ))}
+    </span>
+  );
+}

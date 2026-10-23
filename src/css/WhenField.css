@@ -1,0 +1,23 @@
+.when-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--bs-border-color, #dee2e6);
+  border-radius: 0.375rem;
+  background: var(--bs-body-bg, #fff);
+  font-size: 0.875rem;
+  user-select: none;
+}
+
+.when-field .when-segment {
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  cursor: default;
+  outline: none;
+}
+
+.when-field .when-segment:focus {
+  background: #0d6efd;
+  color: #fff;
+}

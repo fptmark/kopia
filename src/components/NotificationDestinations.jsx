@@ -6,7 +6,8 @@ import Button from "react-bootstrap/Button";
 import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
-import { DEFAULT_SUCCESS, joinTime, ordinal, parseTime, WEEKDAYS } from "../utils/rollup";
+import { DEFAULT_SUCCESS } from "../utils/rollup";
+import { WhenField } from "./WhenField";
 
 const DESTINATIONS_URL = "/api/v1/notifications/destinations";
 const MAIL_ACCOUNTS_URL = "/api/v1/notifications/email-accounts";
@@ -46,8 +47,6 @@ const EVENT_NAME = {
   summary: "Summary",
   test: "Test message",
 };
-
-const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 const errorText = (e) => e?.response?.data?.message || e?.response?.data?.error || e?.message || "unknown error";
 
@@ -115,7 +114,7 @@ function FailuresPicker({ d, onChange }) {
   );
 }
 
-/** The day and hour a summary is sent: a short day, the hour, AM or PM. */
+/** The day and hour a summary is sent, edited like a date picker. */
 function WhenCell({ d, onChange }) {
   const s = d.success || DEFAULT_SUCCESS;
 
@@ -123,72 +122,15 @@ function WhenCell({ d, onChange }) {
     return <span className="text-muted">—</span>;
   }
 
-  const tm = parseTime(s.time);
-  const set = (patch) => onChange({ ...d, success: { ...s, ...patch } });
-  // the time is on the hour; editing it drops any minutes set by hand in the file
-  const setTime = (patch) => {
-    const t = { ...tm, ...patch };
-    set({ time: joinTime(t.h, 0, t.ap) });
-  };
-  const narrow = { width: "auto" };
-
   return (
-    <div className="d-flex gap-1">
-      {s.freq === "weekly" && (
-        <Form.Select
-          size="sm"
-          aria-label={`Day of week for ${d.name}`}
-          value={s.weekday ?? 0}
-          onChange={(e) => set({ weekday: Number(e.target.value) })}
-          style={narrow}
-        >
-          {WEEKDAYS.map((n, i) => (
-            <option key={n} value={i}>
-              {n.slice(0, 3)}
-            </option>
-          ))}
-        </Form.Select>
-      )}
-      {s.freq === "monthly" && (
-        <Form.Select
-          size="sm"
-          aria-label={`Day of month for ${d.name}`}
-          value={s.dom ?? 1}
-          onChange={(e) => set({ dom: Number(e.target.value) })}
-          style={narrow}
-        >
-          {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              {ordinal(n)}
-            </option>
-          ))}
-          <option value={0}>Last</option>
-        </Form.Select>
-      )}
-      <Form.Select
-        size="sm"
-        aria-label={`Hour for ${d.name}`}
-        value={tm.h}
-        onChange={(e) => setTime({ h: Number(e.target.value) })}
-        style={narrow}
-      >
-        {HOURS.map((h) => (
-          <option key={h} value={h}>
-            {h}
-          </option>
-        ))}
-      </Form.Select>
-      <Form.Select
-        size="sm"
-        aria-label={`AM or PM for ${d.name}`}
-        value={tm.ap}
-        onChange={(e) => setTime({ ap: e.target.value })}
-        style={narrow}
-      >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
-      </Form.Select>
-    </div>
+    <WhenField
+      name={d.name}
+      freq={s.freq}
+      weekday={s.weekday ?? 0}
+      dom={s.dom ?? 1}
+      time={s.time}
+      onChange={(patch) => onChange({ ...d, success: { ...s, ...patch } })}
+    />
   );
 }
 
