@@ -3,6 +3,7 @@ package notifyhub_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -39,6 +40,18 @@ func (f *fakeProvider) Send(_ context.Context, d notifyhub.Destination, title, b
 	return nil
 }
 
+func (f *fakeProvider) titles() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var out []string
+	for _, s := range f.got {
+		out = append(out, s.dest+":"+s.title)
+	}
+
+	return out
+}
+
 func newHub(t *testing.T, ds []notifyhub.Destination, p *fakeProvider) (*notifyhub.Hub, *[]notifyhub.Entry) {
 	t.Helper()
 
@@ -64,46 +77,142 @@ func newHub(t *testing.T, ds []notifyhub.Destination, p *fakeProvider) (*notifyh
 	return h, &log
 }
 
-func dest(id string, events map[notifyhub.EventID]notifyhub.Mode) notifyhub.Destination {
-	return notifyhub.Destination{ID: id, Type: notifyhub.TypeMac, Name: id, Events: events}
+func dest(id string, failures []notifyhub.EventID, success string) notifyhub.Destination {
+	d := notifyhub.NewDestination(id, notifyhub.TypeMac, id, "")
+	d.Failures = failures
+	d.Success = notifyhub.Success{Freq: success, Time: "08:00"}
+
+	return d
 }
 
-func TestEmitRoutesByDestinationMode(t *testing.T) {
+func TestEmitSendsFailuresOnlyToDestinationsThatSelectedThem(t *testing.T) {
 	p := &fakeProvider{}
 	h, log := newHub(t, []notifyhub.Destination{
-		dest("now", map[notifyhub.EventID]notifyhub.Mode{notifyhub.EventFailed: notifyhub.ModeNow}),
-		dest("off", map[notifyhub.EventID]notifyhub.Mode{notifyhub.EventFailed: notifyhub.ModeOff}),
-		dest("roll", map[notifyhub.EventID]notifyhub.Mode{notifyhub.EventFailed: notifyhub.ModeRoll}),
-		dest("unset", nil),
+		dest("all", notifyhub.FailureEvents, notifyhub.FreqOff),
+		dest("only-health", []notifyhub.EventID{notifyhub.EventHealth}, notifyhub.FreqOff),
+		dest("none", nil, notifyhub.FreqNow),
 	}, p)
 
 	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventFailed, Source: "/Users/me"})
 	h.Wait()
 
-	require.Equal(t, []sent{{"now", "Snapshot failed", "/Users/me could not be backed up."}}, p.got)
+	require.Equal(t, []sent{{"all", "Snapshot failed", "/Users/me could not be backed up."}}, p.got)
 	require.Len(t, *log, 1)
 	require.Equal(t, "sent", (*log)[0].Status)
 	require.Equal(t, "failed", (*log)[0].Event)
 }
 
-func TestHealthAndWatchdogAreNeverBatched(t *testing.T) {
+func TestSuccessIsImmediateOnlyWhenChosen(t *testing.T) {
 	p := &fakeProvider{}
 	h, _ := newHub(t, []notifyhub.Destination{
-		dest("d", map[notifyhub.EventID]notifyhub.Mode{notifyhub.EventHealth: notifyhub.ModeRoll, notifyhub.EventWatchdog: notifyhub.ModeRoll}),
+		dest("now", nil, notifyhub.FreqNow),
+		dest("off", notifyhub.FailureEvents, notifyhub.FreqOff),
+		dest("daily", notifyhub.FailureEvents, notifyhub.FreqDaily),
 	}, p)
 
-	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventHealth, Checks: []notifyhub.HealthCheck{notifyhub.CheckRecent}})
-	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventWatchdog, Problem: notifyhub.ProblemServerDown})
+	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventDone, Source: "/Users/me", Files: 662141, Elapsed: 16 * time.Second})
 	h.Wait()
 
-	require.Empty(t, p.got)
+	require.Equal(t, []sent{{"now", "Snapshot completed", "/Users/me: 662,141 files, 0 skipped, 16s."}}, p.got)
+}
+
+func TestARepeatedSnapshotFailureIsSentOnceThenReminded(t *testing.T) {
+	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.Local)
+	p := &fakeProvider{}
+	h, _ := newHub(t, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+	h.Now = func() time.Time { return now }
+
+	fail := func(src string) {
+		h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventFailed, Source: src})
+		h.Wait()
+	}
+
+	fail("/Users/me")
+
+	for range 5 {
+		now = now.Add(time.Hour)
+		fail("/Users/me") // the hourly snapshot fails again
+	}
+
+	require.Len(t, p.got, 1, "the same failure is not repeated every hour")
+
+	fail("/Applications")
+	require.Len(t, p.got, 2, "another source is its own failure")
+
+	now = now.Add(12 * time.Hour)
+	fail("/Users/me")
+	require.Len(t, p.got, 3, "a failure that lasts is reminded after 12 hours")
+}
+
+func TestACompletedSnapshotEndsTheFailureAndSaysSo(t *testing.T) {
+	p := &fakeProvider{}
+	h, _ := newHub(t, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+	ctx := context.Background()
+
+	done := func(skipped int64) {
+		h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventDone, Source: "/Users/me", Files: 10, Skipped: skipped})
+		h.Wait()
+	}
+
+	done(0)
+	require.Empty(t, p.got, "a success with nothing to end is silent")
+
+	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventFailed, Source: "/Users/me"})
+	h.Wait()
+	done(0)
+	require.Equal(t, []string{"d:Snapshot failed", "d:Snapshot works again"}, p.titles())
+
+	done(0)
+	require.Len(t, p.got, 2, "recovery is reported once")
+
+	// skipped files: a snapshot that still skips files does not end the problem
+	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventSkipped, Source: "/Users/me", Skipped: 6, Files: 10})
+	h.Wait()
+	done(6)
+	require.Len(t, p.got, 3)
+	done(0)
+	require.Equal(t, "d:No more skipped files", p.titles()[3])
+
+	// after recovery the next failure is reported at once, not held back
+	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventFailed, Source: "/Users/me"})
+	h.Wait()
+	require.Len(t, p.got, 5)
+}
+
+func TestRecoveryGoesOnlyWhereFailuresGo(t *testing.T) {
+	p := &fakeProvider{}
+	h, _ := newHub(t, []notifyhub.Destination{
+		dest("all", notifyhub.FailureEvents, notifyhub.FreqOff),
+		dest("health", []notifyhub.EventID{notifyhub.EventHealth}, notifyhub.FreqOff),
+	}, p)
+	ctx := context.Background()
+
+	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventFailed, Source: "/a"})
+	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventDone, Source: "/a"})
+	h.Wait()
+
+	require.Equal(t, []string{"all:Snapshot failed", "all:Snapshot works again"}, p.titles())
+}
+
+func TestHealthAndMaintenanceAreNotHeldBackByTheHub(t *testing.T) {
+	// they are de-duplicated where they are detected, with their own reminders
+	p := &fakeProvider{}
+	h, _ := newHub(t, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+
+	for range 3 {
+		h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventHealth, Checks: []notifyhub.HealthCheck{notifyhub.CheckRecent}})
+		h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed})
+	}
+
+	h.Wait()
+	require.Len(t, p.got, 6)
 }
 
 func TestFailedSendIsRetriedThenLogged(t *testing.T) {
 	var waits []time.Duration
 
 	p := &fakeProvider{failures: 2}
-	h, log := newHub(t, []notifyhub.Destination{dest("d", map[notifyhub.EventID]notifyhub.Mode{notifyhub.EventMaint: notifyhub.ModeNow})}, p)
+	h, log := newHub(t, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
 	h.Sleep = func(_ context.Context, d time.Duration) { waits = append(waits, d) }
 
 	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed})
@@ -117,7 +226,7 @@ func TestFailedSendIsRetriedThenLogged(t *testing.T) {
 
 func TestSendGivesUpAfterFourAttemptsAndRecordsTheError(t *testing.T) {
 	p := &fakeProvider{failures: 100}
-	h, log := newHub(t, []notifyhub.Destination{dest("d", map[notifyhub.EventID]notifyhub.Mode{notifyhub.EventMaint: notifyhub.ModeNow})}, p)
+	h, log := newHub(t, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
 
 	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed})
 	h.Wait()
@@ -136,7 +245,7 @@ func TestEmitWithoutOrWithBrokenFileDoesNothingAndDoesNotPanic(t *testing.T) {
 	require.Empty(t, logged)
 
 	bad := filepath.Join(t.TempDir(), "bad.json")
-	require.NoError(t, writeFile(bad, "{broken"))
+	require.NoError(t, os.WriteFile(bad, []byte("{broken"), 0o600))
 	h = &notifyhub.Hub{Path: bad, Logf: func(f string, a ...any) { logged = append(logged, f) }}
 	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventFailed})
 	h.Wait()
@@ -145,7 +254,7 @@ func TestEmitWithoutOrWithBrokenFileDoesNothingAndDoesNotPanic(t *testing.T) {
 
 func TestSendTestReportsFailuresAndLogsAsTest(t *testing.T) {
 	p := &fakeProvider{failures: 1}
-	h, log := newHub(t, []notifyhub.Destination{dest("a", nil), dest("b", nil)}, p)
+	h, log := newHub(t, []notifyhub.Destination{dest("a", nil, "off"), dest("b", nil, "off")}, p)
 
 	err := h.SendTest(context.Background(), "")
 	require.ErrorContains(t, err, "Messages is not running")
@@ -158,13 +267,16 @@ func TestSendTestReportsFailuresAndLogsAsTest(t *testing.T) {
 
 // The privacy rule: whatever a producer knows, a message carries only counts, times and the source folder.
 func TestMessagesNeverCarrySensitiveText(t *testing.T) {
-	secrets := []string{"passport.pdf", "Library/Mail", "backup@fulcrum.local", "192.168.0.214", "dial tcp", "no route to host", "password"}
+	secrets := []string{"passport.pdf", "library/mail", "backup@fulcrum.local", "192.168.0.214", "dial tcp", "no route to host", "password"}
 
 	events := []notifyhub.Event{
 		{ID: notifyhub.EventHealth, Checks: []notifyhub.HealthCheck{notifyhub.CheckReadable, notifyhub.CheckRecent, notifyhub.CheckSkips, notifyhub.CheckSample, notifyhub.CheckRestore}, Since: time.Now()},
 		{ID: notifyhub.EventHealth, Recovered: true},
 		{ID: notifyhub.EventFailed, Source: "/Users/me"},
+		{ID: notifyhub.EventFailed, Source: "/Users/me", Recovered: true},
 		{ID: notifyhub.EventSkipped, Source: "/Users/me", Skipped: 6, Files: 662141},
+		{ID: notifyhub.EventSkipped, Source: "/Users/me", Recovered: true},
+		{ID: notifyhub.EventDone, Source: "/Users/me", Files: 5, Elapsed: time.Second},
 		{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemRepoUnreachable, Since: time.Now()},
 		{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed},
 		{ID: notifyhub.EventMaint, Recovered: true},
@@ -179,7 +291,7 @@ func TestMessagesNeverCarrySensitiveText(t *testing.T) {
 		require.NotEmpty(t, body)
 
 		for _, s := range secrets {
-			require.NotContains(t, strings.ToLower(title+" "+body), strings.ToLower(s), "%v", e)
+			require.NotContains(t, strings.ToLower(title+" "+body), s, "%v", e)
 		}
 	}
 }
@@ -197,14 +309,30 @@ func TestRenderedText(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	require.NoError(t, notifyhub.Validate(notifyhub.Defaults("+1 555 0100")))
-	require.Error(t, notifyhub.Validate([]notifyhub.Destination{{ID: "", Type: notifyhub.TypeMac}}))
-	require.Error(t, notifyhub.Validate([]notifyhub.Destination{{ID: "a", Type: notifyhub.TypeMac}, {ID: "a", Type: notifyhub.TypeMac}}))
-	require.Error(t, notifyhub.Validate([]notifyhub.Destination{{ID: "a", Type: "fax"}}))
-	require.Error(t, notifyhub.Validate([]notifyhub.Destination{{ID: "a", Type: notifyhub.TypeIMessage}}))
-	require.Error(t, notifyhub.Validate([]notifyhub.Destination{{ID: "a", Type: notifyhub.TypeMac, Events: map[notifyhub.EventID]notifyhub.Mode{"failed": "sometimes"}}}))
+
+	good := func() notifyhub.Destination { return notifyhub.NewDestination("a", notifyhub.TypeMac, "a", "") }
+	bad := func(mod func(*notifyhub.Destination)) error {
+		d := good()
+		mod(&d)
+
+		return notifyhub.Validate([]notifyhub.Destination{d})
+	}
+
+	require.NoError(t, bad(func(*notifyhub.Destination) {}))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.ID = "" }))
+	require.Error(t, notifyhub.Validate([]notifyhub.Destination{good(), good()}))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Type = "fax" }))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Type = notifyhub.TypeIMessage }))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Failures = []notifyhub.EventID{"done"} }))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success.Freq = "hourly" }))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "daily", Time: "8am"} }))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "weekly", Weekday: 7, Time: "08:00"} }))
+	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "monthly", DOM: 29, Time: "08:00"} }))
+	require.NoError(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "monthly", DOM: 0, Time: "23:55"} }))
+	require.NoError(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "now"} }), "immediate needs no time")
 }
 
-func TestDefaultsAndMigration(t *testing.T) {
+func TestDefaultsAndFirstStart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.json")
 
 	require.NoError(t, notifyhub.EnsureDefaults(path, "+1 555 0100"))
@@ -213,10 +341,10 @@ func TestDefaultsAndMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, ds, 2)
 	require.Equal(t, "+1 555 0100", ds[1].Target)
-	require.Equal(t, notifyhub.ModeNow, ds[1].ModeFor(notifyhub.EventSkipped))
-	require.Equal(t, notifyhub.ModeOff, ds[0].ModeFor(notifyhub.EventSkipped), "the Mac popup is not told about skipped files")
+	require.Equal(t, notifyhub.FailureEvents, ds[1].Failures)
+	require.Equal(t, notifyhub.FreqOff, ds[1].Success.Freq)
 
-	// idempotent: an existing file, even one the user emptied, is left alone
+	// an existing file, even one the user emptied, is left alone
 	require.NoError(t, notifyhub.Save(path, nil))
 	require.NoError(t, notifyhub.EnsureDefaults(path, "+1 555 0100"))
 	ds, err = notifyhub.Load(path)
@@ -224,42 +352,28 @@ func TestDefaultsAndMigration(t *testing.T) {
 	require.Empty(t, ds)
 }
 
-func TestSetIMessageTargetCreatesUpdatesAndRemoves(t *testing.T) {
+func TestFileFromTheFirstVersionIsUpgraded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "d.json")
-	require.NoError(t, notifyhub.EnsureDefaults(path, ""))
+	old := `{"destinations":[
+	  {"id":"mac","type":"mac","name":"This Mac","events":{"failed":"now","health":"now","maint":"now","watchdog":"now"}},
+	  {"id":"iphone","type":"imessage","name":"iPhone","target":"+1 555 0100","events":{"health":"now","skipped":"roll","failed":"now"},
+	   "rollup":{"freq":"weekly","weekday":2,"time":"07:30"}}]}`
+	require.NoError(t, os.WriteFile(path, []byte(old), 0o600))
 
-	ds, _ := notifyhub.Load(path)
-	require.Len(t, ds, 1)
+	ds, err := notifyhub.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, []notifyhub.EventID{"health", "failed", "maint", "watchdog"}, ds[0].Failures)
+	require.Equal(t, notifyhub.FreqOff, ds[0].Success.Freq)
+	require.Equal(t, []notifyhub.EventID{"health", "failed", "skipped"}, ds[1].Failures)
+	require.Equal(t, notifyhub.Success{Freq: "weekly", Weekday: 2, Time: "07:30"}, ds[1].Success, "a roll-up becomes the success summary")
+	require.NoError(t, notifyhub.Validate(ds))
 
-	require.NoError(t, notifyhub.SetIMessageTarget(path, " +1 555 0100 "))
-	ds, _ = notifyhub.Load(path)
-	require.Len(t, ds, 2)
-	require.Equal(t, "+1 555 0100", ds[1].Target)
+	require.NoError(t, notifyhub.Upgrade(path))
+	b, _ := os.ReadFile(path)
+	require.NotContains(t, string(b), `"events"`)
+	require.Contains(t, string(b), `"failures"`)
 
-	// the user's choice of events survives a change of number
-	ds[1].Events[notifyhub.EventSkipped] = notifyhub.ModeOff
-	require.NoError(t, notifyhub.Save(path, ds))
-	require.NoError(t, notifyhub.SetIMessageTarget(path, "me@example.com"))
-	ds, _ = notifyhub.Load(path)
-	require.Equal(t, "me@example.com", ds[1].Target)
-	require.Equal(t, notifyhub.ModeOff, ds[1].ModeFor(notifyhub.EventSkipped))
-
-	require.NoError(t, notifyhub.SetIMessageTarget(path, ""))
-	ds, _ = notifyhub.Load(path)
-	require.Len(t, ds, 1)
-}
-
-func TestValidateRollup(t *testing.T) {
-	ok := func(r notifyhub.Rollup) error {
-		return notifyhub.Validate([]notifyhub.Destination{{ID: "a", Type: notifyhub.TypeMac, Rollup: &r}})
-	}
-
-	require.NoError(t, ok(notifyhub.Rollup{Freq: "daily", Time: "08:05"}))
-	require.NoError(t, ok(notifyhub.Rollup{Freq: "monthly", DOM: 0, Time: "23:55"}))
-	require.NoError(t, ok(notifyhub.Rollup{Freq: "weekly", Weekday: 6, Time: "00:00"}))
-	require.Error(t, ok(notifyhub.Rollup{Freq: "hourly", Time: "08:00"}))
-	require.Error(t, ok(notifyhub.Rollup{Freq: "daily", Time: "8am"}))
-	require.Error(t, ok(notifyhub.Rollup{Freq: "daily", Time: "25:00"}))
-	require.Error(t, ok(notifyhub.Rollup{Freq: "weekly", Weekday: 7, Time: "08:00"}))
-	require.Error(t, ok(notifyhub.Rollup{Freq: "monthly", DOM: 29, Time: "08:00"}))
+	again, err := notifyhub.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, ds, again)
 }

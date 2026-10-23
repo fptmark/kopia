@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	schemaVersion = 2
-
 	defaultListLimit = 50
 	maxListLimit     = 1000
 
@@ -150,6 +148,17 @@ CREATE TABLE notification_log (
 CREATE INDEX notification_log_by_time ON notification_log (sent_at);
 `
 
+// schemaV3 adds when each destination last received its periodic summary.
+const schemaV3 = `
+CREATE TABLE notification_state (
+	destination    TEXT PRIMARY KEY,
+	last_rollup_at INTEGER NOT NULL -- unix nanoseconds, UTC
+);
+`
+
+// migrations are applied in order; the database version is the number applied.
+var migrations = []string{schemaV1, schemaV2, schemaV3} //nolint:gochecknoglobals
+
 func (s *Store) migrate() error {
 	var v int
 
@@ -157,50 +166,32 @@ func (s *Store) migrate() error {
 		return errors.Wrap(err, "unable to read task history version")
 	}
 
-	switch {
-	case v == 0:
-		tx, err := s.db.Begin()
-		if err != nil {
-			return errors.Wrap(err, "unable to start task history setup")
-		}
-
-		defer tx.Rollback() //nolint:errcheck
-
-		if _, err := tx.Exec(schemaV1); err != nil {
-			return errors.Wrap(err, "unable to create task history tables")
-		}
-
-		if _, err := tx.Exec(schemaV2); err != nil {
-			return errors.Wrap(err, "unable to create notification log")
-		}
-
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-			return errors.Wrap(err, "unable to set task history version")
-		}
-
-		return errors.Wrap(tx.Commit(), "unable to commit task history setup")
-	case v == 1:
-		tx, err := s.db.Begin()
-		if err != nil {
-			return errors.Wrap(err, "unable to start task history upgrade")
-		}
-
-		defer tx.Rollback() //nolint:errcheck
-
-		if _, err := tx.Exec(schemaV2); err != nil {
-			return errors.Wrap(err, "unable to create notification log")
-		}
-
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
-			return errors.Wrap(err, "unable to set task history version")
-		}
-
-		return errors.Wrap(tx.Commit(), "unable to commit task history upgrade")
-	case v == schemaVersion:
-		return nil
-	default:
-		return errors.Errorf("task history was written by a newer version (schema %d, this build understands %d)", v, schemaVersion)
+	if v > len(migrations) {
+		return errors.Errorf("task history was written by a newer version (schema %d, this build understands %d)", v, len(migrations))
 	}
+
+	if v == len(migrations) {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return errors.Wrap(err, "unable to start task history setup")
+	}
+
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, m := range migrations[v:] {
+		if _, err := tx.Exec(m); err != nil {
+			return errors.Wrap(err, "unable to update task history tables")
+		}
+	}
+
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", len(migrations))); err != nil {
+		return errors.Wrap(err, "unable to set task history version")
+	}
+
+	return errors.Wrap(tx.Commit(), "unable to commit task history setup")
 }
 
 func (s *Store) markInterrupted() error {

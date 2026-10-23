@@ -1031,6 +1031,8 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 
 	var taskID string
 
+	started := clock.Now()
+
 	err := errors.Wrap(s.taskmgr.Run(
 		ctx,
 		"Snapshot",
@@ -1052,7 +1054,7 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 		failedFiles, totalFiles = int64(rs.DirSummary.FatalErrorCount), rs.DirSummary.TotalFileCount
 	}
 
-	s.emitSnapshotOutcome(ctx, src.Path, err, failedFiles, totalFiles)
+	s.emitSnapshotOutcome(ctx, src.Path, err, failedFiles, totalFiles, clock.Now().Sub(started))
 
 	return err
 }
@@ -1205,6 +1207,10 @@ func New(ctx context.Context, options *Options) (*Server, error) {
 	s.parallelSnapshotsChanged = sync.NewCond(&s.parallelSnapshotsMutex)
 
 	s.setupNotifications(ctx)
+
+	if s.notifyHub != nil {
+		go s.notifyHub.RunSummaries(ctx)
+	}
 
 	if options.TaskHistory != nil {
 		if err := s.taskmgr.SetHistory(options.TaskHistory); err != nil {

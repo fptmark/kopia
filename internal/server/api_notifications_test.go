@@ -52,7 +52,7 @@ func TestNotificationDestinationsRoundTripAndValidation(t *testing.T) {
 	require.Nil(t, apiErr)
 	require.Len(t, out.(notificationDestinations).Destinations, 1, "the default This Mac destination")
 
-	body := `{"destinations":[{"id":"a","type":"imessage","name":"Me","target":"+1 555 0100","events":{"failed":"now","skipped":"roll"},"rollup":{"freq":"weekly","weekday":2,"time":"07:30"}}]}`
+	body := `{"destinations":[{"id":"a","type":"imessage","name":"Me","target":"+1 555 0100","failures":["failed","skipped"],"success":{"freq":"weekly","weekday":2,"time":"07:30"}}]}`
 	_, apiErr = handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", body, nil))
 	require.Nil(t, apiErr)
 
@@ -63,7 +63,8 @@ func TestNotificationDestinationsRoundTripAndValidation(t *testing.T) {
 	for _, bad := range []string{
 		`{"destinations":[{"id":"a","type":"fax","name":"x"}]}`,
 		`{"destinations":[{"id":"a","type":"imessage","name":"x"}]}`,
-		`{"destinations":[{"id":"a","type":"mac","name":"x","rollup":{"freq":"hourly","time":"08:00"}}]}`,
+		`{"destinations":[{"id":"a","type":"mac","name":"x","failures":[],"success":{"freq":"hourly"}}]}`,
+		`{"destinations":[{"id":"a","type":"mac","name":"x","failures":["done"],"success":{"freq":"off"}}]}`,
 		`not json`,
 	} {
 		_, apiErr = handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", bad, nil))
@@ -111,9 +112,22 @@ func TestNotificationTestAndLogAndPreview(t *testing.T) {
 	}
 
 	require.Contains(t, titles, "Snapshot failed")
-	require.NotContains(t, titles, "Files skipped", "the Mac popup default is not told about skipped files")
+	require.Contains(t, titles, "Files skipped")
 	require.NotContains(t, titles, "Backup server is not running", "the watchdog does not exist yet")
+
+	require.Nil(t, out.(notificationPreview).Summary, "no periodic summary for a destination that does not get one")
 
 	_, apiErr = handleNotificationPreview(ctx, rcFor(s, http.MethodGet, "/?destination=zzz", "", nil))
 	require.NotNil(t, apiErr)
+
+	// a destination with a daily summary previews it from real data
+	body := `{"destinations":[{"id":"d","type":"mac","name":"d","failures":[],"success":{"freq":"daily","time":"08:00"}}]}`
+	_, apiErr = handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", body, nil))
+	require.Nil(t, apiErr)
+
+	out, apiErr = handleNotificationPreview(ctx, rcFor(s, http.MethodGet, "/?destination=d", "", nil))
+	require.Nil(t, apiErr)
+	require.NotNil(t, out.(notificationPreview).Summary)
+	require.Equal(t, "Backup summary, last 24 hours", out.(notificationPreview).Summary.Title)
+	require.Empty(t, out.(notificationPreview).Immediate)
 }

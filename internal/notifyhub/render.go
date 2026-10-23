@@ -20,9 +20,19 @@ func Render(e Event) (title, body string) {
 	case EventHealth:
 		return renderHealth(e)
 	case EventFailed:
+		if e.Recovered {
+			return "Snapshot works again", fmt.Sprintf("%v was backed up.", e.Source)
+		}
+
 		return "Snapshot failed", fmt.Sprintf("%v could not be backed up.", e.Source)
 	case EventSkipped:
+		if e.Recovered {
+			return "No more skipped files", fmt.Sprintf("%v finished with no skipped files.", e.Source)
+		}
+
 		return "Files skipped", fmt.Sprintf("%v: finished with %v skipped files of %v.", e.Source, number(e.Skipped), number(e.Files))
+	case EventDone:
+		return "Snapshot completed", fmt.Sprintf("%v: %v files, %v skipped, %v.", e.Source, number(e.Files), number(e.Skipped), e.Elapsed.Round(time.Second))
 	case EventMaint:
 		return renderMaint(e)
 	case EventWatchdog:
@@ -110,28 +120,33 @@ type Message struct {
 // SampleImmediate renders the messages a destination would receive as events happen, using the given source
 // folder and sample counts, so the settings page can show them before anything goes wrong.
 func SampleImmediate(d Destination, source string) []Message {
+	at := func(h, m int) time.Time { return time.Date(2000, 1, 1, h, m, 0, 0, time.Local) }
+
 	samples := map[EventID][]Event{
 		EventHealth: {
-			{ID: EventHealth, Checks: []HealthCheck{CheckSkips}, Since: time.Date(2000, 1, 1, 10, 12, 0, 0, time.Local)},
+			{ID: EventHealth, Checks: []HealthCheck{CheckSkips}, Since: at(10, 12)},
 			{ID: EventHealth, Recovered: true},
 		},
-		EventFailed:  {{ID: EventFailed, Source: source}},
+		EventFailed: {
+			{ID: EventFailed, Source: source},
+			{ID: EventFailed, Source: source, Recovered: true},
+		},
 		EventSkipped: {{ID: EventSkipped, Source: source, Skipped: 6, Files: 662141}},
 		EventMaint: {
-			{ID: EventMaint, Problem: ProblemRepoUnreachable, Since: time.Date(2000, 1, 1, 10, 7, 0, 0, time.Local)},
+			{ID: EventMaint, Problem: ProblemRepoUnreachable, Since: at(10, 7)},
 			{ID: EventMaint, Problem: ProblemMaintFailed},
 		},
 		EventWatchdog: {
-			{ID: EventWatchdog, Problem: ProblemServerDown, Since: time.Date(2000, 1, 1, 10, 40, 0, 0, time.Local)},
+			{ID: EventWatchdog, Problem: ProblemServerDown, Since: at(10, 40)},
 			{ID: EventWatchdog, Problem: ProblemStaleCheck},
 		},
 	}
 
 	out := []Message{}
 
-	for _, id := range AllEvents {
+	for _, id := range FailureEvents {
 		// the watchdog is not running yet, so it is not previewed either
-		if d.ModeFor(id) != ModeNow || id == EventWatchdog {
+		if !d.HearsFailure(id) || id == EventWatchdog {
 			continue
 		}
 
@@ -139,6 +154,11 @@ func SampleImmediate(d Destination, source string) []Message {
 			t, b := Render(e)
 			out = append(out, Message{Title: t, Body: b})
 		}
+	}
+
+	if d.Success.Freq == FreqNow {
+		t, b := Render(Event{ID: EventDone, Source: source, Files: 662141, Elapsed: 16 * time.Second})
+		out = append(out, Message{Title: t, Body: b})
 	}
 
 	return out

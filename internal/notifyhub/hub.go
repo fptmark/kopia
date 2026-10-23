@@ -19,14 +19,23 @@ type Entry struct {
 	At          time.Time
 	Destination string
 	Event       string
-	Mode        string
+	Mode        string // now or summary
 	Status      string // sent or failed
 	Attempts    int
 	Error       string
 }
 
+// RollupState remembers when each destination last received its summary.
+type RollupState interface {
+	LastRollup(destination string) (time.Time, bool, error)
+	SetLastRollup(destination string, at time.Time) error
+}
+
 // DefaultRetryDelays are the waits before the second, third and fourth attempt.
 var DefaultRetryDelays = []time.Duration{10 * time.Second, time.Minute, 5 * time.Minute} //nolint:gochecknoglobals
+
+// DefaultRepeatEvery is how long the same snapshot failure is held back after it was reported.
+const DefaultRepeatEvery = 12 * time.Hour
 
 // Hub applies each destination's settings to events and delivers the messages.
 type Hub struct {
@@ -38,12 +47,23 @@ type Hub struct {
 	// Logf, when set, receives problems that are not tied to one delivery.
 	Logf func(format string, args ...any)
 
+	// State and Digest drive the periodic summaries; without them none are sent.
+	State  RollupState
+	Digest func(ctx context.Context, from, to time.Time, freq string) (Summary, error)
+
 	RetryDelays []time.Duration
+	// RepeatEvery overrides DefaultRepeatEvery.
+	RepeatEvery time.Duration
 	// Sleep waits between attempts (replaced in tests).
 	Sleep func(ctx context.Context, d time.Duration)
 	Now   func() time.Time
 
 	wg sync.WaitGroup
+
+	mu sync.Mutex
+	// reported holds when each snapshot failure (by kind and source) was last sent, so one that repeats
+	// every hour is sent once, with a reminder, and its end is reported.
+	reported map[string]time.Time
 }
 
 func (h *Hub) logf(format string, args ...any) {
@@ -75,8 +95,28 @@ func (h *Hub) sleep(ctx context.Context, d time.Duration) {
 	}
 }
 
-// Emit sends the event to every destination that wants it immediately. It returns at once; delivery and
-// retries continue in the background, and a failed delivery never affects the caller.
+func (h *Hub) repeatEvery() time.Duration {
+	if h.RepeatEvery > 0 {
+		return h.RepeatEvery
+	}
+
+	return DefaultRepeatEvery
+}
+
+// hears reports whether a destination wants this event.
+func hears(d Destination, e Event) bool {
+	if e.ID == EventDone {
+		return d.Success.Freq == FreqNow
+	}
+
+	return d.HearsFailure(e.ID)
+}
+
+// Emit sends the event to every destination that wants it. It returns at once; delivery and retries
+// continue in the background, and a failed delivery never affects the caller.
+//
+// A snapshot failure that was already reported within RepeatEvery is not sent again. A completed snapshot
+// ends the failure of its source and reports that.
 func (h *Hub) Emit(ctx context.Context, e Event) {
 	ds, err := Load(h.Path)
 	if err != nil {
@@ -84,11 +124,73 @@ func (h *Hub) Emit(ctx context.Context, e Event) {
 		return
 	}
 
-	title, body := Render(e)
 	ctx = context.WithoutCancel(ctx)
 
+	for _, rec := range h.update(e) {
+		h.dispatch(ctx, ds, rec)
+	}
+
+	if (e.ID == EventFailed || e.ID == EventSkipped) && !e.Recovered && !h.shouldReport(e) {
+		return
+	}
+
+	h.dispatch(ctx, ds, e)
+}
+
+func reportKey(id EventID, source string) string { return string(id) + "|" + source }
+
+// update ends the failures a completed snapshot resolves and returns the recovery events to send.
+func (h *Hub) update(e Event) []Event {
+	if e.ID != EventDone {
+		return nil
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var out []Event
+
+	if _, ok := h.reported[reportKey(EventFailed, e.Source)]; ok {
+		delete(h.reported, reportKey(EventFailed, e.Source))
+
+		out = append(out, Event{ID: EventFailed, Source: e.Source, Recovered: true})
+	}
+
+	if _, ok := h.reported[reportKey(EventSkipped, e.Source)]; ok && e.Skipped == 0 {
+		delete(h.reported, reportKey(EventSkipped, e.Source))
+
+		out = append(out, Event{ID: EventSkipped, Source: e.Source, Recovered: true})
+	}
+
+	return out
+}
+
+// shouldReport records a snapshot failure and reports whether it is due to be sent.
+func (h *Hub) shouldReport(e Event) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.reported == nil {
+		h.reported = map[string]time.Time{}
+	}
+
+	k := reportKey(e.ID, e.Source)
+	now := h.now()
+
+	if last, ok := h.reported[k]; ok && now.Sub(last) < h.repeatEvery() {
+		return false
+	}
+
+	h.reported[k] = now
+
+	return true
+}
+
+func (h *Hub) dispatch(ctx context.Context, ds []Destination, e Event) {
+	title, body := Render(e)
+
 	for _, d := range ds {
-		if d.ModeFor(e.ID) != ModeNow {
+		if !hears(d, e) {
 			continue
 		}
 
@@ -97,12 +199,12 @@ func (h *Hub) Emit(ctx context.Context, e Event) {
 		go func() {
 			defer h.wg.Done()
 
-			h.deliver(ctx, d, string(e.ID), string(ModeNow), title, body)
+			h.deliver(ctx, d, string(e.ID), "now", title, body)
 		}()
 	}
 }
 
-// Wait blocks until every delivery started by Emit has finished.
+// Wait blocks until every delivery started by Emit or CheckSummaries has finished.
 func (h *Hub) Wait() { h.wg.Wait() }
 
 func (h *Hub) deliver(ctx context.Context, d Destination, event, mode, title, body string) {
@@ -166,7 +268,7 @@ func (h *Hub) SendTest(ctx context.Context, id string) error {
 
 		sent++
 
-		e := Entry{At: h.now(), Destination: d.ID, Event: "test", Mode: string(ModeNow), Status: "sent", Attempts: 1}
+		e := Entry{At: h.now(), Destination: d.ID, Event: "test", Mode: "now", Status: "sent", Attempts: 1}
 
 		if err := h.sendOnce(ctx, d, title, body); err != nil {
 			e.Status, e.Error = "failed", err.Error()
@@ -187,4 +289,85 @@ func (h *Hub) SendTest(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// RunSummaries sends periodic summaries when they fall due, until ctx ends.
+func (h *Hub) RunSummaries(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+
+	for {
+		h.CheckSummaries(ctx)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// CheckSummaries sends the summary of every destination whose scheduled time has passed since it last
+// received one. After sleep or downtime a missed summary is sent once, covering the whole period.
+func (h *Hub) CheckSummaries(ctx context.Context) {
+	if h.State == nil || h.Digest == nil {
+		return
+	}
+
+	ds, err := Load(h.Path)
+	if err != nil {
+		h.logf("notifications: %v", err)
+		return
+	}
+
+	now := h.now()
+	ctx = context.WithoutCancel(ctx)
+
+	for _, d := range ds {
+		if !d.Success.Scheduled() {
+			continue
+		}
+
+		last, ok, err := h.State.LastRollup(d.ID)
+		if err != nil {
+			h.logf("notifications: %v", err)
+			continue
+		}
+
+		if !ok {
+			// a new schedule starts counting now: the first summary is the next due time
+			if err := h.State.SetLastRollup(d.ID, now); err != nil {
+				h.logf("notifications: %v", err)
+			}
+
+			continue
+		}
+
+		if !LatestDue(d.Success, now).After(last) {
+			continue
+		}
+
+		// remember it before sending so a slow or failing send cannot cause a second summary
+		if err := h.State.SetLastRollup(d.ID, now); err != nil {
+			h.logf("notifications: %v", err)
+			continue
+		}
+
+		s, err := h.Digest(ctx, last, now, d.Success.Freq)
+		if err != nil {
+			h.logf("notifications: unable to build the summary for %v: %v", d.Name, err)
+			continue
+		}
+
+		s.Freq = d.Success.Freq
+		title, body := RenderSummary(s)
+
+		h.wg.Add(1)
+
+		go func() {
+			defer h.wg.Done()
+
+			h.deliver(ctx, d, "summary", "summary", title, body)
+		}()
+	}
 }

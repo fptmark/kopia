@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/taskstore"
@@ -19,6 +20,8 @@ type notificationDestinations struct {
 
 type notificationPreview struct {
 	Immediate []notifyhub.Message `json:"immediate"`
+	// Summary is the periodic summary the destination would get, from the latest real data (nil when none).
+	Summary *notifyhub.Message `json:"summary"`
 }
 
 var notificationFileMutex sync.Mutex //nolint:gochecknoglobals
@@ -87,7 +90,7 @@ func handleNotificationDestinationTest(ctx context.Context, rc requestContext) (
 	return serverapi.Empty{}, nil
 }
 
-func handleNotificationPreview(_ context.Context, rc requestContext) (any, *apiError) {
+func handleNotificationPreview(ctx context.Context, rc requestContext) (any, *apiError) {
 	h, apiErr := notificationHub(rc)
 	if apiErr != nil {
 		return nil, apiErr
@@ -107,7 +110,19 @@ func handleNotificationPreview(_ context.Context, rc requestContext) (any, *apiE
 				home = "/Users/me"
 			}
 
-			return notificationPreview{Immediate: notifyhub.SampleImmediate(d, home)}, nil
+			p := notificationPreview{Immediate: notifyhub.SampleImmediate(d, home)}
+
+			if srv, ok := rc.srv.(*Server); ok && d.Success.Scheduled() {
+				now := clock.Now()
+
+				if sum, serr := srv.buildSummary(ctx, now.Add(-notifyhub.Period(d.Success.Freq)), now, d.Success.Freq); serr == nil {
+					sum.Freq = d.Success.Freq
+					title, body := notifyhub.RenderSummary(sum)
+					p.Summary = &notifyhub.Message{Title: title, Body: body}
+				}
+			}
+
+			return p, nil
 		}
 	}
 

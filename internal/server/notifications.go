@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/taskstore"
@@ -45,13 +47,19 @@ func (s *Server) setupNotifications(ctx context.Context) {
 		}
 	}
 
+	if err := notifyhub.Upgrade(file); err != nil {
+		userLog(ctx).Errorf("unable to upgrade notification destinations: %v", err)
+	}
+
 	h := &notifyhub.Hub{
 		Path:      file,
 		Providers: notifyhub.SystemProviders(),
 		Logf:      func(format string, args ...any) { userLog(ctx).Warnf(format, args...) },
+		Digest:    s.buildSummary,
 	}
 
 	if history := s.options.TaskHistory; history != nil {
+		h.State = history
 		h.Record = func(e notifyhub.Entry) {
 			err := history.RecordNotification(taskstore.NotificationEntry{
 				SentAt: e.At, Destination: e.Destination, Event: e.Event, Mode: e.Mode, Status: e.Status, Attempts: e.Attempts, Error: e.Error,
@@ -73,14 +81,81 @@ func (s *Server) emit(ctx context.Context, e notifyhub.Event) {
 	}
 }
 
-// emitSnapshotOutcome tells destinations about a snapshot that failed or skipped files.
-func (s *Server) emitSnapshotOutcome(ctx context.Context, path string, err error, failedFiles, totalFiles int64) {
+// emitSnapshotOutcome tells destinations how a snapshot went: a failure, skipped files, or completion.
+func (s *Server) emitSnapshotOutcome(ctx context.Context, path string, err error, failedFiles, totalFiles int64, elapsed time.Duration) {
 	switch {
-	case err != nil && !strings.Contains(err.Error(), "canceled") && ctx.Err() == nil:
-		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventFailed, Source: path})
-	case err == nil && failedFiles > 0:
-		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventSkipped, Source: path, Skipped: failedFiles, Files: totalFiles})
+	case err != nil:
+		if !strings.Contains(err.Error(), "canceled") && ctx.Err() == nil {
+			s.emit(ctx, notifyhub.Event{ID: notifyhub.EventFailed, Source: path})
+		}
+	default:
+		if failedFiles > 0 {
+			s.emit(ctx, notifyhub.Event{ID: notifyhub.EventSkipped, Source: path, Skipped: failedFiles, Files: totalFiles})
+		}
+
+		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventDone, Source: path, Files: totalFiles, Skipped: failedFiles, Elapsed: elapsed})
 	}
+}
+
+// sourcePath is the folder of a source written as user@host:/path.
+func sourcePath(src string) string {
+	if i := strings.Index(src, ":"); i >= 0 && strings.Contains(src[:i], "@") {
+		return src[i+1:]
+	}
+
+	return src
+}
+
+// buildSummary collects what happened between from and to for a periodic summary, from the task history.
+func (s *Server) buildSummary(_ context.Context, from, to time.Time, _ string) (notifyhub.Summary, error) {
+	var sum notifyhub.Summary
+
+	h := s.options.TaskHistory
+	if h == nil {
+		return sum, errors.New("no task history")
+	}
+
+	acts, err := h.SnapshotActivity(from, to)
+	if err != nil {
+		return sum, errors.Wrap(err, "snapshot activity")
+	}
+
+	for _, a := range acts {
+		if a.Snapshots > 0 {
+			sum.Sources = append(sum.Sources, notifyhub.SourceSummary{Source: sourcePath(a.Source), Snapshots: a.Snapshots, Files: a.Files})
+		}
+
+		sum.Failed += a.Failed
+		sum.WithSkipped += a.WithSkipped
+		sum.MostSkipped = max(sum.MostSkipped, a.MostSkipped)
+	}
+
+	if sum.MaintRuns, sum.MaintFailed, err = h.MaintenanceActivity(from, to); err != nil {
+		return sum, errors.Wrap(err, "maintenance activity")
+	}
+
+	if usage, uerr := h.StorageUsageHistory(500); uerr == nil && len(usage) > 0 {
+		sum.HaveRepo, sum.RepoBytes = true, usage[0].TotalBytes
+
+		for _, u := range usage { // newest first: the first one at or before the start of the period
+			if !u.ComputedAt.After(from) {
+				sum.HaveGrowth, sum.RepoGrowth = true, usage[0].TotalBytes-u.TotalBytes
+				break
+			}
+		}
+	}
+
+	sum.Health = "not run"
+
+	if v := s.currentVerifier(); v != nil {
+		if st := v.getStatus(); st.State == "failing" {
+			sum.Health = "failing"
+		} else if st.LastDeep != nil {
+			sum.Health = "passed"
+		}
+	}
+
+	return sum, nil
 }
 
 // watchRepositoryOpen reports a repository that stays unreachable for longer than repoUnreachableAfter, and

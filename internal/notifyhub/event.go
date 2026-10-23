@@ -7,30 +7,22 @@ package notifyhub
 
 import "time"
 
-// EventID names a kind of event; destinations choose how they hear about each one.
+// EventID names a kind of event.
 type EventID string
 
-// Events a destination can subscribe to.
+// Failure events are what a destination's failure types select; EventDone is a completed snapshot, which
+// the success setting of a destination controls.
 const (
 	EventHealth   EventID = "health"
 	EventFailed   EventID = "failed"
 	EventSkipped  EventID = "skipped"
 	EventMaint    EventID = "maint"
 	EventWatchdog EventID = "watchdog"
+	EventDone     EventID = "done"
 )
 
-// AllEvents lists the events in display order.
-var AllEvents = []EventID{EventHealth, EventFailed, EventSkipped, EventMaint, EventWatchdog} //nolint:gochecknoglobals
-
-// Mode is how a destination hears about an event.
-type Mode string
-
-// Delivery modes.
-const (
-	ModeOff  Mode = "off"
-	ModeNow  Mode = "now"
-	ModeRoll Mode = "roll"
-)
+// FailureEvents lists the failure types in display order.
+var FailureEvents = []EventID{EventHealth, EventFailed, EventSkipped, EventMaint, EventWatchdog} //nolint:gochecknoglobals
 
 // HealthCheck identifies a failing health check without carrying any of its detail text.
 type HealthCheck int
@@ -59,16 +51,18 @@ const (
 type Event struct {
 	ID EventID
 
-	// Source is the folder a snapshot was taken of (failed, skipped).
+	// Source is the folder a snapshot was taken of (failed, skipped, done).
 	Source string
-	// Files and Skipped are counts (skipped).
+	// Files and Skipped are counts (skipped, done).
 	Files, Skipped int64
+	// Elapsed is how long a snapshot took (done).
+	Elapsed time.Duration
 	// Checks are the failing health checks (health).
 	Checks []HealthCheck
 	// Problem is the failure (maint, watchdog).
 	Problem Problem
-	// Since is when the problem started (health, maint, watchdog).
+	// Since is when the problem started (health, maint, watchdog, and failed or skipped once the problem is over).
 	Since time.Time
-	// Recovered reports the end of a problem (health, maint, watchdog).
+	// Recovered reports the end of a problem (health, maint, watchdog, and failed or skipped once the problem is over).
 	Recovered bool
 }

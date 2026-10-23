@@ -484,15 +484,38 @@ func TestNotificationLogKeepsNewestFirst(t *testing.T) {
 	require.Len(t, got, 1)
 }
 
-func TestDatabaseFromAnEarlierVersionGainsTheNotificationLog(t *testing.T) {
+func TestRollupStateIsRememberedPerDestination(t *testing.T) {
 	s, path := openStore(t)
-	record(t, s, info(1, "Snapshot", "kept", uitask.StatusSuccess, t0))
+
+	_, ok, err := s.LastRollup("iphone")
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	require.NoError(t, s.SetLastRollup("iphone", t0))
+	require.NoError(t, s.SetLastRollup("iphone", t0.Add(time.Hour)))
+	require.NoError(t, s.SetLastRollup("mac", t0))
 	require.NoError(t, s.Close())
 
-	// make it look like a version 1 database
+	s, err = taskstore.Open(path)
+	require.NoError(t, err)
+
+	defer s.Close() //nolint:errcheck
+
+	got, ok, err := s.LastRollup("iphone")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, got.Equal(t0.Add(time.Hour)), "survives a restart")
+}
+
+func TestDatabaseFromVersionOneGainsEveryLaterTable(t *testing.T) {
+	s, path := openStore(t)
+	require.NoError(t, s.Close())
+
 	db, err := sql.Open("sqlite", "file:"+path)
 	require.NoError(t, err)
 	_, err = db.Exec("DROP TABLE notification_log")
+	require.NoError(t, err)
+	_, err = db.Exec("DROP TABLE notification_state")
 	require.NoError(t, err)
 	_, err = db.Exec("PRAGMA user_version = 1")
 	require.NoError(t, err)
@@ -503,8 +526,39 @@ func TestDatabaseFromAnEarlierVersionGainsTheNotificationLog(t *testing.T) {
 
 	defer s.Close() //nolint:errcheck
 
-	_, total, err := s.ListTasks(uitask.TaskQuery{})
-	require.NoError(t, err)
-	require.Equal(t, 1, total, "existing history is untouched")
+	require.NoError(t, s.SetLastRollup("d", t0))
 	require.NoError(t, s.RecordNotification(taskstore.NotificationEntry{SentAt: t0, Destination: "d", Event: "x", Mode: "now", Status: "sent", Attempts: 1}))
+}
+
+func TestActivityCountsByPeriodAndKeepsFailuresApart(t *testing.T) {
+	s, _ := openStore(t)
+
+	add := func(seq int, kind string, st uitask.Status, hours int, src string, files, failed int64) {
+		i := info(seq, kind, "x", st, t0.Add(time.Duration(hours)*time.Hour))
+		record(t, s, i)
+
+		if src != "" {
+			require.NoError(t, s.RecordSnapshotResult(i.TaskID, taskstore.SnapshotResult{Source: src, TotalFiles: files, FailedFiles: failed}))
+		}
+	}
+
+	add(1, "Snapshot", uitask.StatusSuccess, 1, "u@h:/a", 10, 0)
+	add(2, "Snapshot", uitask.StatusSuccess, 2, "u@h:/a", 12, 3)
+	add(3, "Snapshot", uitask.StatusFailed, 3, "u@h:/a", 0, 0)
+	add(4, "Snapshot", uitask.StatusSuccess, 30, "u@h:/a", 99, 0) // later than the period
+	add(5, "Maintenance", uitask.StatusFailed, 4, "", 0, 0)
+	add(6, "Maintenance", uitask.StatusSuccess, 5, "", 0, 0)
+
+	acts, err := s.SnapshotActivity(t0, t0.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, []taskstore.SourceActivity{{Source: "u@h:/a", Snapshots: 2, Files: 12, Failed: 1, WithSkipped: 1, MostSkipped: 3}}, acts)
+
+	runs, failed, err := s.MaintenanceActivity(t0, t0.Add(24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 2, runs)
+	require.Equal(t, 1, failed)
+
+	acts, err = s.SnapshotActivity(t0.Add(100*time.Hour), t0.Add(200*time.Hour))
+	require.NoError(t, err)
+	require.Empty(t, acts)
 }
