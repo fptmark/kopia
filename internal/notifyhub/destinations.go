@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -79,6 +80,10 @@ func Validate(ds []Destination) error {
 
 		if d.Type == TypeIMessage && strings.TrimSpace(d.Target) == "" {
 			return errors.Errorf("destination %q needs a phone number or Apple ID", d.ID)
+		}
+
+		if err := validateRollup(d.ID, d.Rollup); err != nil {
+			return err
 		}
 
 		for id, m := range d.Events {
@@ -185,4 +190,26 @@ func SetIMessageTarget(path, to string) error {
 	}
 
 	return Save(path, out)
+}
+
+func validateRollup(id string, r *Rollup) error {
+	if r == nil {
+		return nil
+	}
+
+	switch r.Freq {
+	case "daily", "weekly", "monthly":
+	default:
+		return errors.Errorf("destination %q: roll-up frequency %q is not daily, weekly or monthly", id, r.Freq)
+	}
+
+	if _, err := time.Parse("15:04", r.Time); err != nil {
+		return errors.Errorf("destination %q: roll-up time %q is not HH:MM", id, r.Time)
+	}
+
+	if r.Weekday < 0 || r.Weekday > 6 || r.DOM < 0 || r.DOM > 28 {
+		return errors.Errorf("destination %q: roll-up day is out of range", id)
+	}
+
+	return nil
 }

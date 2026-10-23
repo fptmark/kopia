@@ -248,3 +248,18 @@ func TestSetIMessageTargetCreatesUpdatesAndRemoves(t *testing.T) {
 	ds, _ = notifyhub.Load(path)
 	require.Len(t, ds, 1)
 }
+
+func TestValidateRollup(t *testing.T) {
+	ok := func(r notifyhub.Rollup) error {
+		return notifyhub.Validate([]notifyhub.Destination{{ID: "a", Type: notifyhub.TypeMac, Rollup: &r}})
+	}
+
+	require.NoError(t, ok(notifyhub.Rollup{Freq: "daily", Time: "08:05"}))
+	require.NoError(t, ok(notifyhub.Rollup{Freq: "monthly", DOM: 0, Time: "23:55"}))
+	require.NoError(t, ok(notifyhub.Rollup{Freq: "weekly", Weekday: 6, Time: "00:00"}))
+	require.Error(t, ok(notifyhub.Rollup{Freq: "hourly", Time: "08:00"}))
+	require.Error(t, ok(notifyhub.Rollup{Freq: "daily", Time: "8am"}))
+	require.Error(t, ok(notifyhub.Rollup{Freq: "daily", Time: "25:00"}))
+	require.Error(t, ok(notifyhub.Rollup{Freq: "weekly", Weekday: 7, Time: "08:00"}))
+	require.Error(t, ok(notifyhub.Rollup{Freq: "monthly", DOM: 29, Time: "08:00"}))
+}

@@ -9,7 +9,6 @@ import (
 	"github.com/natefinch/atomic"
 	"github.com/pkg/errors"
 
-	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/serverapi"
 )
 
@@ -97,17 +96,6 @@ func handleSetUIPreferences(_ context.Context, rc requestContext) (any, *apiErro
 
 	if err := atomic.WriteFile(file, bytes.NewReader(merged)); err != nil {
 		return nil, internalServerError(err)
-	}
-
-	// the recipient field on the Backup health tab edits the iPhone notification destination until the
-	// destinations have their own editor.
-	var sent map[string]json.RawMessage
-	if json.Unmarshal(rc.body, &sent) == nil {
-		if _, ok := sent["verifierIMessageTo"]; ok {
-			if err := notifyhub.SetIMessageTarget(notificationDestinationsFile(file), p.VerifierIMessageTo); err != nil {
-				return nil, internalServerError(err)
-			}
-		}
 	}
 
 	return serverapi.Empty{}, nil

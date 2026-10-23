@@ -1,14 +1,10 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/kopia/kopia/internal/notifyhub"
 )
 
 func TestMergeUIPreferencesKeepsSettingsTheClientDoesNotKnow(t *testing.T) {
@@ -41,36 +37,4 @@ func TestMergeUIPreferencesHandlesMissingOrDamagedStoredFile(t *testing.T) {
 
 	_, err := mergeUIPreferences(nil, []byte(`not json`))
 	require.Error(t, err)
-}
-
-func TestSavingTheRecipientPreferenceUpdatesTheIPhoneDestination(t *testing.T) {
-	dir := t.TempDir()
-	prefs := filepath.Join(dir, "ui-preferences.json")
-	dests := filepath.Join(dir, "notification-destinations.json")
-
-	s := &Server{options: Options{UIPreferencesFile: prefs}}
-	s.setupNotifications(context.Background())
-
-	put := func(body string) {
-		_, apiErr := handleSetUIPreferences(context.Background(), requestContext{srv: s, body: []byte(body)})
-		require.Nil(t, apiErr)
-	}
-
-	put(`{"verifierIMessageTo":"+1 555 0100"}`)
-
-	ds, err := notifyhub.Load(dests)
-	require.NoError(t, err)
-	require.Len(t, ds, 2)
-	require.Equal(t, "+1 555 0100", ds[1].Target)
-
-	// a page that does not know the setting must not touch the destination
-	put(`{"theme":"dark"}`)
-
-	ds, _ = notifyhub.Load(dests)
-	require.Len(t, ds, 2)
-
-	put(`{"verifierIMessageTo":""}`)
-
-	ds, _ = notifyhub.Load(dests)
-	require.Len(t, ds, 1, "clearing the recipient removes the iPhone destination")
 }

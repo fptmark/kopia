@@ -100,3 +100,45 @@ func number(n int64) string {
 
 	return s
 }
+
+// Message is a rendered title and text.
+type Message struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// SampleImmediate renders the messages a destination would receive as events happen, using the given source
+// folder and sample counts, so the settings page can show them before anything goes wrong.
+func SampleImmediate(d Destination, source string) []Message {
+	samples := map[EventID][]Event{
+		EventHealth: {
+			{ID: EventHealth, Checks: []HealthCheck{CheckSkips}, Since: time.Date(2000, 1, 1, 10, 12, 0, 0, time.Local)},
+			{ID: EventHealth, Recovered: true},
+		},
+		EventFailed:  {{ID: EventFailed, Source: source}},
+		EventSkipped: {{ID: EventSkipped, Source: source, Skipped: 6, Files: 662141}},
+		EventMaint: {
+			{ID: EventMaint, Problem: ProblemRepoUnreachable, Since: time.Date(2000, 1, 1, 10, 7, 0, 0, time.Local)},
+			{ID: EventMaint, Problem: ProblemMaintFailed},
+		},
+		EventWatchdog: {
+			{ID: EventWatchdog, Problem: ProblemServerDown, Since: time.Date(2000, 1, 1, 10, 40, 0, 0, time.Local)},
+			{ID: EventWatchdog, Problem: ProblemStaleCheck},
+		},
+	}
+
+	out := []Message{}
+
+	for _, id := range AllEvents {
+		if d.ModeFor(id) != ModeNow {
+			continue
+		}
+
+		for _, e := range samples[id] {
+			t, b := Render(e)
+			out = append(out, Message{Title: t, Body: b})
+		}
+	}
+
+	return out
+}
