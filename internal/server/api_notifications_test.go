@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -130,4 +131,40 @@ func TestNotificationTestAndLogAndPreview(t *testing.T) {
 	require.NotNil(t, out.(notificationPreview).Summary)
 	require.Equal(t, "Backup summary, last 24 hours", out.(notificationPreview).Summary.Title)
 	require.Empty(t, out.(notificationPreview).Immediate)
+}
+
+func TestMailAccountsAreListedForTheFromChoice(t *testing.T) {
+	old := listMailAccounts
+	defer func() { listMailAccounts = old }()
+
+	listMailAccounts = func(context.Context) ([]notifyhub.MailAccount, error) {
+		return []notifyhub.MailAccount{{Name: "Gmail", Addresses: []string{"me@gmail.com"}}}, nil
+	}
+
+	out, apiErr := handleMailAccounts(context.Background(), requestContext{})
+	require.Nil(t, apiErr)
+	require.Equal(t, mailAccounts{Accounts: []notifyhub.MailAccount{{Name: "Gmail", Addresses: []string{"me@gmail.com"}}}}, out)
+
+	listMailAccounts = func(context.Context) ([]notifyhub.MailAccount, error) {
+		return nil, errors.New("Mail is not allowed to be controlled")
+	}
+
+	_, apiErr = handleMailAccounts(context.Background(), requestContext{})
+	require.NotNil(t, apiErr)
+}
+
+func TestAnEmailDestinationIsSavedWithItsAccount(t *testing.T) {
+	s := notificationServer(t)
+	body := `{"destinations":[{"id":"e","type":"email","name":"Email","target":"me@gmail.com","from":"me@work.example","failures":["failed"],"success":{"freq":"weekly","time":"08:00"}}]}`
+
+	_, apiErr := handleNotificationDestinationsPut(context.Background(), rcFor(s, http.MethodPut, "/", body, nil))
+	require.Nil(t, apiErr)
+
+	out, _ := handleNotificationDestinationsGet(context.Background(), rcFor(s, http.MethodGet, "/", "", nil))
+	b, _ := json.Marshal(out)
+	require.JSONEq(t, body, string(b))
+
+	bad := `{"destinations":[{"id":"e","type":"email","name":"Email","target":"nobody","failures":[],"success":{"freq":"off"}}]}`
+	_, apiErr = handleNotificationDestinationsPut(context.Background(), rcFor(s, http.MethodPut, "/", bad, nil))
+	require.NotNil(t, apiErr)
 }

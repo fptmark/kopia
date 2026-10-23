@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/notifyhub"
@@ -23,6 +24,9 @@ type notificationPreview struct {
 	// Summary is the periodic summary the destination would get, from the latest real data (nil when none).
 	Summary *notifyhub.Message `json:"summary"`
 }
+
+// mailAccountsTimeout allows for the Mail app to start.
+const mailAccountsTimeout = 30 * time.Second
 
 var notificationFileMutex sync.Mutex //nolint:gochecknoglobals
 
@@ -143,4 +147,24 @@ func handleNotificationLog(_ context.Context, rc requestContext) (any, *apiError
 	}
 
 	return entries, nil
+}
+
+// listMailAccounts is replaced in tests.
+var listMailAccounts = notifyhub.MailAccounts //nolint:gochecknoglobals
+
+type mailAccounts struct {
+	Accounts []notifyhub.MailAccount `json:"accounts"`
+}
+
+// handleMailAccounts lists the accounts in the Mail app, so an email destination can choose which one sends.
+func handleMailAccounts(ctx context.Context, _ requestContext) (any, *apiError) {
+	ctx, cancel := context.WithTimeout(ctx, mailAccountsTimeout)
+	defer cancel()
+
+	accts, err := listMailAccounts(ctx)
+	if err != nil {
+		return nil, internalServerError(err)
+	}
+
+	return mailAccounts{Accounts: accts}, nil
 }

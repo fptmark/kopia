@@ -326,7 +326,9 @@ func TestValidate(t *testing.T) {
 	require.Error(t, bad(func(d *notifyhub.Destination) { d.Failures = []notifyhub.EventID{"done"} }))
 	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success.Freq = "hourly" }))
 	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "daily", Time: "8am"} }))
-	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "weekly", Weekday: 7, Time: "08:00"} }))
+	require.Error(t, bad(func(d *notifyhub.Destination) {
+		d.Success = notifyhub.Success{Freq: "weekly", Weekday: 7, Time: "08:00"}
+	}))
 	require.Error(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "monthly", DOM: 29, Time: "08:00"} }))
 	require.NoError(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "monthly", DOM: 0, Time: "23:55"} }))
 	require.NoError(t, bad(func(d *notifyhub.Destination) { d.Success = notifyhub.Success{Freq: "now"} }), "immediate needs no time")
@@ -376,4 +378,31 @@ func TestFileFromTheFirstVersionIsUpgraded(t *testing.T) {
 	again, err := notifyhub.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, ds, again)
+}
+
+func TestEmailDestinationNeedsAnAddressAndKeepsItsAccount(t *testing.T) {
+	d := notifyhub.NewDestination("e", notifyhub.TypeEmail, "Email", "")
+	require.Error(t, notifyhub.Validate([]notifyhub.Destination{d}))
+
+	d.Target = "someone-at-example"
+	require.Error(t, notifyhub.Validate([]notifyhub.Destination{d}))
+
+	d.Target = "me@example.com"
+	require.NoError(t, notifyhub.Validate([]notifyhub.Destination{d}))
+
+	d.From = "me@work.example"
+	path := filepath.Join(t.TempDir(), "d.json")
+	require.NoError(t, notifyhub.Save(path, []notifyhub.Destination{d}))
+
+	got, err := notifyhub.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, "me@work.example", got[0].From)
+
+	// and an email destination hears what it chose, like any other
+	p := &fakeProvider{}
+	h, _ := newHub(t, []notifyhub.Destination{d}, p)
+	h.Providers[notifyhub.TypeEmail] = p
+	h.Emit(context.Background(), notifyhub.Event{ID: notifyhub.EventFailed, Source: "/Users/me"})
+	h.Wait()
+	require.Equal(t, []string{"e:Snapshot failed"}, p.titles())
 }

@@ -12,7 +12,9 @@ import (
 	"github.com/kopia/kopia/internal/notifyhub"
 )
 
-func at(y int, mo time.Month, d, h, m int) time.Time { return time.Date(y, mo, d, h, m, 0, 0, time.Local) }
+func at(y int, mo time.Month, d, h, m int) time.Time {
+	return time.Date(y, mo, d, h, m, 0, 0, time.Local)
+}
 
 func TestLatestDue(t *testing.T) {
 	daily := notifyhub.Success{Freq: "daily", Time: "08:00"}

@@ -16,6 +16,7 @@ import (
 const (
 	TypeIMessage = "imessage"
 	TypeMac      = "mac"
+	TypeEmail    = "email" // sent through the Mail app on this Mac
 )
 
 // IMessageDestinationID is the id of the destination created from the iMessage recipient preference.
@@ -46,10 +47,12 @@ func (s Success) Scheduled() bool {
 
 // Destination is one place notifications go. Failures it hears about are always sent immediately.
 type Destination struct {
-	ID       string    `json:"id"`
-	Type     string    `json:"type"`
-	Name     string    `json:"name"`
-	Target   string    `json:"target,omitempty"`
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Name   string `json:"name"`
+	Target string `json:"target,omitempty"`
+	// From is the Mail account an email is sent from; empty uses Mail's default account.
+	From     string    `json:"from,omitempty"`
 	Failures []EventID `json:"failures"`
 	Success  Success   `json:"success"`
 }
@@ -89,8 +92,12 @@ func Validate(ds []Destination) error {
 
 		seen[d.ID] = true
 
-		if d.Type != TypeIMessage && d.Type != TypeMac {
+		if d.Type != TypeIMessage && d.Type != TypeMac && d.Type != TypeEmail {
 			return errors.Errorf("destination %q has unknown type %q", d.ID, d.Type)
+		}
+
+		if d.Type == TypeEmail && !strings.Contains(strings.TrimSpace(d.Target), "@") {
+			return errors.Errorf("destination %q needs an email address", d.ID)
 		}
 
 		if d.Type == TypeIMessage && strings.TrimSpace(d.Target) == "" {

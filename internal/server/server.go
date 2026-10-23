@@ -158,6 +158,7 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/notifications/destinations/{id}/test", s.handleUIPossiblyNotConnected(handleNotificationDestinationTest)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/notifications/preview", s.handleUIPossiblyNotConnected(handleNotificationPreview)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/notifications/log", s.handleUIPossiblyNotConnected(handleNotificationLog)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/notifications/email-accounts", s.handleUIPossiblyNotConnected(handleMailAccounts)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/search-range", s.handleUI(handleSearchRange)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/search", s.handleUI(handleSearchStart)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/search/{id}", s.handleUI(handleSearchStatus)).Methods(http.MethodGet)
