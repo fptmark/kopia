@@ -86,7 +86,7 @@ function FailuresPicker({ d, onChange }) {
       <Dropdown.Toggle size="sm" variant="light" className="w-100 text-start" aria-label={`Failures for ${d.name}`}>
         {failuresLabel(d)}
       </Dropdown.Toggle>
-      <Dropdown.Menu className="p-2" style={{ minWidth: "18rem" }}>
+      <Dropdown.Menu className="p-2" style={{ minWidth: "18rem" }} popperConfig={{ strategy: "fixed" }}>
         {FAILURES.map((f) => (
           <Form.Check
             key={f.id}
