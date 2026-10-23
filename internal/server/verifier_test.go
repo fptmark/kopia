@@ -17,6 +17,7 @@ import (
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/snapshot"
+	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/snapshot/upload"
 )
@@ -29,30 +30,72 @@ func manifestAt(src snapshot.SourceInfo, start time.Time, failed int) *snapshot.
 	}
 }
 
+func defaultLimit(snapshot.SourceInfo) time.Duration { return verifyMaxSnapshotAge }
+
+func TestFreshnessLimitFollowsTheSchedule(t *testing.T) {
+	sec := func(d time.Duration) int64 { return int64(d / time.Second) }
+
+	for _, tc := range []struct {
+		name string
+		pol  policy.SchedulingPolicy
+		want time.Duration
+	}{
+		{"hourly keeps the default", policy.SchedulingPolicy{IntervalSeconds: sec(time.Hour)}, 3 * time.Hour},
+		{"every 10 minutes keeps the default", policy.SchedulingPolicy{IntervalSeconds: sec(10 * time.Minute)}, 3 * time.Hour},
+		{"every 6 hours", policy.SchedulingPolicy{IntervalSeconds: sec(6 * time.Hour)}, 12*time.Hour + 30*time.Minute},
+		{"daily", policy.SchedulingPolicy{IntervalSeconds: sec(24 * time.Hour)}, 48*time.Hour + 30*time.Minute},
+		{"every 3 days", policy.SchedulingPolicy{IntervalSeconds: sec(72 * time.Hour)}, 144*time.Hour + 30*time.Minute},
+		{"times of day", policy.SchedulingPolicy{TimesOfDay: []policy.TimeOfDay{{Hour: 17}}}, 26 * time.Hour},
+		{"cron", policy.SchedulingPolicy{Cron: []string{"0 17 * * *"}}, 26 * time.Hour},
+		{"manual", policy.SchedulingPolicy{Manual: true}, 8 * 24 * time.Hour},
+		{"nothing set", policy.SchedulingPolicy{}, 3 * time.Hour},
+	} {
+		require.Equal(t, tc.want, freshnessLimit(tc.pol), tc.name)
+	}
+}
+
+func TestADailySourceIsNotStaleAfterThreeHours(t *testing.T) {
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	hourly := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/hourly"}
+	daily := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/daily"}
+
+	limits := map[snapshot.SourceInfo]time.Duration{hourly: 3 * time.Hour, daily: 48*time.Hour + 30*time.Minute}
+	limit := func(s snapshot.SourceInfo) time.Duration { return limits[s] }
+
+	by := newestFirst([]*snapshot.Manifest{manifestAt(hourly, now.Add(-time.Hour), 0), manifestAt(daily, now.Add(-30*time.Hour), 0)})
+	require.True(t, checkFreshness(now, by, limit).OK)
+
+	by = newestFirst([]*snapshot.Manifest{manifestAt(hourly, now.Add(-time.Hour), 0), manifestAt(daily, now.Add(-50*time.Hour), 0)})
+	c := checkFreshness(now, by, limit)
+	require.False(t, c.OK)
+	require.Contains(t, c.Detail, "/daily")
+	require.NotContains(t, c.Detail, "/hourly")
+}
+
 func TestVerifyCheckFreshness(t *testing.T) {
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
 	home := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/home"}
 	apps := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/Apps"}
 
 	fresh := newestFirst([]*snapshot.Manifest{manifestAt(home, now.Add(-30*time.Minute), 0), manifestAt(apps, now.Add(-2*time.Hour), 0)})
-	require.True(t, checkFreshness(now, fresh, verifyMaxSnapshotAge).OK)
+	require.True(t, checkFreshness(now, fresh, defaultLimit).OK)
 
 	// only the newest snapshot of a source counts
 	old := newestFirst([]*snapshot.Manifest{manifestAt(home, now.Add(-30*time.Minute), 0), manifestAt(home, now.Add(-9*time.Hour), 0)})
-	require.True(t, checkFreshness(now, old, verifyMaxSnapshotAge).OK)
+	require.True(t, checkFreshness(now, old, defaultLimit).OK)
 
 	stale := newestFirst([]*snapshot.Manifest{manifestAt(home, now.Add(-30*time.Minute), 0), manifestAt(apps, now.Add(-5*time.Hour), 0)})
-	c := checkFreshness(now, stale, verifyMaxSnapshotAge)
+	c := checkFreshness(now, stale, defaultLimit)
 	require.False(t, c.OK)
 	require.Contains(t, c.Detail, "/Apps")
 	require.NotContains(t, c.Detail, "/home")
 
-	require.False(t, checkFreshness(now, newestFirst(nil), verifyMaxSnapshotAge).OK, "no snapshots at all is a failure")
+	require.False(t, checkFreshness(now, newestFirst(nil), defaultLimit).OK, "no snapshots at all is a failure")
 
 	// incomplete snapshots are not counted as recent
 	inc := manifestAt(home, now.Add(-10*time.Minute), 0)
 	inc.IncompleteReason = "checkpoint"
-	require.False(t, checkFreshness(now, newestFirst([]*snapshot.Manifest{inc}), verifyMaxSnapshotAge).OK)
+	require.False(t, checkFreshness(now, newestFirst([]*snapshot.Manifest{inc}), defaultLimit).OK)
 }
 
 func TestVerifyCheckFailedFiles(t *testing.T) {
@@ -87,9 +130,9 @@ func TestVerifyQuickChecksSkipsFreshnessDuringGrace(t *testing.T) {
 	home := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/home"}
 	ms := []*snapshot.Manifest{manifestAt(home, now.Add(-8*time.Hour), 0)}
 
-	require.Len(t, quickChecks(now, ms, true), 2)
-	require.False(t, quickChecks(now, ms, true)[0].OK)
-	require.Len(t, quickChecks(now, ms, false), 1)
+	require.Len(t, quickChecks(now, ms, true, defaultLimit), 2)
+	require.False(t, quickChecks(now, ms, true, defaultLimit)[0].OK)
+	require.Len(t, quickChecks(now, ms, false, defaultLimit), 1)
 }
 
 type verifyTestEnv struct {

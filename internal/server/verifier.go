@@ -32,6 +32,7 @@ import (
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/snapshot"
+	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
 
@@ -126,8 +127,33 @@ func sortedSources[T any](by map[snapshot.SourceInfo]T) []snapshot.SourceInfo {
 	return srcs
 }
 
-// checkFreshness fails when the newest snapshot of a source is older than maxAge.
-func checkFreshness(now time.Time, by map[snapshot.SourceInfo][]*snapshot.Manifest, maxAge time.Duration) verifyCheck {
+// freshnessLimit is how old the newest snapshot of a source may be before it is reported, from its schedule:
+// twice the interval plus half an hour (never less than the default), a day and two hours for fixed times of
+// day or cron schedules, and a week and a day for manual snapshots.
+func freshnessLimit(p policy.SchedulingPolicy) time.Duration {
+	switch {
+	case p.IntervalSeconds > 0:
+		return max(verifyMaxSnapshotAge, 2*time.Duration(p.IntervalSeconds)*time.Second+30*time.Minute)
+	case len(p.TimesOfDay) > 0 || len(p.Cron) > 0:
+		return 26 * time.Hour
+	case p.Manual:
+		return 8 * 24 * time.Hour
+	}
+
+	return verifyMaxSnapshotAge
+}
+
+// limitFor returns the freshness limit of a source, following its current schedule.
+func (v *verifier) limitFor(src snapshot.SourceInfo) time.Duration {
+	if sm, ok := v.srv.snapshotAllSourceManagers()[src]; ok {
+		return freshnessLimit(sm.Status().SchedulingPolicy)
+	}
+
+	return verifyMaxSnapshotAge
+}
+
+// checkFreshness fails when the newest snapshot of a source is older than the limit for that source.
+func checkFreshness(now time.Time, by map[snapshot.SourceInfo][]*snapshot.Manifest, limit func(snapshot.SourceInfo) time.Duration) verifyCheck {
 	const name = checkRecent
 
 	if len(by) == 0 {
@@ -138,7 +164,7 @@ func checkFreshness(now time.Time, by map[snapshot.SourceInfo][]*snapshot.Manife
 
 	for _, src := range sortedSources(by) {
 		age := now.Sub(by[src][0].StartTime.ToTime())
-		if age > maxAge {
+		if age > limit(src) {
 			bad = append(bad, fmt.Sprintf("%v: newest snapshot is %v old", src.Path, age.Round(time.Minute)))
 		}
 	}
@@ -147,7 +173,7 @@ func checkFreshness(now time.Time, by map[snapshot.SourceInfo][]*snapshot.Manife
 		return failed(name, strings.Join(bad, "; "))
 	}
 
-	return passed(name, fmt.Sprintf("newest snapshot of each of %d sources is under %v old", len(by), maxAge))
+	return passed(name, fmt.Sprintf("newest snapshot of each of %d sources is recent enough for its schedule", len(by)))
 }
 
 func failedFiles(m *snapshot.Manifest) int {
@@ -190,13 +216,13 @@ func checkFailedFiles(by map[snapshot.SourceInfo][]*snapshot.Manifest) verifyChe
 }
 
 // quickChecks are the checks that only read snapshot manifests.
-func quickChecks(now time.Time, ms []*snapshot.Manifest, checkAge bool) []verifyCheck {
+func quickChecks(now time.Time, ms []*snapshot.Manifest, checkAge bool, limit func(snapshot.SourceInfo) time.Duration) []verifyCheck {
 	by := newestFirst(ms)
 
 	var checks []verifyCheck
 
 	if checkAge {
-		checks = append(checks, checkFreshness(now, by, verifyMaxSnapshotAge))
+		checks = append(checks, checkFreshness(now, by, limit))
 	}
 
 	return append(checks, checkFailedFiles(by))
@@ -646,7 +672,7 @@ func (v *verifier) quick(ctx context.Context) ([]verifyCheck, []*snapshot.Manife
 		checks = append(checks, passed(checkRecent, "not checked yet: waits until "+graceUntil.Local().Format("3:04 PM")+" for the first hourly snapshot after a start or wake"))
 	}
 
-	return append(checks, quickChecks(now, ms, checkAge)...), ms
+	return append(checks, quickChecks(now, ms, checkAge, v.limitFor)...), ms
 }
 
 // runQuick runs the cheap checks. A task is only recorded when the outcome changes.
