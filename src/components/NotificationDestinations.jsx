@@ -343,7 +343,7 @@ export function NotificationDestinations() {
                         <span className="d-flex gap-1">
                           <Button
                             size="sm"
-                            variant="outline-secondary"
+                            variant="secondary"
                             className="py-0"
                             onClick={() => test(d)}
                             aria-label={`Test ${d.name}`}
@@ -352,7 +352,7 @@ export function NotificationDestinations() {
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline-danger"
+                            variant="danger"
                             className="py-0"
                             onClick={() => remove(d)}
                             aria-label={`Delete ${d.name}`}
@@ -463,7 +463,7 @@ export function NotificationDestinations() {
                 <Button
                   key={d.id}
                   size="sm"
-                  variant={d.id === sel.id ? "primary" : "outline-secondary"}
+                  variant={d.id === sel.id ? "primary" : "secondary"}
                   className="rounded-pill"
                   aria-pressed={d.id === sel.id}
                   onClick={() => setSelected(d.id)}
@@ -550,7 +550,7 @@ function AddDestination({ onAdd }) {
           </option>
         ))}
       </Form.Select>
-      <Button size="sm" variant="outline-primary" onClick={() => onAdd(type)}>
+      <Button size="sm" variant="primary" onClick={() => onAdd(type)}>
         + Add destination
       </Button>
     </div>
