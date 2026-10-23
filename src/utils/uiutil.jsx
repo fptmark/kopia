@@ -1,9 +1,11 @@
 import { faExclamationTriangle } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import axios from "axios";
 import React, { useState, useSyncExternalStore } from "react";
 import Alert from "react-bootstrap/Alert";
 import Modal from "react-bootstrap/Modal";
 import { Link } from "react-router";
+import { ExcludeDialog, IgnoreDialog } from "../components/FailureActions";
 import { sizeDisplayName } from "./formatutils.js";
 import { shortTaskError, taskErrorHint } from "./taskutil.jsx";
 
@@ -18,8 +20,10 @@ function setOpenFailures(summ) {
 }
 
 /**
- * Opens the dialog listing failed files, grouped by cause and place.
- * @param {{numFailed: number, errors: {path: string, error: string}[]}} summ
+ * Opens the dialog listing failed files, grouped by cause and place. With a source (the folder, with its
+ * userName and host) each error can be ignored or excluded from the backup; taskId lets the list reload.
+ * @param {{numFailed: number, errors: {path: string, error: string, kind?: string, ignored?: boolean}[],
+ *   source?: string, userName?: string, host?: string, taskId?: string, ignored?: number}} summ
  */
 export function showFailures(summ) {
   setOpenTaskError(null);
@@ -111,14 +115,19 @@ export function groupFailures(errors, depth = 3) {
       reason,
       count: items.length,
       label: items.length === 1 ? items[0].path : dir || "(top level)",
-      items: items.map(({ path, error }) => ({ path, error })).sort((a, b) => a.path.localeCompare(b.path)),
+      // the place an action on the whole group applies to ("" is the whole source)
+      place: items.length === 1 ? items[0].path : dir,
+      kind: items[0].kind,
+      items: items.map(({ path, error, kind }) => ({ path, error, kind })).sort((a, b) => a.path.localeCompare(b.path)),
     };
   });
 
   return groups.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
-function FailureGroup({ group }) {
+const linkButton = "btn btn-link p-0 align-baseline small";
+
+function FailureGroup({ group, onIgnore, onExclude, excluded }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -134,11 +143,44 @@ function FailureGroup({ group }) {
         {open ? "▾" : "▸"} <code style={{ wordBreak: "break-all" }}>{group.label}</code>
       </button>
       <span className="text-body"> ({group.count})</span>
+      {onIgnore && (
+        <span className="ms-2">
+          <button
+            type="button"
+            className={linkButton}
+            onClick={() => onIgnore({ path: group.place, kind: group.kind, file: false })}
+          >
+            Ignore
+          </button>
+          <span className="text-muted"> · </span>
+          <button type="button" className={linkButton} onClick={() => onExclude({ path: group.place })}>
+            Exclude
+          </button>
+        </span>
+      )}
       {open && (
         <ul className="small mt-1 mb-0">
           {group.items.map((i) => (
             <li key={i.path} style={{ wordBreak: "break-all" }}>
               <code>{i.path}</code>
+              {excluded.some((p) => i.path === p || i.path.startsWith(p + "/")) && (
+                <span className="text-muted"> (excluded, skipped from the next snapshot)</span>
+              )}
+              {onIgnore && (
+                <span className="ms-2">
+                  <button
+                    type="button"
+                    className={linkButton}
+                    onClick={() => onIgnore({ path: i.path, kind: i.kind, file: true })}
+                  >
+                    Ignore
+                  </button>
+                  <span className="text-muted"> · </span>
+                  <button type="button" className={linkButton} onClick={() => onExclude({ path: i.path })}>
+                    Exclude
+                  </button>
+                </span>
+              )}
               <div className="text-muted">{i.error}</div>
             </li>
           ))}
@@ -174,6 +216,93 @@ function TaskErrorModal({ info }) {
   );
 }
 
+const failureKeys = new WeakMap();
+let failureKeySerial = 0;
+
+function FailuresDialog({ summ }) {
+  const [errors, setErrors] = useState(summ.errors);
+  const [dialog, setDialog] = useState(null); // {type: "ignore" | "exclude", target}
+  const [excluded, setExcluded] = useState([]);
+  const [note, setNote] = useState("");
+
+  const canAct = summ.source !== undefined;
+  const shown = errors.filter((e) => !e.ignored);
+  const nowIgnored = errors.filter((e) => e.ignored).length - (summ.ignored || 0);
+  const numFailed = Math.max(0, summ.numFailed - Math.max(0, nowIgnored));
+
+  const reload = () =>
+    axios
+      .get("/api/v1/tasks/" + summ.taskId + "/errors")
+      .then((r) => setErrors(r.data.errors || []))
+      .catch(() => {});
+
+  return (
+    <Modal show onHide={() => setOpenFailures(null)} size="lg" scrollable>
+      <Modal.Header closeButton>
+        <Modal.Title>{numFailed === 1 ? "1 error" : numFailed + " errors"} while snapshotting</Modal.Title>
+      </Modal.Header>
+      <Modal.Body data-testid="snapshot-errors">
+        {note && (
+          <Alert variant="success" className="py-2" role="status">
+            {note}
+          </Alert>
+        )}
+        {groupFailures(shown).map((g) => (
+          <FailureGroup
+            key={g.reason + g.label}
+            group={g}
+            excluded={excluded}
+            onIgnore={canAct ? (target) => setDialog({ type: "ignore", target }) : null}
+            onExclude={canAct ? (target) => setDialog({ type: "exclude", target }) : null}
+          />
+        ))}
+        {errors.length - shown.length > 0 && (
+          <div className="text-muted small" data-testid="ignored-count">
+            {errors.length - shown.length} more {errors.length - shown.length === 1 ? "error is" : "errors are"}{" "}
+            ignored. Manage them under{" "}
+            <Link to="/preferences" onClick={() => setOpenFailures(null)}>
+              Preferences
+            </Link>{" "}
+            → Notifications.
+          </div>
+        )}
+        {errors.length < summ.numFailed + (summ.ignored || 0) && (
+          <div className="text-muted small">
+            Showing the first {errors.length} of {summ.numFailed + (summ.ignored || 0)} errors. Kopia only records a
+            limited number per snapshot.
+          </div>
+        )}
+      </Modal.Body>
+      {dialog?.type === "ignore" && (
+        <IgnoreDialog
+          source={summ.source}
+          target={dialog.target}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            setDialog(null);
+            setNote("Ignored. These errors no longer count as failures or cause alerts.");
+            reload();
+          }}
+        />
+      )}
+      {dialog?.type === "exclude" && (
+        <ExcludeDialog
+          source={summ.source}
+          userName={summ.userName}
+          host={summ.host}
+          target={dialog.target}
+          onClose={() => setDialog(null)}
+          onDone={(pattern) => {
+            setDialog(null);
+            setExcluded([...excluded, dialog.target.path]);
+            setNote("Excluded: " + pattern + " is added to the policy. The next snapshot skips it.");
+          }}
+        />
+      )}
+    </Modal>
+  );
+}
+
 export function FailuresModalHost() {
   const summ = useSyncExternalStore(subscribeFailures, () => openFailures);
   const taskError = useSyncExternalStore(subscribeTaskError, () => openTaskError);
@@ -186,24 +315,12 @@ export function FailuresModalHost() {
     return null;
   }
 
-  return (
-    <Modal show onHide={() => setOpenFailures(null)} size="lg" scrollable>
-      <Modal.Header closeButton>
-        <Modal.Title>{summ.numFailed === 1 ? "1 error" : summ.numFailed + " errors"} while snapshotting</Modal.Title>
-      </Modal.Header>
-      <Modal.Body data-testid="snapshot-errors">
-        {groupFailures(summ.errors).map((g) => (
-          <FailureGroup key={g.reason + g.label} group={g} />
-        ))}
-        {summ.errors.length < summ.numFailed && (
-          <div className="text-muted small">
-            Showing the first {summ.errors.length} of {summ.numFailed} errors. Kopia only records a limited number per
-            snapshot.
-          </div>
-        )}
-      </Modal.Body>
-    </Modal>
-  );
+  // a different list starts a fresh dialog: its own errors, notes and open sub-dialogs
+  if (!failureKeys.has(summ)) {
+    failureKeys.set(summ, ++failureKeySerial);
+  }
+
+  return <FailuresDialog key={failureKeys.get(summ)} summ={summ} />;
 }
 
 export function sizeWithFailures(size, summ, bytesStringBase2) {

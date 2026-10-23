@@ -60,7 +60,17 @@ function openTaskDetails(t) {
 
   axios
     .get("/api/v1/tasks/" + t.id + "/errors")
-    .then((result) => showFailures({ numFailed: t.failedFiles, errors: result.data.errors || [] }))
+    .then((result) =>
+      showFailures({
+        numFailed: t.failedFiles,
+        ignored: t.ignoredFiles || 0,
+        errors: result.data.errors || [],
+        source: result.data.source,
+        userName: result.data.userName,
+        host: result.data.host,
+        taskId: t.id,
+      }),
+    )
     .catch((e) =>
       showTaskError({
         taskId: t.id,

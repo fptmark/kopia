@@ -6,6 +6,7 @@ import Row from "react-bootstrap/Row";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
 import { BackupHealthPanel } from "../components/BackupHealth";
+import { IgnoredErrors } from "../components/IgnoredErrors";
 import { NotificationDestinations } from "../components/NotificationDestinations";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 
@@ -98,6 +99,7 @@ export function Preferences() {
       <Tab eventKey="notifications" title="Notifications" id="tab-notifications">
         <Container fluid>
           <NotificationDestinations />
+          <IgnoredErrors />
         </Container>
       </Tab>
     </Tabs>

@@ -27,6 +27,7 @@ class TaskInternal extends Component {
       error: null,
       showLog: false,
       failedFiles: [],
+      failedSource: {},
     };
 
     this.taskID = this.taskID.bind(this);
@@ -58,7 +59,7 @@ class TaskInternal extends Component {
       .get("/api/v1/tasks/" + this.taskID(this.props) + "/errors")
       .then((result) => {
         if (this.mounted) {
-          this.setState({ failedFiles: result.data.errors || [] });
+          this.setState({ failedFiles: result.data.errors || [], failedSource: result.data });
         }
       })
       .catch(() => {
@@ -225,6 +226,9 @@ class TaskInternal extends Component {
       return <p>Loading ...</p>;
     }
 
+    const unignored = this.state.failedFiles.filter((e) => !e.ignored);
+    const ignoredCount = this.state.failedFiles.length - unignored.length;
+
     return (
       <Form>
         {this.props.navigate && (
@@ -253,15 +257,24 @@ class TaskInternal extends Component {
             <Col>
               <Alert variant="warning" className="mb-0 d-flex align-items-center justify-content-between">
                 <span data-testid="failed-files-summary">
-                  {this.state.failedFiles.length.toLocaleString()}{" "}
-                  {this.state.failedFiles.length === 1 ? "file" : "files"} could not be backed up.
+                  {unignored.length.toLocaleString()} {unignored.length === 1 ? "file" : "files"} could not be backed
+                  up.
+                  {ignoredCount > 0 && <span className="text-muted"> {ignoredCount.toLocaleString()} ignored.</span>}
                 </span>
                 <Button
                   size="sm"
                   variant="primary"
                   data-testid="show-failed-files"
                   onClick={() =>
-                    showFailures({ numFailed: this.state.failedFiles.length, errors: this.state.failedFiles })
+                    showFailures({
+                      numFailed: unignored.length,
+                      ignored: ignoredCount,
+                      errors: this.state.failedFiles,
+                      source: this.state.failedSource.source,
+                      userName: this.state.failedSource.userName,
+                      host: this.state.failedSource.host,
+                      taskId: this.taskID(this.props),
+                    })
                   }
                 >
                   Show details
