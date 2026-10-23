@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
-import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
 import { DEFAULT_SUCCESS, joinTime, nextRollup, parseTime, WEEKDAYS } from "../utils/rollup";
@@ -74,44 +73,54 @@ function failuresLabel(d) {
   return `${n} of ${FAILURES.length} failures`;
 }
 
-/** A dropdown of check boxes: which failures this destination is told about. */
+/** A list of check boxes that opens inside the cell: which failures this destination is told about. */
 function FailuresPicker({ d, onChange }) {
+  const [open, setOpen] = useState(false);
   const has = (id) => d.failures?.includes(id);
   const toggle = (id) => onChange(has(id) ? d.failures.filter((x) => x !== id) : [...(d.failures || []), id]);
   // failure types this page does not list are kept as they are
   const others = (d.failures || []).filter((id) => !FAILURES.some((f) => f.id === id));
 
   return (
-    <Dropdown autoClose="outside">
-      <Dropdown.Toggle size="sm" variant="light" className="w-100 text-start" aria-label={`Failures for ${d.name}`}>
-        {failuresLabel(d)}
-      </Dropdown.Toggle>
-      <Dropdown.Menu className="p-2" style={{ minWidth: "18rem" }} popperConfig={{ strategy: "fixed" }}>
-        {FAILURES.map((f) => (
-          <Form.Check
-            key={f.id}
-            type="checkbox"
-            id={`${d.id}-failure-${f.id}`}
-            label={f.name}
-            checked={!!has(f.id)}
-            onChange={() => toggle(f.id)}
-          />
-        ))}
-        <div className="d-flex gap-3 mt-2 small">
-          <Button
-            variant="link"
-            size="sm"
-            className="p-0"
-            onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}
-          >
-            All
-          </Button>
-          <Button variant="link" size="sm" className="p-0" onClick={() => onChange(others)}>
-            None
-          </Button>
+    <div>
+      <Button
+        size="sm"
+        variant="light"
+        className="w-100 text-start"
+        aria-label={`Failures for ${d.name}`}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {failuresLabel(d)} {open ? "▴" : "▾"}
+      </Button>
+      {open && (
+        <div className="mt-1">
+          {FAILURES.map((f) => (
+            <Form.Check
+              key={f.id}
+              type="checkbox"
+              id={`${d.id}-failure-${f.id}`}
+              label={f.name}
+              checked={!!has(f.id)}
+              onChange={() => toggle(f.id)}
+            />
+          ))}
+          <div className="d-flex gap-3 mt-1 small">
+            <Button
+              variant="link"
+              size="sm"
+              className="p-0"
+              onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}
+            >
+              All
+            </Button>
+            <Button variant="link" size="sm" className="p-0" onClick={() => onChange(others)}>
+              None
+            </Button>
+          </div>
         </div>
-      </Dropdown.Menu>
-    </Dropdown>
+      )}
+    </div>
   );
 }
 
