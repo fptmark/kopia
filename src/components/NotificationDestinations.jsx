@@ -7,14 +7,16 @@ import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
 import { DEFAULT_SUCCESS } from "../utils/rollup";
+import { DurationInput } from "./DurationInput";
 import { WhenField } from "./WhenField";
 
 const DESTINATIONS_URL = "/api/v1/notifications/destinations";
 const MAIL_ACCOUNTS_URL = "/api/v1/notifications/email-accounts";
 const LOG_URL = "/api/v1/notifications/log?limit=15";
 const LOG_POLL_MS = 30000;
-const DEFAULT_REPEAT_HOURS = 12;
-const MAX_REPEAT_HOURS = 720;
+const DEFAULT_REPEAT_SECONDS = 12 * 3600;
+const MIN_REPEAT_SECONDS = 60;
+const MAX_REPEAT_SECONDS = 30 * 86400;
 
 // the kinds of destination that can be added, and what a new one is called
 const TYPES = {
@@ -143,10 +145,8 @@ export function NotificationDestinations() {
   const [status, setStatus] = useState({ kind: "", text: "" });
   const [log, setLog] = useState([]);
   const [mailAccounts, setMailAccounts] = useState([]);
-  const [repeatHours, setRepeatHours] = useState(DEFAULT_REPEAT_HOURS);
-  // what is being typed in the repeat period field, or null while it shows the saved value
-  const [repeatDraft, setRepeatDraft] = useState(null);
-  const repeatRef = useRef(DEFAULT_REPEAT_HOURS);
+  const [repeatSeconds, setRepeatSeconds] = useState(DEFAULT_REPEAT_SECONDS);
+  const repeatRef = useRef(DEFAULT_REPEAT_SECONDS);
   const latestRef = useRef([]);
   const saveSeqRef = useRef(0);
 
@@ -167,8 +167,8 @@ export function NotificationDestinations() {
       .then((r) => {
         const list = r.data?.destinations || [];
         latestRef.current = list;
-        repeatRef.current = r.data?.repeatHours || DEFAULT_REPEAT_HOURS;
-        setRepeatHours(repeatRef.current);
+        repeatRef.current = r.data?.repeatSeconds || DEFAULT_REPEAT_SECONDS;
+        setRepeatSeconds(repeatRef.current);
         setDests(list);
       })
       .catch((e) => setLoadError(errorText(e)));
@@ -195,7 +195,7 @@ export function NotificationDestinations() {
   const persist = (list) => {
     const seq = ++saveSeqRef.current;
     return axios
-      .put(DESTINATIONS_URL, { repeatHours: repeatRef.current, destinations: list })
+      .put(DESTINATIONS_URL, { repeatSeconds: repeatRef.current, destinations: list })
       .then(() => {
         if (seq === saveSeqRef.current) {
           setStatus({ kind: "ok", text: "Saved." });
@@ -217,22 +217,9 @@ export function NotificationDestinations() {
     }
   };
 
-  const saveRepeat = () => {
-    const text = (repeatDraft ?? String(repeatHours)).trim();
-    setRepeatDraft(null);
-    const n = Number(text);
-    if (text === repeatHours.toString()) {
-      return;
-    }
-    if (!Number.isInteger(n) || n < 1 || n > MAX_REPEAT_HOURS) {
-      setStatus({
-        kind: "error",
-        text: `The repeat period must be a whole number of hours, 1 to ${MAX_REPEAT_HOURS}.`,
-      });
-      return;
-    }
-    repeatRef.current = n;
-    setRepeatHours(n);
+  const saveRepeat = (seconds) => {
+    repeatRef.current = seconds;
+    setRepeatSeconds(seconds);
     persist(latestRef.current);
   };
 
@@ -397,18 +384,15 @@ export function NotificationDestinations() {
 
       <div className="small text-muted mb-3 d-flex align-items-center gap-1 flex-wrap">
         Repeated failures are sent once every
-        <Form.Control
-          size="sm"
-          type="text"
-          inputMode="numeric"
-          aria-label="Repeat period in hours"
-          value={repeatDraft ?? String(repeatHours)}
-          onChange={(e) => setRepeatDraft(e.target.value)}
-          onBlur={saveRepeat}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          style={{ width: "4.5rem" }}
+        <DurationInput
+          ariaLabel="Repeat period"
+          seconds={repeatSeconds}
+          minSeconds={MIN_REPEAT_SECONDS}
+          maxSeconds={MAX_REPEAT_SECONDS}
+          invalidMessage="Enter a number and a unit, from 1 min to 30 days."
+          onCommit={saveRepeat}
         />
-        hours per destination.
+        per destination.
       </div>
 
       <section data-testid="recent-messages">

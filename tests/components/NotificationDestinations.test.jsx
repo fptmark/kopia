@@ -22,10 +22,10 @@ const mac = {
   success: { freq: "daily", time: "08:00" },
 };
 
-function mockApi({ destinations = [iphone, mac], accounts = [], log = [], repeatHours = 12 } = {}) {
+function mockApi({ destinations = [iphone, mac], accounts = [], log = [], repeatSeconds = 43200 } = {}) {
   axios.get.mockImplementation((url) => {
     if (url.startsWith("/api/v1/notifications/destinations"))
-      return Promise.resolve({ data: { repeatHours, destinations } });
+      return Promise.resolve({ data: { repeatSeconds, destinations } });
     if (url === "/api/v1/notifications/email-accounts") return Promise.resolve({ data: { accounts } });
     if (url.startsWith("/api/v1/notifications/log")) return Promise.resolve({ data: log });
     return Promise.reject(new Error("unexpected " + url));
@@ -61,48 +61,72 @@ describe("NotificationDestinations", () => {
     render(<NotificationDestinations />);
 
     expect(await screen.findByText("Failures (immediate)")).toBeInTheDocument();
-    expect(screen.getByText(/Repeated failures are sent once every/)).toHaveTextContent("hours per destination");
+    expect(screen.getByText(/Repeated failures are sent once every/)).toHaveTextContent("per destination");
     expect(screen.queryByText(/Roll-up/)).not.toBeInTheDocument();
     expect(screen.queryByText(/would receive/)).not.toBeInTheDocument();
     expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining("/preview"));
   });
 
-  it("lets the user enter the repeat period, saved with the destinations when the field is left", async () => {
-    mockApi({ repeatHours: 6 });
+  it("lets the user enter the repeat period with a unit, saved with the destinations when the field is left", async () => {
+    mockApi({ repeatSeconds: 6 * 3600 });
     render(<NotificationDestinations />);
 
-    const hours = await screen.findByLabelText("Repeat period in hours");
-    expect(hours).toHaveValue("6");
+    const period = await screen.findByLabelText("Repeat period");
+    expect(period).toHaveValue("6");
+    expect(screen.getByLabelText("Repeat period unit")).toHaveValue("hr");
 
-    fireEvent.change(hours, { target: { value: "24" } });
+    fireEvent.change(period, { target: { value: "24" } });
     expect(axios.put).not.toHaveBeenCalled(); // not on every keystroke
-    fireEvent.blur(hours);
+    fireEvent.blur(period);
 
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
-    expect(axios.put.mock.calls[0][1].repeatHours).toBe(24);
+    expect(axios.put.mock.calls[0][1].repeatSeconds).toBe(24 * 3600);
     expect(axios.put.mock.calls[0][1].destinations).toHaveLength(2);
-    expect(hours).toHaveValue("24");
+
+    // 24 hours is shown as the whole day it is
+    expect(period).toHaveValue("1");
+    expect(screen.getByLabelText("Repeat period unit")).toHaveValue("days");
 
     // later changes to a destination keep sending the new period
     fireEvent.change(screen.getByLabelText("Success messages for iPhone"), { target: { value: "now" } });
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
-    expect(axios.put.mock.calls[1][1].repeatHours).toBe(24);
+    expect(axios.put.mock.calls[1][1].repeatSeconds).toBe(24 * 3600);
   });
 
-  it("refuses a repeat period that is not a whole number of hours between 1 and 720", async () => {
+  it("allows a short repeat period in minutes", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    const hours = await screen.findByLabelText("Repeat period in hours");
+    const period = await screen.findByLabelText("Repeat period");
+    fireEvent.change(screen.getByLabelText("Repeat period unit"), { target: { value: "min" } });
+    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
+    expect(axios.put.mock.calls[0][1].repeatSeconds).toBe(12 * 60);
+    expect(period).toHaveValue("12");
+  });
 
-    for (const bad of ["0", "721", "abc", "1.5", ""]) {
-      fireEvent.change(hours, { target: { value: bad } });
-      fireEvent.blur(hours);
-      expect(await screen.findByText(/must be a whole number of hours, 1 to 720/)).toBeInTheDocument();
-      expect(hours).toHaveValue("12"); // back to the saved value
+  it("refuses a repeat period under a minute or over 30 days and keeps the saved one", async () => {
+    mockApi();
+    render(<NotificationDestinations />);
+
+    const period = await screen.findByLabelText("Repeat period");
+
+    const leave = (text, unit) => {
+      fireEvent.change(period, { target: { value: text } });
+      if (unit) {
+        fireEvent.change(screen.getByLabelText("Repeat period unit"), { target: { value: unit } });
+      } else {
+        fireEvent.blur(period);
+      }
+    };
+
+    for (const [text, unit] of [["0"], ["abc"], ["30", "sec"], ["31", "days"]]) {
+      leave(text, unit);
+      expect(await screen.findByText(/from 1 min to 30 days/)).toBeInTheDocument();
+      expect(period).toHaveValue("12");
+      expect(screen.getByLabelText("Repeat period unit")).toHaveValue("hr");
     }
 
-    expect(axios.put).not.toHaveBeenCalled();
+    expect(axios.put).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ repeatSeconds: 30 }));
   });
 
   it("names a destination once: the name is not repeated as a type label", async () => {

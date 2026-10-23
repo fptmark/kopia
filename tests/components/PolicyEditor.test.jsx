@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom";
 import { render, waitFor } from "@testing-library/react";
 import React from "react";
 import { PolicyEditor } from "../../src/components/policy-editor/PolicyEditor";
@@ -147,4 +148,74 @@ it("e2e", async () => {
   fireEvent.click(getByTestId("button-save"));
   await waitFor(() => expect(serverMock.history.put.length).toEqual(1));
   await waitFor(() => expect(closeCalled).toEqual(1));
+});
+
+it("edits the snapshot frequency as a number and a unit, and shows the effective one the same way", async () => {
+  const url = "userName=some-user&host=some-host&path=some-path";
+
+  serverMock.onGet("/api/v1/policy?" + url).reply(200, { scheduling: { intervalSeconds: 3600 } });
+  serverMock.onPost("/api/v1/policy/resolve?" + url).reply((config) => {
+    const seconds = JSON.parse(config.data).updates?.scheduling?.intervalSeconds;
+    return [
+      200,
+      {
+        effective: { scheduling: { intervalSeconds: seconds } },
+        definition: {
+          scheduling: { intervalSeconds: { host: "some-host", userName: "some-user", path: "some-path" } },
+        },
+        upcomingSnapshotTimes: [],
+      },
+    ];
+  });
+  serverMock.onPut("/api/v1/policy?" + url).reply(200, {});
+
+  const { getByTestId, getByLabelText } = render(
+    <MemoryRouter>
+      <PolicyEditor ref={ref} host="some-host" userName="some-user" path="some-path" close={() => {}} />
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => expect(getByLabelText("Snapshot frequency")).toHaveValue("1"));
+  expect(getByLabelText("Snapshot frequency unit")).toHaveValue("hr");
+  await waitFor(() => expect(getByTestId("effective-scheduling.intervalSeconds").value).toBe("1 hr"));
+
+  // there is no fixed list of frequencies: any number of seconds, minutes, hours or days
+  const unit = getByLabelText("Snapshot frequency unit");
+  expect([...unit.querySelectorAll("option")].map((o) => o.textContent)).toEqual(["sec", "min", "hr", "days"]);
+
+  fireEvent.change(getByLabelText("Snapshot frequency"), { target: { value: "90" } });
+  fireEvent.change(unit, { target: { value: "min" } });
+
+  await waitFor(() => expect(getByTestId("effective-scheduling.intervalSeconds").value).toBe("90 min"));
+
+  fireEvent.click(getByTestId("button-save"));
+  await waitFor(() => expect(serverMock.history.put.length).toEqual(1));
+  expect(JSON.parse(serverMock.history.put[0].data).scheduling.intervalSeconds).toBe(5400);
+});
+
+it("clears the snapshot frequency when the number is emptied", async () => {
+  const url = "userName=some-user&host=some-host&path=some-path";
+
+  serverMock.onGet("/api/v1/policy?" + url).reply(200, { scheduling: { intervalSeconds: 3600 } });
+  serverMock
+    .onPost("/api/v1/policy/resolve?" + url)
+    .reply(200, { effective: {}, definition: {}, upcomingSnapshotTimes: [] });
+  serverMock.onPut("/api/v1/policy?" + url).reply(200, {});
+
+  const { getByTestId, getByLabelText } = render(
+    <MemoryRouter>
+      <PolicyEditor ref={ref} host="some-host" userName="some-user" path="some-path" close={() => {}} />
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => expect(getByLabelText("Snapshot frequency")).toHaveValue("1"));
+
+  const input = getByLabelText("Snapshot frequency");
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.blur(input);
+  await waitFor(() => expect(input).toHaveValue(""));
+
+  fireEvent.click(getByTestId("button-save"));
+  await waitFor(() => expect(serverMock.history.put.length).toEqual(1));
+  expect(JSON.parse(serverMock.history.put[0].data).scheduling?.intervalSeconds).toBeUndefined();
 });

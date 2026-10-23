@@ -84,7 +84,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
   // What the server has. Nothing is saved before the stored preferences have been read, and only what
   // differs from the server's copy is saved. Saving the built-in defaults while the stored preferences were
   // still loading overwrote them (several tabs reloading together, as after a server restart, lost settings).
-  const savedJson = useRef<string | null>(null);
+  const savedJsonRef = useRef<string | null>(null);
 
   const setTheme = useCallback(
     (theme: Theme) =>
@@ -146,7 +146,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
         } else {
           storedPreferences.pageSize = normalizePageSize(storedPreferences.pageSize);
         }
-        savedJson.current = JSON.stringify(storedPreferences);
+        savedJsonRef.current = JSON.stringify(storedPreferences);
         setTheme(storedPreferences.theme);
         setFontSize(storedPreferences.fontSize);
         setPreferences(storedPreferences);
@@ -155,14 +155,14 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
   }, [setTheme, setFontSize]);
 
   useEffect(() => {
-    if (!preferences || savedJson.current === null) {
+    if (!preferences || savedJsonRef.current === null) {
       return; // the stored preferences have not been read yet
     }
     const json = JSON.stringify(preferences);
-    if (json === savedJson.current) {
+    if (json === savedJsonRef.current) {
       return; // unchanged
     }
-    savedJson.current = json;
+    savedJsonRef.current = json;
     axios
       .put(PREFERENCES_URL, preferences)
       .then((_result) => {})

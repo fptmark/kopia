@@ -3,7 +3,8 @@ import Form from "react-bootstrap/Form";
 import { getDeepStateProperty } from "../../utils/deepstate";
 import { EffectiveValueColumn } from "./EffectiveValueColumn";
 
-export function EffectiveValue(component, policyField) {
+/** The effective value of a policy field; format turns the raw value into what is shown (a period as "1 hr"). */
+export function EffectiveValue(component, policyField, format = (x) => x) {
   const dsp = getDeepStateProperty(component, "resolved.definition." + policyField, undefined);
 
   return (
@@ -12,7 +13,7 @@ export function EffectiveValue(component, policyField) {
         <Form.Control
           data-testid={"effective-" + policyField}
           size="sm"
-          value={getDeepStateProperty(component, "resolved.effective." + policyField, undefined)}
+          value={format(getDeepStateProperty(component, "resolved.effective." + policyField, undefined))}
           readOnly={true}
         />
         <Form.Text data-testid={"definition-" + policyField}>{component.policyDefinitionPoint(dsp)}</Form.Text>

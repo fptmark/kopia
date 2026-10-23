@@ -18,7 +18,7 @@ import Form from "react-bootstrap/Form";
 import Row from "react-bootstrap/Row";
 import Spinner from "react-bootstrap/Spinner";
 import Accordion from "react-bootstrap/Accordion";
-import { handleChange, stateProperty, valueToNumber } from "../../forms";
+import { handleChange, stateProperty } from "../../forms";
 import { StringList } from "../../forms/StringList";
 import { LogDetailSelector } from "../../forms/LogDetailSelector";
 import { OptionalBoolean } from "../../forms/OptionalBoolean";
@@ -38,6 +38,9 @@ import { EffectiveTimesOfDayValue } from "./EffectiveTimesOfDayValue";
 import { EffectiveBooleanValue } from "./EffectiveBooleanValue";
 import { EffectiveValueColumn } from "./EffectiveValueColumn";
 import { UpcomingSnapshotTimes } from "./UpcomingSnapshotTimes";
+import { setDeepStateProperty } from "../../utils/deepstate";
+import { DurationInput } from "../DurationInput";
+import { formatDuration } from "../../utils/duration";
 import { SectionHeaderRow } from "./SectionHeaderRow";
 import { ActionRowScript } from "./ActionRowScript";
 import { ActionRowTimeout } from "./ActionRowTimeout";
@@ -585,25 +588,17 @@ export class PolicyEditor extends Component {
                     help="How frequently to create snapshots in KopiaUI or Kopia server (has no effect outside of the server mode)"
                   />
                   <WideValueColumn>
-                    <Form.Control
-                      as="select"
-                      size="sm"
-                      name="policy.scheduling.intervalSeconds"
-                      onChange={(e) => this.handleChange(e, valueToNumber)}
-                      value={stateProperty(this, "policy.scheduling.intervalSeconds")}
-                    >
-                      <option value="">(none)</option>
-                      <option value="600">every 10 minutes</option>
-                      <option value="900">every 15 minutes</option>
-                      <option value="1200">every 20 minutes</option>
-                      <option value="1800">every 30 minutes</option>
-                      <option value="3600">every hour</option>
-                      <option value="10800">every 3 hours</option>
-                      <option value="21600">every 6 hours</option>
-                      <option value="43200">every 12 hours</option>
-                    </Form.Control>
+                    <DurationInput
+                      ariaLabel="Snapshot frequency"
+                      seconds={stateProperty(this, "policy.scheduling.intervalSeconds", undefined) || undefined}
+                      allowEmpty
+                      minSeconds={60}
+                      maxSeconds={365 * 86400}
+                      invalidMessage="Enter a number and a unit: at least 1 minute, at most 365 days."
+                      onCommit={(seconds) => setDeepStateProperty(this, "policy.scheduling.intervalSeconds", seconds)}
+                    />
                   </WideValueColumn>
-                  {EffectiveValue(this, "scheduling.intervalSeconds")}
+                  {EffectiveValue(this, "scheduling.intervalSeconds", formatDuration)}
                 </Row>
                 <Row>
                   <LabelColumn

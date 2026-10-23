@@ -276,6 +276,18 @@ describe("Snapshots component", () => {
     unmount();
   });
 
+  test("no longer has the Search Files button: file search is on the List/Restore tab", async () => {
+    axiosMock.onGet("/api/v1/sources").reply(200, mockSourcesResponse);
+
+    const { unmount } = renderSnapshots();
+
+    await waitFor(() => expect(screen.getByTestId("new-snapshot")).toBeInTheDocument());
+    expect(screen.queryByTestId("search-files")).not.toBeInTheDocument();
+    expect(screen.queryByText("Search Files")).not.toBeInTheDocument();
+
+    unmount();
+  });
+
   test("has no Next Snapshot column", async () => {
     axiosMock.onGet("/api/v1/sources").reply(200, mockSourcesResponse);
 
@@ -297,7 +309,7 @@ describe("Snapshots component", () => {
     const { unmount } = renderSnapshots();
 
     expect(await screen.findByDisplayValue("2")).toBeInTheDocument();
-    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hours");
+    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hr");
 
     unmount();
   });

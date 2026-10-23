@@ -147,6 +147,17 @@ export default class App extends Component {
                   </span>
                   <span className="d-inline-block" data-toggle="tooltip" title="Repository is not connected">
                     <NavLink
+                      data-testid="tab-restore"
+                      title=""
+                      data-title="List/Restore"
+                      className={isRepositoryConnected ? "nav-link" : "nav-link disabled"}
+                      to="/restore"
+                    >
+                      List/Restore
+                    </NavLink>
+                  </span>
+                  <span className="d-inline-block" data-toggle="tooltip" title="Repository is not connected">
+                    <NavLink
                       data-testid="tab-policies"
                       title=""
                       data-title="Policies"
@@ -196,7 +207,8 @@ export default class App extends Component {
               <Routes>
                 <Route path="snapshots" element={<Snapshots />} />
                 <Route path="snapshots/new" element={<SnapshotCreate />} />
-                <Route path="snapshots/search" element={<SnapshotSearch />} />
+                <Route path="restore" element={<SnapshotSearch />} />
+                <Route path="snapshots/search" element={<Navigate to="/restore" replace />} />
                 <Route path="snapshots/single-source/" element={<SnapshotHistory />} />
                 <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
                 <Route path="snapshots/dir/:oid" element={<SnapshotDirectory />} />

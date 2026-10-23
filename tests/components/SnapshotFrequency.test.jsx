@@ -3,7 +3,7 @@ import "@testing-library/jest-dom";
 import axios from "axios";
 import { MemoryRouter } from "react-router";
 import { vi } from "vitest";
-import { intervalSeconds, SnapshotFrequency, splitInterval } from "../../src/components/SnapshotFrequency";
+import { SnapshotFrequency } from "../../src/components/SnapshotFrequency";
 
 vi.mock("axios");
 
@@ -27,40 +27,22 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-describe("splitInterval / intervalSeconds", () => {
-  it("shows whole days as days and anything else in hours", () => {
-    expect(splitInterval(3600)).toEqual({ text: "1", unit: "hours" });
-    expect(splitInterval(7200)).toEqual({ text: "2", unit: "hours" });
-    expect(splitInterval(86400)).toEqual({ text: "1", unit: "days" });
-    expect(splitInterval(3 * 86400)).toEqual({ text: "3", unit: "days" });
-    expect(splitInterval(36 * 3600)).toEqual({ text: "36", unit: "hours" });
-    expect(splitInterval(1800)).toEqual({ text: "0.5", unit: "hours" });
-    expect(splitInterval(0)).toEqual({ text: "", unit: "hours" });
-  });
-
-  it("turns a typed number and unit into seconds, within 10 minutes to 365 days", () => {
-    expect(intervalSeconds("1", "hours")).toBe(3600);
-    expect(intervalSeconds("0.5", "hours")).toBe(1800);
-    expect(intervalSeconds(" 2 ", "days")).toBe(172800);
-    expect(intervalSeconds("365", "days")).toBe(365 * 86400);
-    expect(intervalSeconds("0.1", "hours")).toBeNull(); // 6 minutes
-    expect(intervalSeconds("366", "days")).toBeNull();
-    expect(intervalSeconds("0", "hours")).toBeNull();
-    expect(intervalSeconds("-1", "hours")).toBeNull();
-    expect(intervalSeconds("abc", "hours")).toBeNull();
-    expect(intervalSeconds("", "hours")).toBeNull();
-    expect(intervalSeconds("1e3", "hours")).toBeNull();
-  });
-});
-
 describe("SnapshotFrequency", () => {
   it("shows the frequency in the global policy", async () => {
     mockPolicy();
     renderIt();
 
     expect(await screen.findByDisplayValue("1")).toBeInTheDocument();
-    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hours");
+    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("hr");
     expect(axios.get).toHaveBeenCalledWith(POLICY);
+  });
+
+  it("shows minutes for a period that is not whole hours", async () => {
+    mockPolicy({ scheduling: { intervalSeconds: 5400 } });
+    renderIt();
+
+    expect(await screen.findByDisplayValue("90")).toBeInTheDocument();
+    expect(screen.getByLabelText("Snapshot frequency unit")).toHaveValue("min");
   });
 
   it("shows days for a whole number of days", async () => {
@@ -128,10 +110,10 @@ describe("SnapshotFrequency", () => {
     const input = await screen.findByLabelText("Snapshot frequency");
     await waitFor(() => expect(input).toHaveValue("1"));
 
-    for (const bad of ["0", "abc", "0.01", ""]) {
+    for (const bad of ["0", "abc", "0.01"]) {
       fireEvent.change(input, { target: { value: bad } });
       fireEvent.blur(input);
-      expect(await screen.findByText(/from 10 minutes to 365 days/)).toBeInTheDocument();
+      expect(await screen.findByText(/at least 1 minute, at most 365 days/)).toBeInTheDocument();
       expect(input).toHaveValue("1");
     }
 
@@ -149,6 +131,35 @@ describe("SnapshotFrequency", () => {
     fireEvent.blur(input);
 
     expect(await screen.findByText(/Not saved: repository is read-only/)).toBeInTheDocument();
+  });
+
+  it("clears the frequency when the number is emptied, leaving the rest of the policy", async () => {
+    mockPolicy();
+    renderIt();
+
+    const input = await screen.findByLabelText("Snapshot frequency");
+    await waitFor(() => expect(input).toHaveValue("1"));
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(axios.put).toHaveBeenCalledWith(POLICY, { scheduling: {}, retention: { keepLatest: 5 } }),
+    );
+  });
+
+  it("accepts seconds and minutes too", async () => {
+    mockPolicy();
+    renderIt();
+
+    const input = await screen.findByLabelText("Snapshot frequency");
+    await waitFor(() => expect(input).toHaveValue("1"));
+
+    fireEvent.change(screen.getByLabelText("Snapshot frequency unit"), { target: { value: "min" } });
+    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
+    expect(axios.put.mock.calls[0][1].scheduling.intervalSeconds).toBe(60);
+
+    fireEvent.change(screen.getByLabelText("Snapshot frequency unit"), { target: { value: "sec" } });
+    expect(await screen.findByText(/at least 1 minute/)).toBeInTheDocument(); // 1 sec is too often
   });
 
   it("creates the global policy's schedule when there is none yet", async () => {
