@@ -213,7 +213,7 @@ func (h *Hub) Emit(ctx context.Context, e Event) {
 	case e.Recovered:
 		h.end(ctx, ds, e)
 	default:
-		h.dispatchFailure(ctx, ds, e, time.Duration(set.RepeatHours)*time.Hour)
+		h.dispatchFailure(ctx, ds, e, time.Duration(set.RepeatSeconds)*time.Second)
 	}
 }
 

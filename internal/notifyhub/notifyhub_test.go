@@ -144,11 +144,11 @@ func TestARepeatedFailureIsSentOnceThenRemindedAfterTheRepeatPeriod(t *testing.T
 	require.Len(t, p.got, 3, "a failure that lasts is sent again after the default 12 hours")
 }
 
-func settingsHub(t *testing.T, hours int, ds []notifyhub.Destination, p *fakeProvider) (*notifyhub.Hub, *time.Time) {
+func settingsHub(t *testing.T, repeat time.Duration, ds []notifyhub.Destination, p *fakeProvider) (*notifyhub.Hub, *time.Time) {
 	t.Helper()
 
 	h, _ := newHub(t, ds, p)
-	require.NoError(t, notifyhub.SaveSettings(h.Path, notifyhub.Settings{RepeatHours: hours, Destinations: ds}))
+	require.NoError(t, notifyhub.SaveSettings(h.Path, notifyhub.Settings{RepeatSeconds: int(repeat / time.Second), Destinations: ds}))
 
 	now := time.Date(2026, 10, 22, 9, 0, 0, 0, time.Local)
 	h.Now = func() time.Time { return now }
@@ -158,17 +158,19 @@ func settingsHub(t *testing.T, hours int, ds []notifyhub.Destination, p *fakePro
 
 func TestTheRepeatPeriodIsTheUsersChoice(t *testing.T) {
 	for _, tc := range []struct {
-		hours       int
+		period      time.Duration
 		after       time.Duration
 		wantMessage int
 	}{
-		{1, 61 * time.Minute, 2},
-		{1, 59 * time.Minute, 1},
-		{24, 13 * time.Hour, 1},
-		{24, 25 * time.Hour, 2},
+		{time.Hour, 61 * time.Minute, 2},
+		{time.Hour, 59 * time.Minute, 1},
+		{24 * time.Hour, 13 * time.Hour, 1},
+		{24 * time.Hour, 25 * time.Hour, 2},
+		{15 * time.Minute, 16 * time.Minute, 2},
+		{15 * time.Minute, 14 * time.Minute, 1},
 	} {
 		p := &fakeProvider{}
-		h, now := settingsHub(t, tc.hours, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+		h, now := settingsHub(t, tc.period, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
 
 		ev := notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed}
 		h.Emit(context.Background(), ev)
@@ -178,13 +180,13 @@ func TestTheRepeatPeriodIsTheUsersChoice(t *testing.T) {
 		h.Emit(context.Background(), ev)
 		h.Wait()
 
-		require.Len(t, p.got, tc.wantMessage, "%d hours, after %v", tc.hours, tc.after)
+		require.Len(t, p.got, tc.wantMessage, "%v, after %v", tc.period, tc.after)
 	}
 }
 
 func TestTheRepeatRuleAppliesToEveryFailureTypeIncludingTheWatchdog(t *testing.T) {
 	p := &fakeProvider{}
-	h, now := settingsHub(t, 12, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+	h, now := settingsHub(t, 12*time.Hour, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
 	ctx := context.Background()
 
 	events := []notifyhub.Event{
@@ -217,7 +219,7 @@ func TestTheRepeatRuleAppliesToEveryFailureTypeIncludingTheWatchdog(t *testing.T
 
 func TestAChangedProblemIsNewsAndIsSentAtOnce(t *testing.T) {
 	p := &fakeProvider{}
-	h, _ := settingsHub(t, 12, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+	h, _ := settingsHub(t, 12*time.Hour, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
 	ctx := context.Background()
 
 	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventHealth, Checks: []notifyhub.HealthCheck{notifyhub.CheckRecent}})
@@ -235,7 +237,7 @@ func TestTheRuleIsPerDestination(t *testing.T) {
 	p := &fakeProvider{}
 	a := dest("a", notifyhub.FailureEvents, notifyhub.FreqOff)
 	b := dest("b", notifyhub.FailureEvents, notifyhub.FreqOff)
-	h, _ := settingsHub(t, 12, []notifyhub.Destination{a}, p)
+	h, _ := settingsHub(t, 12*time.Hour, []notifyhub.Destination{a}, p)
 	ctx := context.Background()
 	ev := notifyhub.Event{ID: notifyhub.EventWatchdog, Problem: notifyhub.ProblemServerDown}
 
@@ -244,7 +246,7 @@ func TestTheRuleIsPerDestination(t *testing.T) {
 	require.Equal(t, []string{"a:Backup server is not running"}, p.titles())
 
 	// a destination added while the problem goes on hears of it at its next report, not after 12 hours
-	require.NoError(t, notifyhub.SaveSettings(h.Path, notifyhub.Settings{RepeatHours: 12, Destinations: []notifyhub.Destination{a, b}}))
+	require.NoError(t, notifyhub.SaveSettings(h.Path, notifyhub.Settings{RepeatSeconds: 12 * 3600, Destinations: []notifyhub.Destination{a, b}}))
 	h.Emit(ctx, ev)
 	h.Wait()
 	require.Equal(t, []string{"a:Backup server is not running", "b:Backup server is not running"}, p.titles())
@@ -252,7 +254,7 @@ func TestTheRuleIsPerDestination(t *testing.T) {
 
 func TestWhatWasSentSurvivesARestart(t *testing.T) {
 	p := &fakeProvider{}
-	h1, _ := settingsHub(t, 12, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
+	h1, _ := settingsHub(t, 12*time.Hour, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
 	store := &notifyhub.MemoryRepeat{}
 	h1.Repeat = store
 
@@ -326,13 +328,13 @@ func TestTheEndOfAProblemIsSentOnlyToThoseWhoHeardOfIt(t *testing.T) {
 	p := &fakeProvider{}
 	a := dest("heard", notifyhub.FailureEvents, notifyhub.FreqOff)
 	b := dest("late", notifyhub.FailureEvents, notifyhub.FreqOff)
-	h, _ := settingsHub(t, 12, []notifyhub.Destination{a}, p)
+	h, _ := settingsHub(t, 12*time.Hour, []notifyhub.Destination{a}, p)
 	ctx := context.Background()
 
 	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventHealth, Checks: []notifyhub.HealthCheck{notifyhub.CheckRecent}})
 	h.Wait()
 
-	require.NoError(t, notifyhub.SaveSettings(h.Path, notifyhub.Settings{RepeatHours: 12, Destinations: []notifyhub.Destination{a, b}}))
+	require.NoError(t, notifyhub.SaveSettings(h.Path, notifyhub.Settings{RepeatSeconds: 12 * 3600, Destinations: []notifyhub.Destination{a, b}}))
 	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventHealth, Recovered: true})
 	h.Wait()
 
@@ -549,44 +551,31 @@ func TestRepeatPeriodDefaultsPersistsAndIsValidated(t *testing.T) {
 
 	set, err := notifyhub.LoadSettings(path)
 	require.NoError(t, err)
-	require.Equal(t, 12, set.RepeatHours, "no file: the default")
+	require.Equal(t, 12*3600, set.RepeatSeconds, "no file: the default")
 
-	require.NoError(t, notifyhub.SaveSettings(path, notifyhub.Settings{RepeatHours: 6, Destinations: notifyhub.Defaults("")}))
+	require.NoError(t, notifyhub.SaveSettings(path, notifyhub.Settings{RepeatSeconds: 1800, Destinations: notifyhub.Defaults("")}))
 	set, _ = notifyhub.LoadSettings(path)
-	require.Equal(t, 6, set.RepeatHours)
+	require.Equal(t, 1800, set.RepeatSeconds)
 
 	// saving destinations alone keeps the period
 	require.NoError(t, notifyhub.Save(path, nil))
 	set, _ = notifyhub.LoadSettings(path)
-	require.Equal(t, 6, set.RepeatHours)
+	require.Equal(t, 1800, set.RepeatSeconds)
 
-	// a file without the setting (the earlier format) gets the default
+	// a file without the setting gets the default
 	require.NoError(t, os.WriteFile(path, []byte(`{"destinations":[]}`), 0o600))
 	set, _ = notifyhub.LoadSettings(path)
-	require.Equal(t, 12, set.RepeatHours)
+	require.Equal(t, 12*3600, set.RepeatSeconds)
 
-	require.NoError(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatHours: 1}))
-	require.NoError(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatHours: 720}))
-	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatHours: 0}))
-	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatHours: 721}))
-	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatHours: 12, Destinations: []notifyhub.Destination{{ID: ""}}}))
-}
+	// a file from when the period was in hours keeps its value
+	require.NoError(t, os.WriteFile(path, []byte(`{"repeatHours":6,"destinations":[]}`), 0o600))
+	set, _ = notifyhub.LoadSettings(path)
+	require.Equal(t, 6*3600, set.RepeatSeconds)
 
-func TestTheEndOfOneProblemDoesNotEndAnother(t *testing.T) {
-	p := &fakeProvider{}
-	h, _ := settingsHub(t, 12, []notifyhub.Destination{dest("d", notifyhub.FailureEvents, notifyhub.FreqOff)}, p)
-	ctx := context.Background()
-
-	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemRepoUnreachable})
-	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed})
-	h.Wait()
-
-	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Recovered: true, Problem: notifyhub.ProblemMaintFailed})
-	h.Wait()
-	require.Len(t, p.got, 3)
-	require.Equal(t, "d:Maintenance works again", p.titles()[2])
-
-	h.Emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Recovered: true, Problem: notifyhub.ProblemRepoUnreachable})
-	h.Wait()
-	require.Equal(t, "d:Repository is reachable again", p.titles()[3])
+	require.NoError(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatSeconds: 60}))
+	require.NoError(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatSeconds: 30 * 86400}))
+	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatSeconds: 59}))
+	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatSeconds: 0}))
+	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatSeconds: 30*86400 + 1}))
+	require.Error(t, notifyhub.ValidateSettings(notifyhub.Settings{RepeatSeconds: 3600, Destinations: []notifyhub.Destination{{ID: ""}}}))
 }

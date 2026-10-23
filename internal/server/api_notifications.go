@@ -16,9 +16,9 @@ import (
 
 // notificationDestinations is the body of the destinations calls.
 type notificationDestinations struct {
-	// RepeatHours is how long a failure that goes on is held back between messages to one destination.
-	RepeatHours  int                     `json:"repeatHours"`
-	Destinations []notifyhub.Destination `json:"destinations"`
+	// RepeatSeconds is how long a failure that goes on is held back between messages to one destination.
+	RepeatSeconds int                     `json:"repeatSeconds"`
+	Destinations  []notifyhub.Destination `json:"destinations"`
 }
 
 type notificationPreview struct {
@@ -55,7 +55,7 @@ func handleNotificationDestinationsGet(_ context.Context, rc requestContext) (an
 		set.Destinations = []notifyhub.Destination{}
 	}
 
-	return notificationDestinations{RepeatHours: set.RepeatHours, Destinations: set.Destinations}, nil
+	return notificationDestinations{RepeatSeconds: set.RepeatSeconds, Destinations: set.Destinations}, nil
 }
 
 func handleNotificationDestinationsPut(_ context.Context, rc requestContext) (any, *apiError) {
@@ -73,16 +73,16 @@ func handleNotificationDestinationsPut(_ context.Context, rc requestContext) (an
 	defer notificationFileMutex.Unlock()
 
 	// a client that does not send the repeat period keeps the one in the file
-	if in.RepeatHours == 0 {
+	if in.RepeatSeconds == 0 {
 		cur, err := notifyhub.LoadSettings(h.Path)
 		if err != nil {
 			return nil, internalServerError(err)
 		}
 
-		in.RepeatHours = cur.RepeatHours
+		in.RepeatSeconds = cur.RepeatSeconds
 	}
 
-	set := notifyhub.Settings{RepeatHours: in.RepeatHours, Destinations: in.Destinations}
+	set := notifyhub.Settings{RepeatSeconds: in.RepeatSeconds, Destinations: in.Destinations}
 	if err := notifyhub.ValidateSettings(set); err != nil {
 		return nil, requestError(serverapi.ErrorMalformedRequest, err.Error())
 	}

@@ -138,28 +138,29 @@ func validateSuccess(id string, s Success) error {
 	return nil
 }
 
-// DefaultRepeatHours is how long a failure that goes on is held back before it is sent again.
+// How long a failure that goes on is held back before it is sent again to the same destination, in seconds.
 const (
-	DefaultRepeatHours = 12
-	MaxRepeatHours     = 720
+	DefaultRepeatSeconds = 12 * 3600
+	MinRepeatSeconds     = 60
+	MaxRepeatSeconds     = 30 * 24 * 3600
 )
 
 type file struct {
-	RepeatHours  int           `json:"repeatHours,omitempty"`
-	Destinations []Destination `json:"destinations"`
+	RepeatSeconds int           `json:"repeatSeconds,omitempty"`
+	Destinations  []Destination `json:"destinations"`
 }
 
-// Settings is the whole destinations file: the destinations, and how many hours a repeated failure is held
+// Settings is the whole destinations file: the destinations, and how many seconds a repeated failure is held
 // back between messages to the same destination.
 type Settings struct {
-	RepeatHours  int           `json:"repeatHours"`
-	Destinations []Destination `json:"destinations"`
+	RepeatSeconds int           `json:"repeatSeconds"`
+	Destinations  []Destination `json:"destinations"`
 }
 
 // ValidateSettings rejects settings that could not be used.
 func ValidateSettings(s Settings) error {
-	if s.RepeatHours < 1 || s.RepeatHours > MaxRepeatHours {
-		return errors.Errorf("the repeat period must be between 1 and %d hours", MaxRepeatHours)
+	if s.RepeatSeconds < MinRepeatSeconds || s.RepeatSeconds > MaxRepeatSeconds {
+		return errors.New("the repeat period must be between 1 minute and 30 days")
 	}
 
 	return Validate(s.Destinations)
@@ -207,7 +208,7 @@ func (l legacyDestination) upgrade() Destination {
 }
 
 func load(path string) (set Settings, upgraded bool, err error) {
-	set.RepeatHours = DefaultRepeatHours
+	set.RepeatSeconds = DefaultRepeatSeconds
 
 	b, err := os.ReadFile(path) //nolint:gosec
 	if os.IsNotExist(err) {
@@ -219,16 +220,20 @@ func load(path string) (set Settings, upgraded bool, err error) {
 	}
 
 	var raw struct {
-		RepeatHours  int                 `json:"repeatHours"`
-		Destinations []legacyDestination `json:"destinations"`
+		RepeatSeconds int                 `json:"repeatSeconds"`
+		RepeatHours   int                 `json:"repeatHours"` // the format before the period had units
+		Destinations  []legacyDestination `json:"destinations"`
 	}
 
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return set, false, errors.Wrap(err, "notification destinations file is not valid JSON")
 	}
 
-	if raw.RepeatHours > 0 {
-		set.RepeatHours = raw.RepeatHours
+	switch {
+	case raw.RepeatSeconds > 0:
+		set.RepeatSeconds = raw.RepeatSeconds
+	case raw.RepeatHours > 0:
+		set.RepeatSeconds = raw.RepeatHours * 3600
 	}
 
 	var ds []Destination
@@ -277,7 +282,7 @@ func Load(path string) ([]Destination, error) {
 func Save(path string, ds []Destination) error {
 	set, err := LoadSettings(path)
 	if err != nil {
-		set.RepeatHours = DefaultRepeatHours
+		set.RepeatSeconds = DefaultRepeatSeconds
 	}
 
 	set.Destinations = ds
@@ -297,7 +302,7 @@ func SaveSettings(path string, s Settings) error {
 		out = append(out, d)
 	}
 
-	b, err := json.MarshalIndent(file{RepeatHours: s.RepeatHours, Destinations: out}, "", "  ")
+	b, err := json.MarshalIndent(file{RepeatSeconds: s.RepeatSeconds, Destinations: out}, "", "  ")
 	if err != nil {
 		return errors.Wrap(err, "unable to encode notification destinations")
 	}
