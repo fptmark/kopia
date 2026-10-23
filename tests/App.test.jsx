@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 import React from "react";
@@ -230,6 +230,32 @@ describe("App Component - Repository State", () => {
     expect(screen.getByTestId("tab-files").className).toContain("disabled");
     expect(screen.getByTestId("tab-policies").className).toContain("disabled");
     expect(screen.getByTestId("tab-tasks").className).toContain("disabled");
+  });
+
+  test("the tabs come back by themselves once the repository is connected", async () => {
+    axiosMock.reset();
+    axiosMock = setupAPIMock();
+    axiosMock
+      .onGet("/api/v1/repo/status")
+      .replyOnce(200, { connected: false, description: "" })
+      .onGet("/api/v1/repo/status")
+      .reply(200, { connected: true, description: "Repository in SFTP" });
+    axiosMock.onGet("/api/v1/tasks-summary").reply(200, { RUNNING: 0 });
+    axiosMock.onGet("/api/v1/ui-preferences").reply(200, { pageSize: 10, theme: "light", fontSize: "fs-6" });
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await renderAndWait(<App />);
+      expect(screen.getByTestId("tab-tasks").className).toContain("disabled");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5500);
+      });
+
+      expect(screen.getByTestId("tab-tasks").className).not.toContain("disabled");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("repository and preferences tabs remain enabled when disconnected", async () => {

@@ -65,18 +65,20 @@ export default class App extends Component {
     // the version footer stays hidden; the version is shown on the About page instead.
     this.fetchInitialRepositoryDescription();
     this.taskSummaryInterval = window.setInterval(this.fetchTaskSummary, 5000);
+    // the page can be opened while the repository is still reconnecting (after a restart, or a NAS blip); the
+    // tabs stay disabled until it is, so keep checking instead of only asking once.
+    this.repoStatusInterval = window.setInterval(this.fetchInitialRepositoryDescription, 5000);
   }
 
   fetchInitialRepositoryDescription() {
     axios
       .get("/api/v1/repo/status")
       .then((result) => {
+        const next = { isRepositoryConnected: !!result.data.connected };
         if (result.data.description) {
-          this.setState({
-            repoDescription: result.data.description,
-            isRepositoryConnected: result.data.connected,
-          });
+          next.repoDescription = result.data.description;
         }
+        this.setState(next);
       })
       .catch((_) => {
         /* ignore */
@@ -102,6 +104,7 @@ export default class App extends Component {
 
   componentWillUnmount() {
     window.clearInterval(this.taskSummaryInterval);
+    window.clearInterval(this.repoStatusInterval);
   }
 
   // this is invoked via AppContext whenever repository is connected, disconnected, etc.
