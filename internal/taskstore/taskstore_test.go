@@ -517,6 +517,8 @@ func TestDatabaseFromVersionOneGainsEveryLaterTable(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec("DROP TABLE notification_state")
 	require.NoError(t, err)
+	_, err = db.Exec("DROP TABLE notification_repeat")
+	require.NoError(t, err)
 	_, err = db.Exec("PRAGMA user_version = 1")
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
@@ -561,4 +563,46 @@ func TestActivityCountsByPeriodAndKeepsFailuresApart(t *testing.T) {
 	acts, err = s.SnapshotActivity(t0.Add(100*time.Hour), t0.Add(200*time.Hour))
 	require.NoError(t, err)
 	require.Empty(t, acts)
+}
+
+func TestRepeatStateIsPerDestinationKindAndDetail(t *testing.T) {
+	s, path := openStore(t)
+
+	_, ok, err := s.LastSent("mac", "failed", "/Users/me")
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	require.NoError(t, s.SetSent("mac", "failed", "/Users/me", t0))
+	require.NoError(t, s.SetSent("mac", "failed", "/Users/me", t0.Add(time.Hour)))
+	require.NoError(t, s.SetSent("mac", "failed", "/Applications", t0))
+	require.NoError(t, s.SetSent("iphone", "failed", "/Users/me", t0))
+	require.NoError(t, s.SetSent("mac", "health", "recent", t0))
+	require.NoError(t, s.Close())
+
+	s, err = taskstore.Open(path)
+	require.NoError(t, err)
+
+	defer s.Close() //nolint:errcheck
+
+	at, ok, err := s.LastSent("mac", "failed", "/Users/me")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, at.Equal(t0.Add(time.Hour)), "survives a restart")
+
+	had, err := s.TakeSent("mac", "failed", "/Users/me")
+	require.NoError(t, err)
+	require.True(t, had)
+
+	had, err = s.TakeSent("mac", "failed", "/Users/me")
+	require.NoError(t, err)
+	require.False(t, had, "nothing left to end")
+
+	_, ok, _ = s.LastSent("mac", "failed", "/Applications")
+	require.True(t, ok, "another source is untouched")
+	_, ok, _ = s.LastSent("iphone", "failed", "/Users/me")
+	require.True(t, ok, "another destination is untouched")
+
+	had, err = s.TakeSent("mac", "health", "")
+	require.NoError(t, err)
+	require.True(t, had, "no detail clears every detail of the kind")
 }

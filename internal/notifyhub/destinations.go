@@ -138,8 +138,31 @@ func validateSuccess(id string, s Success) error {
 	return nil
 }
 
+// DefaultRepeatHours is how long a failure that goes on is held back before it is sent again.
+const (
+	DefaultRepeatHours = 12
+	MaxRepeatHours     = 720
+)
+
 type file struct {
+	RepeatHours  int           `json:"repeatHours,omitempty"`
 	Destinations []Destination `json:"destinations"`
+}
+
+// Settings is the whole destinations file: the destinations, and how many hours a repeated failure is held
+// back between messages to the same destination.
+type Settings struct {
+	RepeatHours  int           `json:"repeatHours"`
+	Destinations []Destination `json:"destinations"`
+}
+
+// ValidateSettings rejects settings that could not be used.
+func ValidateSettings(s Settings) error {
+	if s.RepeatHours < 1 || s.RepeatHours > MaxRepeatHours {
+		return errors.Errorf("the repeat period must be between 1 and %d hours", MaxRepeatHours)
+	}
+
+	return Validate(s.Destinations)
 }
 
 // legacyDestination is the first file format: a mode per event and one summary schedule.
@@ -183,23 +206,32 @@ func (l legacyDestination) upgrade() Destination {
 	return d
 }
 
-func load(path string) (ds []Destination, upgraded bool, err error) {
+func load(path string) (set Settings, upgraded bool, err error) {
+	set.RepeatHours = DefaultRepeatHours
+
 	b, err := os.ReadFile(path) //nolint:gosec
 	if os.IsNotExist(err) {
-		return nil, false, nil
+		return set, false, nil
 	}
 
 	if err != nil {
-		return nil, false, errors.Wrap(err, "unable to read notification destinations")
+		return set, false, errors.Wrap(err, "unable to read notification destinations")
 	}
 
 	var raw struct {
+		RepeatHours  int                 `json:"repeatHours"`
 		Destinations []legacyDestination `json:"destinations"`
 	}
 
 	if err := json.Unmarshal(b, &raw); err != nil {
-		return nil, false, errors.Wrap(err, "notification destinations file is not valid JSON")
+		return set, false, errors.Wrap(err, "notification destinations file is not valid JSON")
 	}
+
+	if raw.RepeatHours > 0 {
+		set.RepeatHours = raw.RepeatHours
+	}
+
+	var ds []Destination
 
 	for _, l := range raw.Destinations {
 		if l.Events != nil && l.Failures == nil && l.Success.Freq == "" {
@@ -221,22 +253,43 @@ func load(path string) (ds []Destination, upgraded bool, err error) {
 		ds = append(ds, d)
 	}
 
-	return ds, upgraded, nil
+	set.Destinations = ds
+
+	return set, upgraded, nil
 }
 
-// Load reads the destinations file. A missing file is an empty list; a file in the first format is read
-// as if it had been upgraded.
+// LoadSettings reads the destinations file. A missing file is no destinations and the default repeat period;
+// a file in the first format is read as if it had been upgraded.
+func LoadSettings(path string) (Settings, error) {
+	set, _, err := load(path)
+
+	return set, err
+}
+
+// Load reads the destinations of the destinations file.
 func Load(path string) ([]Destination, error) {
-	ds, _, err := load(path)
+	set, err := LoadSettings(path)
 
-	return ds, err
+	return set.Destinations, err
 }
 
-// Save writes the destinations file atomically.
+// Save writes the destinations, keeping the repeat period already in the file.
 func Save(path string, ds []Destination) error {
-	out := make([]Destination, 0, len(ds))
+	set, err := LoadSettings(path)
+	if err != nil {
+		set.RepeatHours = DefaultRepeatHours
+	}
 
-	for _, d := range ds {
+	set.Destinations = ds
+
+	return SaveSettings(path, set)
+}
+
+// SaveSettings writes the destinations file atomically.
+func SaveSettings(path string, s Settings) error {
+	out := make([]Destination, 0, len(s.Destinations))
+
+	for _, d := range s.Destinations {
 		if d.Failures == nil {
 			d.Failures = []EventID{}
 		}
@@ -244,7 +297,7 @@ func Save(path string, ds []Destination) error {
 		out = append(out, d)
 	}
 
-	b, err := json.MarshalIndent(file{Destinations: out}, "", "  ")
+	b, err := json.MarshalIndent(file{RepeatHours: s.RepeatHours, Destinations: out}, "", "  ")
 	if err != nil {
 		return errors.Wrap(err, "unable to encode notification destinations")
 	}
@@ -254,12 +307,12 @@ func Save(path string, ds []Destination) error {
 
 // Upgrade rewrites a destinations file in the first format into the current one.
 func Upgrade(path string) error {
-	ds, upgraded, err := load(path)
+	set, upgraded, err := load(path)
 	if err != nil || !upgraded {
 		return err
 	}
 
-	return Save(path, ds)
+	return SaveSettings(path, set)
 }
 
 // NewDestination returns a destination with the settings a new one starts with: every failure type, no

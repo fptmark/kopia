@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,8 +35,64 @@ type RollupState interface {
 // DefaultRetryDelays are the waits before the second, third and fourth attempt.
 var DefaultRetryDelays = []time.Duration{10 * time.Second, time.Minute, 5 * time.Minute} //nolint:gochecknoglobals
 
-// DefaultRepeatEvery is how long the same snapshot failure is held back after it was reported.
-const DefaultRepeatEvery = 12 * time.Hour
+// RepeatStore remembers which failures each destination was told about, and when, so a failure that goes on
+// is sent once per repeat period and its end is sent only to the destinations that heard of it.
+type RepeatStore interface {
+	LastSent(destination, kind, detail string) (time.Time, bool, error)
+	SetSent(destination, kind, detail string, at time.Time) error
+	// TakeSent forgets the failure (all details of the kind when detail is empty) and reports whether it was known.
+	TakeSent(destination, kind, detail string) (bool, error)
+}
+
+type repeatKey struct{ destination, kind, detail string }
+
+// MemoryRepeat is a RepeatStore that forgets everything when the process ends.
+type MemoryRepeat struct {
+	mu sync.Mutex
+	m  map[repeatKey]time.Time
+}
+
+// LastSent implements RepeatStore.
+func (r *MemoryRepeat) LastSent(destination, kind, detail string) (time.Time, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	t, ok := r.m[repeatKey{destination, kind, detail}]
+
+	return t, ok, nil
+}
+
+// SetSent implements RepeatStore.
+func (r *MemoryRepeat) SetSent(destination, kind, detail string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.m == nil {
+		r.m = map[repeatKey]time.Time{}
+	}
+
+	r.m[repeatKey{destination, kind, detail}] = at
+
+	return nil
+}
+
+// TakeSent implements RepeatStore.
+func (r *MemoryRepeat) TakeSent(destination, kind, detail string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	had := false
+
+	for k := range r.m {
+		if k.destination == destination && k.kind == kind && (detail == "" || k.detail == detail) {
+			delete(r.m, k)
+
+			had = true
+		}
+	}
+
+	return had, nil
+}
 
 // Hub applies each destination's settings to events and delivers the messages.
 type Hub struct {
@@ -50,20 +107,17 @@ type Hub struct {
 	// State and Digest drive the periodic summaries; without them none are sent.
 	State  RollupState
 	Digest func(ctx context.Context, from, to time.Time, freq string) (Summary, error)
+	// Repeat remembers what was sent; without it a repeated failure is only held back until the process ends.
+	Repeat RepeatStore
 
 	RetryDelays []time.Duration
-	// RepeatEvery overrides DefaultRepeatEvery.
-	RepeatEvery time.Duration
 	// Sleep waits between attempts (replaced in tests).
 	Sleep func(ctx context.Context, d time.Duration)
 	Now   func() time.Time
 
 	wg sync.WaitGroup
 
-	mu sync.Mutex
-	// reported holds when each snapshot failure (by kind and source) was last sent, so one that repeats
-	// every hour is sent once, with a reminder, and its end is reported.
-	reported map[string]time.Time
+	fallbackRepeat MemoryRepeat
 }
 
 func (h *Hub) logf(format string, args ...any) {
@@ -95,12 +149,12 @@ func (h *Hub) sleep(ctx context.Context, d time.Duration) {
 	}
 }
 
-func (h *Hub) repeatEvery() time.Duration {
-	if h.RepeatEvery > 0 {
-		return h.RepeatEvery
+func (h *Hub) repeat() RepeatStore {
+	if h.Repeat != nil {
+		return h.Repeat
 	}
 
-	return DefaultRepeatEvery
+	return &h.fallbackRepeat
 }
 
 // hears reports whether a destination wants this event.
@@ -112,78 +166,113 @@ func hears(d Destination, e Event) bool {
 	return d.HearsFailure(e.ID)
 }
 
+// failureDetail is what makes a failure the same one again: the source of a snapshot, the failing checks, or
+// the problem code. A different detail is news and is sent at once.
+func failureDetail(e Event) string {
+	switch e.ID {
+	case EventFailed, EventSkipped:
+		return e.Source
+	case EventHealth:
+		checks := make([]string, 0, len(e.Checks))
+		for _, c := range e.Checks {
+			checks = append(checks, fmt.Sprint(int(c)))
+		}
+
+		sort.Strings(checks)
+
+		return strings.Join(checks, ",")
+	}
+
+	return string(e.Problem)
+}
+
 // Emit sends the event to every destination that wants it. It returns at once; delivery and retries
 // continue in the background, and a failed delivery never affects the caller.
 //
-// A snapshot failure that was already reported within RepeatEvery is not sent again. A completed snapshot
-// ends the failure of its source and reports that.
+// A failure is sent to a destination once per repeat period, however often it is reported; the end of a
+// failure is sent to the destinations that were told about it. A completed snapshot ends the failure of its
+// source.
 func (h *Hub) Emit(ctx context.Context, e Event) {
-	ds, err := Load(h.Path)
+	set, err := LoadSettings(h.Path)
 	if err != nil {
 		h.logf("notifications: %v", err)
 		return
 	}
 
 	ctx = context.WithoutCancel(ctx)
+	ds := set.Destinations
 
-	for _, rec := range h.update(e) {
-		h.dispatch(ctx, ds, rec)
+	switch {
+	case e.ID == EventDone:
+		h.dispatch(ctx, ds, e)
+		h.end(ctx, ds, Event{ID: EventFailed, Source: e.Source, Recovered: true})
+
+		if e.Skipped == 0 {
+			h.end(ctx, ds, Event{ID: EventSkipped, Source: e.Source, Recovered: true})
+		}
+	case e.Recovered:
+		h.end(ctx, ds, e)
+	default:
+		h.dispatchFailure(ctx, ds, e, time.Duration(set.RepeatHours)*time.Hour)
 	}
-
-	if (e.ID == EventFailed || e.ID == EventSkipped) && !e.Recovered && !h.shouldReport(e) {
-		return
-	}
-
-	h.dispatch(ctx, ds, e)
 }
 
-func reportKey(id EventID, source string) string { return string(id) + "|" + source }
-
-// update ends the failures a completed snapshot resolves and returns the recovery events to send.
-func (h *Hub) update(e Event) []Event {
-	if e.ID != EventDone {
-		return nil
-	}
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	var out []Event
-
-	if _, ok := h.reported[reportKey(EventFailed, e.Source)]; ok {
-		delete(h.reported, reportKey(EventFailed, e.Source))
-
-		out = append(out, Event{ID: EventFailed, Source: e.Source, Recovered: true})
-	}
-
-	if _, ok := h.reported[reportKey(EventSkipped, e.Source)]; ok && e.Skipped == 0 {
-		delete(h.reported, reportKey(EventSkipped, e.Source))
-
-		out = append(out, Event{ID: EventSkipped, Source: e.Source, Recovered: true})
-	}
-
-	return out
-}
-
-// shouldReport records a snapshot failure and reports whether it is due to be sent.
-func (h *Hub) shouldReport(e Event) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if h.reported == nil {
-		h.reported = map[string]time.Time{}
-	}
-
-	k := reportKey(e.ID, e.Source)
+func (h *Hub) dispatchFailure(ctx context.Context, ds []Destination, e Event, period time.Duration) {
+	kind, detail := string(e.ID), failureDetail(e)
 	now := h.now()
 
-	if last, ok := h.reported[k]; ok && now.Sub(last) < h.repeatEvery() {
-		return false
+	var to []Destination
+
+	for _, d := range ds {
+		if !hears(d, e) {
+			continue
+		}
+
+		if last, ok, err := h.repeat().LastSent(d.ID, kind, detail); err != nil {
+			h.logf("notifications: %v", err)
+		} else if ok && now.Sub(last) < period {
+			continue
+		}
+
+		if err := h.repeat().SetSent(d.ID, kind, detail, now); err != nil {
+			h.logf("notifications: %v", err)
+		}
+
+		to = append(to, d)
 	}
 
-	h.reported[k] = now
+	h.dispatch(ctx, to, e)
+}
 
-	return true
+// end sends the end of a failure to the destinations that were told about it, and forgets it.
+func (h *Hub) end(ctx context.Context, ds []Destination, e Event) {
+	detail := ""
+
+	switch e.ID {
+	case EventFailed, EventSkipped:
+		detail = e.Source
+	case EventMaint, EventWatchdog:
+		detail = string(e.Problem) // the end of one problem does not end another
+	}
+
+	var to []Destination
+
+	for _, d := range ds {
+		if !hears(d, e) {
+			continue
+		}
+
+		had, err := h.repeat().TakeSent(d.ID, string(e.ID), detail)
+		if err != nil {
+			h.logf("notifications: %v", err)
+		}
+
+		if had {
+			to = append(to, d)
+		}
+	}
+
+	h.dispatch(ctx, to, e)
 }
 
 func (h *Hub) dispatch(ctx context.Context, ds []Destination, e Event) {

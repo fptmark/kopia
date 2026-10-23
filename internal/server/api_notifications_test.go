@@ -53,7 +53,7 @@ func TestNotificationDestinationsRoundTripAndValidation(t *testing.T) {
 	require.Nil(t, apiErr)
 	require.Len(t, out.(notificationDestinations).Destinations, 1, "the default This Mac destination")
 
-	body := `{"destinations":[{"id":"a","type":"imessage","name":"Me","target":"+1 555 0100","failures":["failed","skipped"],"success":{"freq":"weekly","weekday":2,"time":"07:30"}}]}`
+	body := `{"repeatHours":6,"destinations":[{"id":"a","type":"imessage","name":"Me","target":"+1 555 0100","failures":["failed","skipped"],"success":{"freq":"weekly","weekday":2,"time":"07:30"}}]}`
 	_, apiErr = handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", body, nil))
 	require.Nil(t, apiErr)
 
@@ -66,6 +66,8 @@ func TestNotificationDestinationsRoundTripAndValidation(t *testing.T) {
 		`{"destinations":[{"id":"a","type":"imessage","name":"x"}]}`,
 		`{"destinations":[{"id":"a","type":"mac","name":"x","failures":[],"success":{"freq":"hourly"}}]}`,
 		`{"destinations":[{"id":"a","type":"mac","name":"x","failures":["done"],"success":{"freq":"off"}}]}`,
+		`{"repeatHours":721,"destinations":[]}`,
+		`{"repeatHours":-1,"destinations":[]}`,
 		`not json`,
 	} {
 		_, apiErr = handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", bad, nil))
@@ -155,7 +157,7 @@ func TestMailAccountsAreListedForTheFromChoice(t *testing.T) {
 
 func TestAnEmailDestinationIsSavedWithItsAccount(t *testing.T) {
 	s := notificationServer(t)
-	body := `{"destinations":[{"id":"e","type":"email","name":"Email","target":"me@gmail.com","from":"me@work.example","failures":["failed"],"success":{"freq":"weekly","time":"08:00"}}]}`
+	body := `{"repeatHours":12,"destinations":[{"id":"e","type":"email","name":"Email","target":"me@gmail.com","from":"me@work.example","failures":["failed"],"success":{"freq":"weekly","time":"08:00"}}]}`
 
 	_, apiErr := handleNotificationDestinationsPut(context.Background(), rcFor(s, http.MethodPut, "/", body, nil))
 	require.Nil(t, apiErr)
@@ -167,4 +169,22 @@ func TestAnEmailDestinationIsSavedWithItsAccount(t *testing.T) {
 	bad := `{"destinations":[{"id":"e","type":"email","name":"Email","target":"nobody","failures":[],"success":{"freq":"off"}}]}`
 	_, apiErr = handleNotificationDestinationsPut(context.Background(), rcFor(s, http.MethodPut, "/", bad, nil))
 	require.NotNil(t, apiErr)
+}
+
+func TestRepeatPeriodDefaultsToTwelveHoursAndIsKeptWhenNotSent(t *testing.T) {
+	s := notificationServer(t)
+	ctx := context.Background()
+
+	out, _ := handleNotificationDestinationsGet(ctx, rcFor(s, http.MethodGet, "/", "", nil))
+	require.Equal(t, 12, out.(notificationDestinations).RepeatHours)
+
+	_, apiErr := handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", `{"repeatHours":24,"destinations":[]}`, nil))
+	require.Nil(t, apiErr)
+
+	// an older page that does not know the setting must not reset it
+	_, apiErr = handleNotificationDestinationsPut(ctx, rcFor(s, http.MethodPut, "/", `{"destinations":[]}`, nil))
+	require.Nil(t, apiErr)
+
+	out, _ = handleNotificationDestinationsGet(ctx, rcFor(s, http.MethodGet, "/", "", nil))
+	require.Equal(t, 24, out.(notificationDestinations).RepeatHours)
 }

@@ -16,6 +16,8 @@ import (
 
 // notificationDestinations is the body of the destinations calls.
 type notificationDestinations struct {
+	// RepeatHours is how long a failure that goes on is held back between messages to one destination.
+	RepeatHours  int                     `json:"repeatHours"`
 	Destinations []notifyhub.Destination `json:"destinations"`
 }
 
@@ -44,16 +46,16 @@ func handleNotificationDestinationsGet(_ context.Context, rc requestContext) (an
 		return nil, apiErr
 	}
 
-	ds, err := notifyhub.Load(h.Path)
+	set, err := notifyhub.LoadSettings(h.Path)
 	if err != nil {
 		return nil, internalServerError(err)
 	}
 
-	if ds == nil {
-		ds = []notifyhub.Destination{}
+	if set.Destinations == nil {
+		set.Destinations = []notifyhub.Destination{}
 	}
 
-	return notificationDestinations{Destinations: ds}, nil
+	return notificationDestinations{RepeatHours: set.RepeatHours, Destinations: set.Destinations}, nil
 }
 
 func handleNotificationDestinationsPut(_ context.Context, rc requestContext) (any, *apiError) {
@@ -67,14 +69,25 @@ func handleNotificationDestinationsPut(_ context.Context, rc requestContext) (an
 		return nil, requestError(serverapi.ErrorMalformedRequest, "malformed request")
 	}
 
-	if err := notifyhub.Validate(in.Destinations); err != nil {
-		return nil, requestError(serverapi.ErrorMalformedRequest, err.Error())
-	}
-
 	notificationFileMutex.Lock()
 	defer notificationFileMutex.Unlock()
 
-	if err := notifyhub.Save(h.Path, in.Destinations); err != nil {
+	// a client that does not send the repeat period keeps the one in the file
+	if in.RepeatHours == 0 {
+		cur, err := notifyhub.LoadSettings(h.Path)
+		if err != nil {
+			return nil, internalServerError(err)
+		}
+
+		in.RepeatHours = cur.RepeatHours
+	}
+
+	set := notifyhub.Settings{RepeatHours: in.RepeatHours, Destinations: in.Destinations}
+	if err := notifyhub.ValidateSettings(set); err != nil {
+		return nil, requestError(serverapi.ErrorMalformedRequest, err.Error())
+	}
+
+	if err := notifyhub.SaveSettings(h.Path, set); err != nil {
 		return nil, internalServerError(err)
 	}
 

@@ -18,6 +18,9 @@ import (
 // attempt after a deploy is expected and retried.
 var repoUnreachableAfter = 2 * time.Minute //nolint:gochecknoglobals
 
+// repoUnreachableReport is how often an unreachable repository is reported while it lasts.
+var repoUnreachableReport = 10 * time.Minute //nolint:gochecknoglobals
+
 // eventSink receives what happened; the notification hub decides who hears about it.
 type eventSink interface {
 	Emit(ctx context.Context, e notifyhub.Event)
@@ -60,6 +63,7 @@ func (s *Server) setupNotifications(ctx context.Context) {
 
 	if history := s.options.TaskHistory; history != nil {
 		h.State = history
+		h.Repeat = history
 		h.Record = func(e notifyhub.Entry) {
 			err := history.RecordNotification(taskstore.NotificationEntry{
 				SentAt: e.At, Destination: e.Destination, Event: e.Event, Mode: e.Mode, Status: e.Status, Attempts: e.Attempts, Error: e.Error,
@@ -165,16 +169,36 @@ func (s *Server) watchRepositoryOpen(ctx context.Context) func(ok bool) {
 
 	var reported atomic.Bool
 
+	down := notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemRepoUnreachable, Since: start}
+
+	// the failure is reported again while it lasts; each destination hears of it once per repeat period
+	var tick *time.Ticker
+
+	stop := make(chan struct{})
+
 	t := time.AfterFunc(repoUnreachableAfter, func() {
 		reported.Store(true)
-		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemRepoUnreachable, Since: start})
+		s.emit(ctx, down)
+
+		tick = time.NewTicker(repoUnreachableReport)
+		defer tick.Stop()
+
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tick.C:
+				s.emit(ctx, down)
+			}
+		}
 	})
 
 	return func(ok bool) {
 		t.Stop()
+		close(stop)
 
 		if ok && reported.Load() {
-			s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Recovered: true})
+			s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemRepoUnreachable, Recovered: true})
 		}
 	}
 }

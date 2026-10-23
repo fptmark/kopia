@@ -70,6 +70,10 @@ func renderHealth(e Event) (title, body string) {
 
 func renderMaint(e Event) (title, body string) {
 	if e.Recovered {
+		if e.Problem == ProblemMaintFailed {
+			return "Maintenance works again", "Repository maintenance completed."
+		}
+
 		return "Repository is reachable again", "Backups can reach the repository."
 	}
 
@@ -82,7 +86,11 @@ func renderMaint(e Event) (title, body string) {
 
 func renderWatchdog(e Event) (title, body string) {
 	if e.Recovered {
-		return "Backup server is running again", "The backup server answers and checks are current."
+		if e.Problem == ProblemStaleCheck {
+			return "Backup checks are current again", "A full backup check has completed."
+		}
+
+		return "Backup server is running again", "The backup server answers."
 	}
 
 	if e.Problem == ProblemStaleCheck {

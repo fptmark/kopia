@@ -861,10 +861,6 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 
 	v.saveState(ctx, saved)
 
-	if !notifyNow {
-		return
-	}
-
 	ev := notifyhub.Event{ID: notifyhub.EventHealth, Since: since, Recovered: bad == ""}
 
 	for _, c := range checks {
@@ -873,22 +869,36 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 		}
 	}
 
-	// a failure found by a quick check, outside a recorded task, gets its own task so the details stay in
-	// the task history.
-	if !deep && bad != "" {
-		//nolint:errcheck
-		_ = v.srv.taskmgr.Run(ctx, "Verify", "Backup health check (problem found)", func(ctx context.Context, _ uitask.Controller) error {
-			for _, c := range checks {
-				if !c.OK {
-					userLog(ctx).Errorf("FAIL  %v: %v", c.Name, c.Detail)
-				}
-			}
+	if bad == "" {
+		if notifyNow {
+			userLog(ctx).Infof("verifier: healthy again")
+			v.srv.emit(ctx, ev)
+		}
 
-			return errors.New(bad)
-		})
+		return
 	}
 
-	userLog(ctx).Warnf("verifier: %v", bad)
+	// a failure found by a quick check, outside a recorded task, gets its own task so the details stay in
+	// the task history.
+	if notifyNow {
+		if !deep {
+			//nolint:errcheck
+			_ = v.srv.taskmgr.Run(ctx, "Verify", "Backup health check (problem found)", func(ctx context.Context, _ uitask.Controller) error {
+				for _, c := range checks {
+					if !c.OK {
+						userLog(ctx).Errorf("FAIL  %v: %v", c.Name, c.Detail)
+					}
+				}
+
+				return errors.New(bad)
+			})
+		}
+
+		userLog(ctx).Warnf("verifier: %v", bad)
+	}
+
+	// reported on every run while it lasts: the notification hub sends it once per repeat period to each
+	// destination, and at once when the set of failing checks changes.
 	v.srv.emit(ctx, ev)
 }
 

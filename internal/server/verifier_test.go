@@ -209,41 +209,35 @@ func (r *recordingNotifier) Emit(_ context.Context, e notifyhub.Event) {
 	r.got = append(r.got, title+": "+body)
 }
 
-func TestVerifierNotifiesOnChangeAndRecoveryNotEveryRun(t *testing.T) {
+func TestVerifierReportsEveryFailingRunAndTheRecoveryOnce(t *testing.T) {
 	n := &recordingNotifier{}
 	v := &verifier{srv: &Server{notifier: n}}
 	v.status.State = "unknown"
 
 	ctx := context.Background()
-	good := []verifyCheck{passed("a", "ok")}
-	bad := []verifyCheck{failed("a", "broken")}
+	good := []verifyCheck{passed(checkRecent, "ok")}
+	bad := []verifyCheck{failed(checkRecent, "broken")}
 
 	v.finish(ctx, good, true)
 	require.Empty(t, n.got, "a healthy start is silent")
 
 	v.finish(ctx, bad, true)
-	require.Len(t, n.got, 1)
+	v.finish(ctx, bad, true)
+	v.finish(ctx, bad, true)
+	require.Len(t, n.got, 3, "reported while it lasts; the hub sends it once per repeat period")
 	require.Contains(t, n.got[0], "Backup problem")
+	require.Contains(t, n.got[0], "snapshots are out of date")
 
-	v.finish(ctx, bad, true)
-	v.finish(ctx, bad, true)
-	require.Len(t, n.got, 1, "the same failure is not repeated every run")
+	v.finish(ctx, []verifyCheck{failed(checkRecent, "broken"), failed(checkSample, "also broken")}, true)
+	require.Contains(t, n.got[3], "stored data failed verification", "a different set of failing checks is reported as it is")
 
-	v.finish(ctx, []verifyCheck{failed("a", "broken differently")}, true)
-	require.Len(t, n.got, 2, "a different failure is reported")
+	allGood := []verifyCheck{passed(checkRecent, "ok"), passed(checkSample, "ok")}
+	v.finish(ctx, allGood, true)
+	require.Len(t, n.got, 5)
+	require.Contains(t, n.got[4], "healthy again")
 
-	v.mu.Lock()
-	v.lastNotified = v.lastNotified.Add(-verifyRemindEvery - time.Minute)
-	v.mu.Unlock()
-	v.finish(ctx, []verifyCheck{failed("a", "broken differently")}, true)
-	require.Len(t, n.got, 3, "a persisting failure is repeated as a reminder")
-
-	v.finish(ctx, good, true)
-	require.Len(t, n.got, 4)
-	require.Contains(t, n.got[3], "healthy again")
-
-	v.finish(ctx, good, true)
-	require.Len(t, n.got, 4)
+	v.finish(ctx, allGood, true)
+	require.Len(t, n.got, 5, "recovery is reported once")
 	require.Equal(t, "ok", v.getStatus().State)
 }
 
@@ -335,9 +329,11 @@ func TestVerifierStateSurvivesARestartWithoutRepeatingAlerts(t *testing.T) {
 	require.Equal(t, "failing", st.State)
 	require.Len(t, st.Checks, 2, "the results of the last full check are shown after the restart")
 
-	// the same problem is found again by the first quick run: no second alert
+	// the same problem is found again by the first quick run: it is reported again, and the hub's persistent
+	// repeat state (tested there) keeps the destinations from being told twice
 	v2.finish(ctx, []verifyCheck{passed(checkReadable, "48 snapshots")}, false)
-	require.Empty(t, n2.got)
+	require.Len(t, n2.got, 1)
+	require.Contains(t, n2.got[0], "a test restore did not match")
 
 	// a damaged state file is ignored
 	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(prefs), "verifier-state.json"), []byte("{broken"), 0o600))

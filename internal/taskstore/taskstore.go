@@ -156,8 +156,20 @@ CREATE TABLE notification_state (
 );
 `
 
+// schemaV4 remembers which failures each destination was told about, and when, so a failure that goes on is
+// reported once per period and its end is reported only to those who heard of it.
+const schemaV4 = `
+CREATE TABLE notification_repeat (
+	destination  TEXT    NOT NULL,
+	kind         TEXT    NOT NULL, -- failure type
+	detail       TEXT    NOT NULL, -- what makes it the same failure again (a source, a problem code)
+	last_sent_at INTEGER NOT NULL, -- unix nanoseconds, UTC
+	PRIMARY KEY (destination, kind, detail)
+);
+`
+
 // migrations are applied in order; the database version is the number applied.
-var migrations = []string{schemaV1, schemaV2, schemaV3} //nolint:gochecknoglobals
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4} //nolint:gochecknoglobals
 
 func (s *Store) migrate() error {
 	var v int

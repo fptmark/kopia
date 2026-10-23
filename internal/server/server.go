@@ -1068,8 +1068,8 @@ func (s *Server) runMaintenanceTask(ctx context.Context, dr repo.DirectRepositor
 			return snapshotmaintenance.Run(ctx, w, maintenance.ModeAuto, false, maintenance.SafetyFull)
 		})
 	})
-	if err != nil && ctx.Err() == nil {
-		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed})
+	if ctx.Err() == nil {
+		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed, Recovered: err == nil})
 	}
 
 	return errors.Wrap(err, "unable to run maintenance")

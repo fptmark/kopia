@@ -136,16 +136,29 @@ func TestRepositoryOpenIsReportedOnlyWhenItStaysDown(t *testing.T) {
 	time.Sleep(120 * time.Millisecond)
 	require.Empty(t, l.events())
 
-	// staying down is reported once, and recovery is reported
+	// staying down is reported, and again every report interval (the hub sends it once per repeat period)
+	oldReport := repoUnreachableReport
+	repoUnreachableReport = 40 * time.Millisecond
+
+	defer func() { repoUnreachableReport = oldReport }()
+
 	end := s.watchRepositoryOpen(ctx)
-	time.Sleep(120 * time.Millisecond)
-	require.Len(t, l.events(), 1)
-	require.Equal(t, notifyhub.ProblemRepoUnreachable, l.events()[0].Problem)
-	require.False(t, l.events()[0].Since.IsZero())
+	time.Sleep(200 * time.Millisecond)
+
+	got := l.events()
+	require.GreaterOrEqual(t, len(got), 3)
+	require.Equal(t, notifyhub.ProblemRepoUnreachable, got[0].Problem)
+	require.False(t, got[0].Since.IsZero())
 
 	end(true)
-	require.Len(t, l.events(), 2)
-	require.True(t, l.events()[1].Recovered)
+
+	last := l.events()[len(l.events())-1]
+	require.True(t, last.Recovered)
+	require.Equal(t, notifyhub.ProblemRepoUnreachable, last.Problem)
+
+	n := len(l.events())
+	time.Sleep(120 * time.Millisecond)
+	require.Len(t, l.events(), n, "nothing more once it ends")
 }
 
 func TestSetupNotificationsCarriesOverTheIMessageRecipient(t *testing.T) {

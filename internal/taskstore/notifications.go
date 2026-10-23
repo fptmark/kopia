@@ -163,3 +163,52 @@ func (s *Store) SetLastRollup(destination string, at time.Time) error {
 
 	return errors.Wrap(err, "unable to record notification state")
 }
+
+// LastSent returns when a destination was last told about this failure.
+func (s *Store) LastSent(destination, kind, detail string) (time.Time, bool, error) {
+	var at int64
+
+	err := s.db.QueryRow(
+		`SELECT last_sent_at FROM notification_repeat WHERE destination = ? AND kind = ? AND detail = ?`,
+		destination, kind, detail).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+
+	if err != nil {
+		return time.Time{}, false, errors.Wrap(err, "unable to read notification repeat state")
+	}
+
+	return time.Unix(0, at), true, nil
+}
+
+// SetSent records that a destination was told about a failure.
+func (s *Store) SetSent(destination, kind, detail string, at time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO notification_repeat (destination, kind, detail, last_sent_at) VALUES (?, ?, ?, ?)`,
+		destination, kind, detail, at.UnixNano())
+
+	return errors.Wrap(err, "unable to record notification repeat state")
+}
+
+// TakeSent forgets what a destination was told about a failure kind (or only one detail of it when detail is
+// not empty) and reports whether there was anything to forget.
+func (s *Store) TakeSent(destination, kind, detail string) (bool, error) {
+	q := `DELETE FROM notification_repeat WHERE destination = ? AND kind = ?`
+	args := []any{destination, kind}
+
+	if detail != "" {
+		q += ` AND detail = ?`
+
+		args = append(args, detail)
+	}
+
+	res, err := s.db.Exec(q, args...)
+	if err != nil {
+		return false, errors.Wrap(err, "unable to clear notification repeat state")
+	}
+
+	n, err := res.RowsAffected()
+
+	return n > 0, errors.Wrap(err, "unable to clear notification repeat state")
+}
