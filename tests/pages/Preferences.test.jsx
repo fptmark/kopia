@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Preferences } from "../../src/pages/Preferences";
 import React from "react";
+import { MemoryRouter } from "react-router";
 import { setupAPIMock } from "../testutils/api-mocks";
 
 let axiosMock;
@@ -14,7 +15,11 @@ beforeEach(() => {
   // Add mock for notification profiles endpoint that NotificationEditor uses
   axiosMock.onGet("/api/v1/notificationProfiles").reply(200, []);
 
-  render(<Preferences />);
+  render(
+    <MemoryRouter>
+      <Preferences />
+    </MemoryRouter>,
+  );
 });
 
 /**

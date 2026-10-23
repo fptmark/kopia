@@ -100,19 +100,7 @@ describe("BackupHealthPanel", () => {
     expect(screen.getByText(/first check runs shortly/)).toBeInTheDocument();
   });
 
-  it("saves the iMessage recipient when the field loses focus", async () => {
-    axios.get.mockResolvedValue({ data: healthy });
-    const setVerifierIMessageTo = vi.fn();
-    renderWithRouter(<BackupHealthPanel />, { setVerifierIMessageTo });
-
-    const input = await screen.findByPlaceholderText(/phone number or Apple ID/);
-    fireEvent.change(input, { target: { value: " +15551234567 " } });
-    expect(setVerifierIMessageTo).not.toHaveBeenCalled(); // not on every keystroke
-    fireEvent.blur(input);
-    expect(setVerifierIMessageTo).toHaveBeenCalledWith("+15551234567");
-  });
-
-  it("starts a full check and sends a test message", async () => {
+  it("starts a full check and points to the notification settings", async () => {
     axios.get.mockResolvedValue({ data: healthy });
     axios.post.mockResolvedValue({ data: {} });
     renderWithRouter(<BackupHealthPanel />);
@@ -121,8 +109,7 @@ describe("BackupHealthPanel", () => {
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/verify/run", {}));
     expect(await screen.findByText("Check started.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Send test message"));
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/verify/test-notification", {}));
-    expect(await screen.findByText("Test message sent.")).toBeInTheDocument();
+    expect(screen.getByText("Preferences → Notifications").getAttribute("href")).toBe("/preferences");
+    expect(screen.queryByPlaceholderText(/phone number or Apple ID/)).not.toBeInTheDocument();
   });
 });

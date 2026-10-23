@@ -6,7 +6,7 @@ import Row from "react-bootstrap/Row";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
 import { BackupHealthPanel } from "../components/BackupHealth";
-import { NotificationEditor } from "../components/notifications/NotificationEditor";
+import { NotificationDestinations } from "../components/NotificationDestinations";
 import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 
 /**
@@ -96,11 +96,9 @@ export function Preferences() {
         </Container>
       </Tab>
       <Tab eventKey="notifications" title="Notifications" id="tab-notifications">
-        <div className="tab-content-fix">
-          <Container fluid>
-            <NotificationEditor />
-          </Container>
-        </div>
+        <Container fluid>
+          <NotificationDestinations />
+        </Container>
       </Tab>
     </Tabs>
   );

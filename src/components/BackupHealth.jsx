@@ -1,12 +1,10 @@
 import axios from "axios";
-import { use, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
-import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
 import { Link } from "react-router";
-import { UIPreferencesContext } from "../contexts/UIPreferencesContext";
 import { rfc3339TimestampForDisplay as formatDateTime } from "../utils/formatutils";
 
 const STATUS_URL = "/api/v1/verify/status";
@@ -61,13 +59,9 @@ export function VerifyBanner() {
 const when = (t) =>
   t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
-/** The health checks with their latest result, the iMessage recipient, and buttons to try things out. */
+/** The health checks with their latest result, and a button to run the full check now. */
 export function BackupHealthPanel() {
-  const { verifierIMessageTo, setVerifierIMessageTo } = use(UIPreferencesContext);
   const [status, refresh] = useVerifyStatus(10000);
-  // what is being typed, or null when the field shows the saved value
-  const [draft, setDraft] = useState(null);
-  const recipient = draft ?? (verifierIMessageTo || "");
   const [message, setMessage] = useState("");
 
   const post = (url, ok) =>
@@ -148,34 +142,9 @@ export function BackupHealthPanel() {
         check stays failed until the next full check passes.
       </p>
 
-      <h6 className="mt-4">Alerts</h6>
-      <Form.Group controlId="verifierIMessageTo" className="mb-2" style={{ maxWidth: "26rem" }}>
-        <Form.Label className="mb-1">iMessage to</Form.Label>
-        <Form.Control
-          size="sm"
-          type="text"
-          placeholder="phone number or Apple ID"
-          value={recipient}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            if (draft !== null && draft.trim() !== (verifierIMessageTo || "")) {
-              setVerifierIMessageTo(draft.trim());
-            }
-            setDraft(null);
-          }}
-        />
-        <Form.Text muted>
-          Leave empty for a Mac notification only. Sent through the Messages app on this Mac; the first message asks
-          permission to control Messages.
-        </Form.Text>
-      </Form.Group>
-      <Button
-        size="sm"
-        variant="outline-primary"
-        onClick={() => post("/api/v1/verify/test-notification", "Test message sent.")}
-      >
-        Send test message
-      </Button>
+      <p className="text-muted small">
+        Who is told about a problem, and how, is set under <Link to="/preferences">Preferences → Notifications</Link>.
+      </p>
     </div>
   );
 }
