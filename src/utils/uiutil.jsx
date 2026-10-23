@@ -125,7 +125,8 @@ export function groupFailures(errors, depth = 3) {
   return groups.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
-const linkButton = "btn btn-link p-0 align-baseline small";
+// solid variant: the app styles no link buttons
+const actionButton = "btn btn-secondary btn-sm py-0";
 
 function FailureGroup({ group, onIgnore, onExclude, excluded }) {
   const [open, setOpen] = useState(false);
@@ -147,13 +148,13 @@ function FailureGroup({ group, onIgnore, onExclude, excluded }) {
         <span className="ms-2">
           <button
             type="button"
-            className={linkButton}
+            className={actionButton}
             onClick={() => onIgnore({ path: group.place, kind: group.kind, file: false })}
           >
             Ignore
           </button>
-          <span className="text-muted"> · </span>
-          <button type="button" className={linkButton} onClick={() => onExclude({ path: group.place })}>
+          <span> </span>
+          <button type="button" className={actionButton} onClick={() => onExclude({ path: group.place })}>
             Exclude
           </button>
         </span>
@@ -170,13 +171,13 @@ function FailureGroup({ group, onIgnore, onExclude, excluded }) {
                 <span className="ms-2">
                   <button
                     type="button"
-                    className={linkButton}
+                    className={actionButton}
                     onClick={() => onIgnore({ path: i.path, kind: i.kind, file: true })}
                   >
                     Ignore
                   </button>
-                  <span className="text-muted"> · </span>
-                  <button type="button" className={linkButton} onClick={() => onExclude({ path: i.path })}>
+                  <span> </span>
+                  <button type="button" className={actionButton} onClick={() => onExclude({ path: i.path })}>
                     Exclude
                   </button>
                 </span>

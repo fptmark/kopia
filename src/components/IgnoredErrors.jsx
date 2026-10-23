@@ -48,7 +48,7 @@ export function IgnoredErrors() {
 
   return (
     <div className="mt-4" data-testid="ignored-errors">
-      <h5>Ignored errors</h5>
+      <h6>Ignored errors</h6>
       <div className="text-muted small mb-2">
         Hidden from failure counts and alerts. The snapshot still records them. Add one with Ignore in the failed files
         of a snapshot, on the Tasks page.
