@@ -3,9 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
+import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
-import { DEFAULT_ROLLUP, joinTime, nextRollup, parseTime, WEEKDAYS } from "../utils/rollup";
+import { DEFAULT_SUCCESS, joinTime, nextRollup, parseTime, WEEKDAYS } from "../utils/rollup";
 
 const DESTINATIONS_URL = "/api/v1/notifications/destinations";
 const LOG_URL = "/api/v1/notifications/log?limit=15";
@@ -16,43 +17,39 @@ const TYPES = {
   mac: { label: "This Mac", field: null },
 };
 
-const EVENTS = [
-  {
-    id: "health",
-    name: "Backup problem found or recovered",
-    hint: "Health check: stale snapshots, many skipped files, a failed restore test. Repeats every 12 hours while it lasts.",
-    modes: ["off", "now"],
-  },
-  { id: "failed", name: "Snapshot failed", hint: "A snapshot could not complete.", modes: ["off", "now", "roll"] },
-  {
-    id: "skipped",
-    name: "Snapshot finished with skipped files",
-    hint: "Completed, but some files could not be read.",
-    modes: ["off", "now", "roll"],
-  },
-  {
-    id: "maint",
-    name: "Maintenance or repository problem",
-    hint: "For example the NAS cannot be reached.",
-    modes: ["off", "now", "roll"],
-  },
+// the failures a destination can choose to hear about; they are always sent as they happen
+const FAILURES = [
+  { id: "health", name: "Backup problem found by the health check" },
+  { id: "failed", name: "Snapshot failed" },
+  { id: "skipped", name: "Snapshot finished with skipped files" },
+  { id: "maint", name: "Maintenance or repository problem" },
 ];
 
-const MODE_LABEL = { off: "Off", now: "Immediately", roll: "Roll-up" };
-const MODE_CLASS = {
-  off: "text-muted",
-  now: "bg-primary-subtle border-primary",
-  roll: "bg-warning-subtle border-warning",
+const SUCCESS = [
+  { id: "off", name: "Off" },
+  { id: "now", name: "Immediately, every snapshot" },
+  { id: "daily", name: "Daily summary" },
+  { id: "weekly", name: "Weekly summary" },
+  { id: "monthly", name: "Monthly summary" },
+];
+
+const EVENT_NAME = {
+  health: "Backup problem",
+  failed: "Snapshot failed",
+  skipped: "Skipped files",
+  maint: "Repository problem",
+  watchdog: "Server stopped",
+  done: "Snapshot completed",
+  summary: "Summary",
+  test: "Test message",
 };
-const EVENT_NAME = { ...Object.fromEntries(EVENTS.map((e) => [e.id, e.name])), test: "Test message" };
 
 const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 const errorText = (e) => e?.response?.data?.message || e?.response?.data?.error || e?.message || "unknown error";
 
-const modeOf = (d, id) => d.events?.[id] || "off";
-const hasRoll = (d) => EVENTS.some((e) => modeOf(d, e.id) === "roll");
+const scheduled = (d) => ["daily", "weekly", "monthly"].includes(d.success?.freq);
 
 const fmtNext = (dt) =>
   dt.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -65,15 +62,69 @@ function newDestination(type) {
     type,
     name: TYPES[type].label,
     target: "",
-    events: { health: "now", failed: "now", skipped: "off", maint: "now" },
-    rollup: { ...DEFAULT_ROLLUP },
+    failures: ["health", "failed", "skipped", "maint", "watchdog"],
+    success: { ...DEFAULT_SUCCESS },
   };
 }
 
-function ScheduleCell({ d, onChange }) {
-  const r = d.rollup || DEFAULT_ROLLUP;
-  const tm = parseTime(r.time);
-  const set = (patch) => onChange({ ...d, rollup: { ...r, ...patch } });
+function failuresLabel(d) {
+  const n = FAILURES.filter((f) => d.failures?.includes(f.id)).length;
+  if (n === 0) return "None";
+  if (n === FAILURES.length) return "All failures";
+  return `${n} of ${FAILURES.length} failures`;
+}
+
+/** A dropdown of check boxes: which failures this destination is told about. */
+function FailuresPicker({ d, onChange }) {
+  const has = (id) => d.failures?.includes(id);
+  const toggle = (id) => onChange(has(id) ? d.failures.filter((x) => x !== id) : [...(d.failures || []), id]);
+  // failure types this page does not list are kept as they are
+  const others = (d.failures || []).filter((id) => !FAILURES.some((f) => f.id === id));
+
+  return (
+    <Dropdown autoClose="outside">
+      <Dropdown.Toggle size="sm" variant="light" className="w-100 text-start" aria-label={`Failures for ${d.name}`}>
+        {failuresLabel(d)}
+      </Dropdown.Toggle>
+      <Dropdown.Menu className="p-2" style={{ minWidth: "18rem" }}>
+        {FAILURES.map((f) => (
+          <Form.Check
+            key={f.id}
+            type="checkbox"
+            id={`${d.id}-failure-${f.id}`}
+            label={f.name}
+            checked={!!has(f.id)}
+            onChange={() => toggle(f.id)}
+          />
+        ))}
+        <div className="d-flex gap-3 mt-2 small">
+          <Button
+            variant="link"
+            size="sm"
+            className="p-0"
+            onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}
+          >
+            All
+          </Button>
+          <Button variant="link" size="sm" className="p-0" onClick={() => onChange(others)}>
+            None
+          </Button>
+        </div>
+      </Dropdown.Menu>
+    </Dropdown>
+  );
+}
+
+/** The day and time a summary is sent: hour, minute and AM/PM in 5-minute steps. */
+function WhenCell({ d, onChange }) {
+  const s = d.success || DEFAULT_SUCCESS;
+
+  if (!scheduled(d)) {
+    return <span className="text-muted">—</span>;
+  }
+
+  const tm = parseTime(s.time);
+  const set = (patch) => onChange({ ...d, success: { ...s, ...patch } });
   const setTime = (patch) => {
     const t = { ...tm, ...patch };
     set({ time: joinTime(t.h, t.m, t.ap) });
@@ -81,22 +132,12 @@ function ScheduleCell({ d, onChange }) {
   const minutes = MINUTES.includes(tm.m) ? MINUTES : [...MINUTES, tm.m].sort((a, b) => a - b);
 
   return (
-    <div className={"d-flex flex-column gap-1" + (hasRoll(d) ? "" : " opacity-50")}>
-      <Form.Select
-        size="sm"
-        aria-label={`How often for ${d.name}`}
-        value={r.freq}
-        onChange={(e) => set({ freq: e.target.value })}
-      >
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="monthly">Monthly</option>
-      </Form.Select>
-      {r.freq === "weekly" && (
+    <div className="d-flex flex-column gap-1">
+      {s.freq === "weekly" && (
         <Form.Select
           size="sm"
           aria-label={`Day of week for ${d.name}`}
-          value={r.weekday ?? 0}
+          value={s.weekday ?? 0}
           onChange={(e) => set({ weekday: Number(e.target.value) })}
         >
           {WEEKDAYS.map((n, i) => (
@@ -106,11 +147,11 @@ function ScheduleCell({ d, onChange }) {
           ))}
         </Form.Select>
       )}
-      {r.freq === "monthly" && (
+      {s.freq === "monthly" && (
         <Form.Select
           size="sm"
           aria-label={`Day of month for ${d.name}`}
-          value={r.dom ?? 1}
+          value={s.dom ?? 1}
           onChange={(e) => set({ dom: Number(e.target.value) })}
         >
           {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => (
@@ -156,6 +197,9 @@ function ScheduleCell({ d, onChange }) {
           <option value="PM">PM</option>
         </Form.Select>
       </div>
+      <div className="small text-muted" data-testid={`next-${d.id}`}>
+        Next: <strong className="text-body">{fmtNext(nextRollup(s))}</strong>
+      </div>
     </div>
   );
 }
@@ -165,7 +209,9 @@ function Bubble({ d, m }) {
     return (
       <div className="border rounded-3 p-2 bg-body-tertiary" data-testid="preview-message">
         <div className="fw-semibold small">{m.title}</div>
-        <div className="small">{m.body}</div>
+        <div className="small" style={{ whiteSpace: "pre-line" }}>
+          {m.body}
+        </div>
         <div className="text-muted" style={{ fontSize: "0.7rem" }}>
           Kopia
         </div>
@@ -185,7 +231,7 @@ function Bubble({ d, m }) {
   );
 }
 
-/** Which destinations hear about which events, and when: one grid, then a preview and the recent messages. */
+/** Where backup alerts go: one row per destination, then a preview and the recent messages. */
 export function NotificationDestinations() {
   const [dests, setDests] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -303,12 +349,11 @@ export function NotificationDestinations() {
 
   const sel = dests.find((d) => d.id === selected) || dests[0];
   const nameOf = (id) => dests.find((d) => d.id === id)?.name || id;
-  const anyRoll = dests.some(hasRoll);
 
   return (
     <div data-testid="notification-destinations" className="fw-normal">
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-        <h6 className="mb-0">When should each destination be told?</h6>
+        <h6 className="mb-0">Where should backup alerts go?</h6>
         <div className="d-flex align-items-center gap-2">
           {status.text && (
             <span className={"small " + (status.kind === "error" ? "text-danger" : "text-muted")} role="status">
@@ -326,132 +371,92 @@ export function NotificationDestinations() {
           <Table
             bordered
             size="sm"
-            className="align-top mb-2"
-            style={{ minWidth: "46rem" }}
+            className="align-middle mb-2"
+            style={{ minWidth: "54rem" }}
             data-testid="destination-grid"
           >
             <thead className="table-light">
               <tr>
-                <th scope="col" style={{ width: "17rem" }} className="text-muted small text-uppercase align-bottom">
-                  Event
+                <th scope="col">Destination</th>
+                <th scope="col">Address</th>
+                <th scope="col">
+                  Failures <span className="fw-normal text-muted small">(always immediate)</span>
                 </th>
-                {dests.map((d) => (
-                  <th scope="col" key={d.id} className="fw-normal">
-                    <div className="d-flex flex-column gap-1">
-                      <div className="d-flex justify-content-between align-items-center gap-1">
-                        <span className="text-muted small">{TYPES[d.type]?.label || d.type}</span>
-                        <span className="d-flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="py-0"
-                            onClick={() => test(d)}
-                            aria-label={`Test ${d.name}`}
-                          >
-                            Test
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            className="py-0"
-                            onClick={() => remove(d)}
-                            aria-label={`Delete ${d.name}`}
-                          >
-                            Delete
-                          </Button>
-                        </span>
-                      </div>
-                      <Form.Control
-                        size="sm"
-                        className="fw-semibold"
-                        aria-label={`Name of ${d.name}`}
-                        value={d.name}
-                        onFocus={() => setSelected(d.id)}
-                        onChange={(e) => replace({ ...d, name: e.target.value }, false)}
-                        onBlur={() => persist(latestRef.current)}
-                      />
-                      {TYPES[d.type]?.field ? (
-                        <Form.Control
-                          size="sm"
-                          aria-label={`Send to for ${d.name}`}
-                          placeholder={TYPES[d.type].field}
-                          value={d.target || ""}
-                          onFocus={() => setSelected(d.id)}
-                          onChange={(e) => replace({ ...d, target: e.target.value }, false)}
-                          onBlur={() => persist(latestRef.current)}
-                        />
-                      ) : (
-                        <span className="text-muted small">Notification Center</span>
-                      )}
-                    </div>
-                  </th>
-                ))}
+                <th scope="col">Success</th>
+                <th scope="col">When</th>
+                <th scope="col" style={{ width: "1%" }}></th>
               </tr>
             </thead>
             <tbody>
-              {EVENTS.map((e) => (
-                <tr key={e.id}>
+              {dests.map((d) => (
+                <tr key={d.id} className={d.id === sel?.id ? "table-active" : ""}>
                   <td>
-                    <div className="fw-medium">{e.name}</div>
-                    <div className="text-muted small">{e.hint}</div>
+                    <Form.Control
+                      size="sm"
+                      className="fw-semibold"
+                      aria-label={`Name of ${d.name}`}
+                      value={d.name}
+                      onFocus={() => setSelected(d.id)}
+                      onChange={(e) => replace({ ...d, name: e.target.value }, false)}
+                      onBlur={() => persist(latestRef.current)}
+                    />
+                    <div className="text-muted small">{TYPES[d.type]?.label || d.type}</div>
                   </td>
-                  {dests.map((d) => (
-                    <td key={d.id}>
-                      <Form.Select
+                  <td className={TYPES[d.type]?.field ? "" : "bg-body-secondary"}>
+                    {TYPES[d.type]?.field && (
+                      <Form.Control
                         size="sm"
-                        className={MODE_CLASS[modeOf(d, e.id)]}
-                        aria-label={`${e.name} for ${d.name}`}
-                        value={modeOf(d, e.id)}
-                        onChange={(ev) => {
-                          setSelected(d.id);
-                          replace({ ...d, events: { ...d.events, [e.id]: ev.target.value } });
-                        }}
-                      >
-                        {e.modes.map((m) => (
-                          <option key={m} value={m}>
-                            {MODE_LABEL[m]}
-                          </option>
-                        ))}
-                      </Form.Select>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr>
-                <td>
-                  <div className="fw-medium">Roll-up schedule</div>
-                  <div className="text-muted small">
-                    When the events set to Roll-up are sent together, as one summary.
-                  </div>
-                </td>
-                {dests.map((d) => (
-                  <td key={d.id}>
-                    <ScheduleCell d={d} onChange={(x) => replace(x)} />
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="fw-medium">Next roll-up</td>
-                {dests.map((d) => (
-                  <td key={d.id} className="small text-muted" data-testid={`next-${d.id}`}>
-                    {hasRoll(d) ? (
-                      <strong className="text-body">{fmtNext(nextRollup(d.rollup))}</strong>
-                    ) : (
-                      "Nothing set to Roll-up"
+                        aria-label={`Send to for ${d.name}`}
+                        placeholder={TYPES[d.type].field}
+                        value={d.target || ""}
+                        onFocus={() => setSelected(d.id)}
+                        onChange={(e) => replace({ ...d, target: e.target.value }, false)}
+                        onBlur={() => persist(latestRef.current)}
+                      />
                     )}
                   </td>
-                ))}
-              </tr>
+                  <td>
+                    <FailuresPicker
+                      d={d}
+                      onChange={(failures) => {
+                        setSelected(d.id);
+                        replace({ ...d, failures });
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <Form.Select
+                      size="sm"
+                      aria-label={`Success messages for ${d.name}`}
+                      value={d.success?.freq || "off"}
+                      onChange={(e) => {
+                        setSelected(d.id);
+                        replace({ ...d, success: { ...DEFAULT_SUCCESS, ...d.success, freq: e.target.value } });
+                      }}
+                    >
+                      {SUCCESS.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </td>
+                  <td>
+                    <WhenCell d={d} onChange={(x) => replace(x)} />
+                  </td>
+                  <td className="text-nowrap">
+                    <Button size="sm" variant="secondary" onClick={() => test(d)} aria-label={`Test ${d.name}`}>
+                      Test
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => remove(d)} aria-label={`Delete ${d.name}`}>
+                      Delete
+                    </Button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </Table>
         </div>
-      )}
-
-      {anyRoll && (
-        <Alert variant="warning" className="py-2 small" data-testid="rollup-notice">
-          Roll-up summaries are not being sent yet. Until they are, an event set to Roll-up is held back and not
-          delivered. Use Immediately for anything you must hear about.
-        </Alert>
       )}
 
       {sel && (
@@ -473,18 +478,37 @@ export function NotificationDestinations() {
               ))}
             </div>
           </div>
-          <div className="border rounded p-3 d-flex flex-column gap-2" style={{ maxWidth: "36rem" }}>
-            <div className="text-muted small text-uppercase fw-semibold">Immediately, as each event happens</div>
-            {(preview?.immediate || []).length === 0 ? (
-              <p className="text-muted fst-italic mb-0">No event is set to Immediately.</p>
-            ) : (
-              preview.immediate.map((m) => <Bubble key={m.title + m.body} d={sel} m={m} />)
-            )}
+          <div className="d-flex flex-wrap gap-3">
+            <div
+              className="border rounded p-3 d-flex flex-column gap-2"
+              style={{ flex: "1 1 22rem", maxWidth: "36rem" }}
+            >
+              <div className="text-muted small text-uppercase fw-semibold">Immediately, as each event happens</div>
+              {(preview?.immediate || []).length === 0 ? (
+                <p className="text-muted fst-italic mb-0">Nothing is sent immediately.</p>
+              ) : (
+                preview.immediate.map((m) => <Bubble key={m.title + m.body} d={sel} m={m} />)
+              )}
+            </div>
+            <div
+              className="border rounded p-3 d-flex flex-column gap-2"
+              style={{ flex: "1 1 22rem", maxWidth: "36rem" }}
+            >
+              <div className="text-muted small text-uppercase fw-semibold">
+                {scheduled(sel) ? `${sel.success.freq} summary, from the latest data` : "Summary"}
+              </div>
+              {preview?.summary ? (
+                <Bubble d={sel} m={preview.summary} />
+              ) : (
+                <p className="text-muted fst-italic mb-0">No summary is sent.</p>
+              )}
+            </div>
           </div>
           <p className="text-muted small mt-2">
             Only counts, source folders and times are sent. File names, error causes and paths stay on this Mac, in the
-            Tasks page. Use your iPhone&apos;s Focus modes for quiet hours; a Focus can silence messages from yourself,
-            so allow your own contact card in it.
+            Tasks page. A failure that keeps happening is sent once and again after 12 hours, and you are told when it
+            ends. Use your iPhone&apos;s Focus modes for quiet hours; a Focus can silence messages from yourself, so
+            allow your own contact card in it.
           </p>
         </section>
       )}
@@ -496,7 +520,7 @@ export function NotificationDestinations() {
             <tr>
               <th className="text-nowrap">When</th>
               <th>Destination</th>
-              <th>Event</th>
+              <th>Message</th>
               <th>Result</th>
             </tr>
           </thead>

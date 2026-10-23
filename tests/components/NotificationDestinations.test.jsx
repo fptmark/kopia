@@ -11,17 +11,18 @@ const iphone = {
   type: "imessage",
   name: "iPhone",
   target: "+1 555 0100",
-  events: { health: "now", failed: "now", skipped: "now", maint: "now", watchdog: "now" },
-  rollup: { freq: "daily", weekday: 0, dom: 1, time: "08:00" },
+  failures: ["health", "failed", "skipped", "maint", "watchdog"],
+  success: { freq: "off", time: "08:00" },
 };
 const mac = {
   id: "mac",
   type: "mac",
   name: "This Mac",
-  events: { health: "now", failed: "now", maint: "now" },
+  failures: ["health", "failed"],
+  success: { freq: "daily", time: "08:00" },
 };
 
-function mockApi({ destinations = [iphone, mac], preview = { immediate: [] }, log = [] } = {}) {
+function mockApi({ destinations = [iphone, mac], preview = { immediate: [], summary: null }, log = [] } = {}) {
   axios.get.mockImplementation((url) => {
     if (url.startsWith("/api/v1/notifications/destinations")) return Promise.resolve({ data: { destinations } });
     if (url.startsWith("/api/v1/notifications/preview")) return Promise.resolve({ data: preview });
@@ -41,46 +42,68 @@ afterEach(() => {
 });
 
 describe("NotificationDestinations", () => {
-  it("shows events as rows and destinations as columns, each cell with its mode", async () => {
+  it("shows one row per destination with its failures and success settings", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    const failed = await screen.findByLabelText("Snapshot failed for iPhone");
-    expect(failed).toHaveValue("now");
-    expect(screen.getByLabelText("Snapshot finished with skipped files for This Mac")).toHaveValue("off");
-    expect(screen.getByLabelText("Snapshot finished with skipped files for iPhone")).toHaveValue("now");
+    expect(await screen.findByLabelText("Name of iPhone")).toHaveValue("iPhone");
+    expect(screen.getByLabelText("Send to for iPhone")).toHaveValue("+1 555 0100");
+    expect(screen.queryByLabelText("Send to for This Mac")).not.toBeInTheDocument(); // nothing to address
+    expect(screen.getByLabelText("Failures for iPhone")).toHaveTextContent("All failures");
+    expect(screen.getByLabelText("Failures for This Mac")).toHaveTextContent("2 of 4 failures");
+    expect(screen.getByLabelText("Success messages for iPhone")).toHaveValue("off");
+    expect(screen.getByLabelText("Success messages for This Mac")).toHaveValue("daily");
   });
 
-  it("offers no roll-up for the health alert", async () => {
+  it("has no frequency choice for failures: they are always immediate", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    const health = await screen.findByLabelText("Backup problem found or recovered for iPhone");
-    expect(
-      within(health)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["Off", "Immediately"]);
-    const failed = screen.getByLabelText("Snapshot failed for iPhone");
-    expect(
-      within(failed)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["Off", "Immediately", "Roll-up"]);
+    expect(await screen.findByText(/always immediate/)).toBeInTheDocument();
+    expect(screen.queryByText(/Roll-up/)).not.toBeInTheDocument();
   });
 
-  it("saves a changed cell at once, keeping everything else about the destinations", async () => {
+  it("chooses failure types with check boxes and saves each change", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    fireEvent.change(await screen.findByLabelText("Snapshot failed for This Mac"), { target: { value: "off" } });
+    fireEvent.click(await screen.findByLabelText("Failures for This Mac"));
+    fireEvent.click(await screen.findByLabelText("Snapshot finished with skipped files"));
 
     await waitFor(() => expect(axios.put).toHaveBeenCalled());
-    const [, mac2] = lastPut();
-    expect(mac2.events.failed).toBe("off");
-    expect(mac2.events.health).toBe("now");
-    // an event this page does not show is carried through untouched
-    expect(lastPut()[0].events.watchdog).toBe("now");
+    expect(lastPut()[1].failures).toEqual(["health", "failed", "skipped"]);
+
+    fireEvent.click(screen.getByLabelText("Snapshot failed"));
+    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
+    expect(lastPut()[1].failures).toEqual(["health", "skipped"]);
+    expect(screen.getByLabelText("Failures for This Mac")).toHaveTextContent("2 of 4 failures");
+  });
+
+  it("selects all or none, and keeps a failure type this page does not list", async () => {
+    mockApi();
+    render(<NotificationDestinations />);
+
+    fireEvent.click(await screen.findByLabelText("Failures for iPhone"));
+    fireEvent.click(screen.getAllByText("None")[0]);
+    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
+    expect(lastPut()[0].failures).toEqual(["watchdog"]);
+    expect(screen.getByLabelText("Failures for iPhone")).toHaveTextContent("None");
+
+    fireEvent.click(screen.getAllByText("All")[0]);
+    await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
+    expect(lastPut()[0].failures).toEqual(["health", "failed", "skipped", "maint", "watchdog"]);
+  });
+
+  it("saves a changed success choice and keeps everything else about the destinations", async () => {
+    mockApi();
+    render(<NotificationDestinations />);
+
+    fireEvent.change(await screen.findByLabelText("Success messages for iPhone"), { target: { value: "weekly" } });
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(lastPut()[0].success).toMatchObject({ freq: "weekly", time: "08:00" });
+    expect(lastPut()[0].target).toBe("+1 555 0100");
+    expect(lastPut()[1]).toEqual(mac);
     expect(await screen.findByText("Saved.")).toBeInTheDocument();
   });
 
@@ -105,55 +128,50 @@ describe("NotificationDestinations", () => {
     });
     render(<NotificationDestinations />);
 
-    fireEvent.change(await screen.findByLabelText("Snapshot failed for iPhone"), { target: { value: "off" } });
+    fireEvent.change(await screen.findByLabelText("Success messages for iPhone"), { target: { value: "now" } });
     expect(await screen.findByText(/Not saved: destination "x" needs a phone number/)).toBeInTheDocument();
   });
 
-  it("edits the roll-up time as hour, minute and AM/PM and stores 24-hour time", async () => {
+  it("shows the time only for summaries, and edits it as hour, minute and AM/PM", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    fireEvent.change(await screen.findByLabelText("Hour for iPhone"), { target: { value: "7" } });
+    expect(await screen.findByLabelText("Hour for This Mac")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Hour for iPhone")).not.toBeInTheDocument(); // success is off
+    expect(screen.getByTestId("next-mac")).toHaveTextContent("Next:");
+
+    fireEvent.change(screen.getByLabelText("Hour for This Mac"), { target: { value: "7" } });
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(1));
-    expect(lastPut()[0].rollup.time).toBe("07:00");
+    expect(lastPut()[1].success.time).toBe("07:00");
 
-    fireEvent.change(screen.getByLabelText("AM or PM for iPhone"), { target: { value: "PM" } });
+    fireEvent.change(screen.getByLabelText("AM or PM for This Mac"), { target: { value: "PM" } });
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(2));
-    expect(lastPut()[0].rollup.time).toBe("19:00");
+    expect(lastPut()[1].success.time).toBe("19:00");
 
-    fireEvent.change(screen.getByLabelText("Minute for iPhone"), { target: { value: "35" } });
+    fireEvent.change(screen.getByLabelText("Minute for This Mac"), { target: { value: "35" } });
     await waitFor(() => expect(axios.put).toHaveBeenCalledTimes(3));
-    expect(lastPut()[0].rollup.time).toBe("19:35");
+    expect(lastPut()[1].success.time).toBe("19:35");
   });
 
-  it("shows the day picker that matches the frequency", async () => {
+  it("shows the day picker that matches the frequency, and none for immediate or off", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    expect(await screen.findByLabelText("Hour for iPhone")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Day of week for iPhone")).not.toBeInTheDocument();
+    const choice = await screen.findByLabelText("Success messages for This Mac");
+    expect(screen.queryByLabelText("Day of week for This Mac")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("How often for iPhone"), { target: { value: "weekly" } });
-    expect(await screen.findByLabelText("Day of week for iPhone")).toBeInTheDocument();
+    fireEvent.change(choice, { target: { value: "weekly" } });
+    expect(await screen.findByLabelText("Day of week for This Mac")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("How often for iPhone"), { target: { value: "monthly" } });
-    expect(await screen.findByLabelText("Day of month for iPhone")).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Day of month for iPhone")).getByText("Last day")).toBeInTheDocument();
+    fireEvent.change(choice, { target: { value: "monthly" } });
+    expect(await screen.findByLabelText("Day of month for This Mac")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Day of month for This Mac")).getByText("Last day")).toBeInTheDocument();
+
+    fireEvent.change(choice, { target: { value: "now" } });
+    await waitFor(() => expect(screen.queryByLabelText("Hour for This Mac")).not.toBeInTheDocument());
   });
 
-  it("says when nothing is set to roll-up, and shows the next time when something is", async () => {
-    mockApi();
-    render(<NotificationDestinations />);
-
-    expect(await screen.findByTestId("next-iphone")).toHaveTextContent("Nothing set to Roll-up");
-    expect(screen.queryByTestId("rollup-notice")).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Snapshot failed for iPhone"), { target: { value: "roll" } });
-    expect(screen.getByTestId("next-iphone")).not.toHaveTextContent("Nothing set");
-    expect(screen.getByTestId("rollup-notice")).toHaveTextContent(/not being sent yet/);
-  });
-
-  it("adds a destination of the chosen type with sensible defaults", async () => {
+  it("adds a destination of the chosen type: every failure, no success messages", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
@@ -165,7 +183,8 @@ describe("NotificationDestinations", () => {
     expect(list[2]).toMatchObject({
       type: "imessage",
       name: "iMessage",
-      events: { health: "now", failed: "now", skipped: "off", maint: "now" },
+      failures: ["health", "failed", "skipped", "maint", "watchdog"],
+      success: { freq: "off" },
     });
     expect(await screen.findByLabelText("Send to for iMessage")).toBeInTheDocument();
   });
@@ -200,20 +219,34 @@ describe("NotificationDestinations", () => {
     expect(await screen.findByText(/Test to This Mac failed: Messages is not running/)).toBeInTheDocument();
   });
 
-  it("previews the messages of the chosen destination", async () => {
-    mockApi({ preview: { immediate: [{ title: "Snapshot failed", body: "/Users/me could not be backed up." }] } });
+  it("previews the immediate messages and the summary of the chosen destination", async () => {
+    mockApi({
+      preview: {
+        immediate: [{ title: "Snapshot failed", body: "/Users/me could not be backed up." }],
+        summary: { title: "Backup summary, last 24 hours", body: "Failed snapshots: 0" },
+      },
+    });
     render(<NotificationDestinations />);
 
-    const msg = await screen.findByTestId("preview-message");
-    expect(msg).toHaveTextContent("Snapshot failed");
-    expect(msg).toHaveTextContent("/Users/me could not be backed up.");
+    const msgs = await screen.findAllByTestId("preview-message");
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]).toHaveTextContent("/Users/me could not be backed up.");
+    expect(msgs[1]).toHaveTextContent("Backup summary, last 24 hours");
     expect(axios.get).toHaveBeenCalledWith("/api/v1/notifications/preview?destination=iphone");
 
     fireEvent.click(screen.getByRole("button", { name: "This Mac" }));
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/api/v1/notifications/preview?destination=mac"));
   });
 
-  it("lists recent messages with their destination, event and result", async () => {
+  it("says when nothing is sent immediately or as a summary", async () => {
+    mockApi();
+    render(<NotificationDestinations />);
+
+    expect(await screen.findByText("Nothing is sent immediately.")).toBeInTheDocument();
+    expect(screen.getByText("No summary is sent.")).toBeInTheDocument();
+  });
+
+  it("lists recent messages with their destination, message and result", async () => {
     mockApi({
       log: [
         {
@@ -227,8 +260,8 @@ describe("NotificationDestinations", () => {
         {
           sentAt: "2026-10-22T09:00:00Z",
           destination: "gone",
-          event: "maint",
-          mode: "now",
+          event: "summary",
+          mode: "summary",
           status: "failed",
           attempts: 4,
           error: "Messages is not running",
@@ -242,6 +275,7 @@ describe("NotificationDestinations", () => {
     expect(rows[1]).toHaveTextContent("Snapshot failed");
     expect(rows[1]).toHaveTextContent("Sent");
     expect(rows[2]).toHaveTextContent("gone"); // a deleted destination still shows by its id
+    expect(rows[2]).toHaveTextContent("Summary");
     expect(rows[2]).toHaveTextContent("Failed");
     expect(rows[2]).toHaveTextContent("Messages is not running");
     expect(rows[2]).toHaveTextContent("4 tries");

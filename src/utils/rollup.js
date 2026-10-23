@@ -10,9 +10,9 @@ export function joinTime(h, m, ap) {
   return String((h % 12) + (ap === "PM" ? 12 : 0)).padStart(2, "0") + ":" + String(m).padStart(2, "0");
 }
 
-/** The next time a roll-up with this schedule is due, after `now`. */
-export function nextRollup(rollup, now = new Date()) {
-  const r = rollup || { freq: "daily", time: "08:00" };
+/** The next time a summary with this schedule (success.freq daily, weekly or monthly) is due, after `now`. */
+export function nextRollup(schedule, now = new Date()) {
+  const r = schedule || { freq: "daily", time: "08:00" };
   const [h, m] = r.time.split(":").map(Number);
   const t = new Date(now);
   t.setSeconds(0, 0);
@@ -39,4 +39,4 @@ export function nextRollup(rollup, now = new Date()) {
   return c;
 }
 
-export const DEFAULT_ROLLUP = { freq: "daily", weekday: 0, dom: 1, time: "08:00" };
+export const DEFAULT_SUCCESS = { freq: "off", weekday: 0, dom: 1, time: "08:00" };
