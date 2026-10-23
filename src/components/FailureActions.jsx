@@ -17,7 +17,7 @@ const errorText = (e) => e?.response?.data?.message || e?.message || "unknown er
  * a folder offers the kind of error it has, then every error under it.
  */
 export function ignoreChoices(target) {
-  const where = target.path || "this source";
+  const where = target.path ? "this folder" : "this source";
   if (target.file) {
     return [
       { id: "file", label: "Only this file", rule: { path: target.path, scope: "file" } },
@@ -29,11 +29,11 @@ export function ignoreChoices(target) {
   if (target.kind) {
     choices.push({
       id: "kind",
-      label: `${KIND_LABELS[target.kind] || target.kind} under ${where}`,
+      label: `${KIND_LABELS[target.kind] || target.kind} in ${where}`,
       rule: { path: target.path, scope: "folder", kind: target.kind },
     });
   }
-  choices.push({ id: "any", label: `Any error under ${where}`, rule: { path: target.path, scope: "folder" } });
+  choices.push({ id: "any", label: `Any error in ${where}`, rule: { path: target.path, scope: "folder" } });
   return choices;
 }
 

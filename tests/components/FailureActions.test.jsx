@@ -81,7 +81,7 @@ describe("failed files dialog actions", () => {
     expect(groups[0]).toHaveTextContent("Library/Accounts");
     fireEvent.click(groups[0].querySelectorAll("button")[1]); // Ignore on the group
 
-    expect(screen.getByTestId("ignore-dialog")).toHaveTextContent("permission denied under Library/Accounts");
+    expect(screen.getByTestId("ignore-dialog")).toHaveTextContent("permission denied in this folder");
     fireEvent.click(screen.getByTestId("ignore-confirm"));
 
     await waitFor(() => expect(screen.getByTestId("ignored-count")).toHaveTextContent("2 more errors are ignored"));
@@ -97,6 +97,15 @@ describe("failed files dialog actions", () => {
     expect(screen.queryByText("Library/Accounts")).toBeNull();
   });
 
+  it("treats a lone error as a file", () => {
+    renderHost();
+    open();
+
+    fireEvent.click(screen.getAllByTestId("failure-group")[1].querySelectorAll("button")[1]); // Library/Mail/c
+
+    expect(screen.getByLabelText("Only this file")).toBeChecked();
+  });
+
   it("ignores for a limited time when asked", async () => {
     axios.post.mockResolvedValue({ data: {} });
     axios.get.mockResolvedValue({ data: { errors: [] } });
@@ -104,7 +113,7 @@ describe("failed files dialog actions", () => {
     open();
 
     fireEvent.click(screen.getAllByTestId("failure-group")[0].querySelectorAll("button")[1]);
-    fireEvent.click(screen.getByLabelText("Any error under Library/Accounts"));
+    fireEvent.click(screen.getByLabelText("Any error in this folder"));
     fireEvent.change(screen.getByLabelText("Ignore for"), { target: { value: "30" } });
     fireEvent.click(screen.getByTestId("ignore-confirm"));
 

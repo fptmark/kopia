@@ -149,7 +149,7 @@ function FailureGroup({ group, onIgnore, onExclude, excluded }) {
           <button
             type="button"
             className={actionButton}
-            onClick={() => onIgnore({ path: group.place, kind: group.kind, file: false })}
+            onClick={() => onIgnore({ path: group.place, kind: group.kind, file: group.count === 1 })}
           >
             Ignore
           </button>
