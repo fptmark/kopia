@@ -3,17 +3,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
+import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
 import { DEFAULT_SUCCESS, joinTime, nextRollup, parseTime, WEEKDAYS } from "../utils/rollup";
 
 const DESTINATIONS_URL = "/api/v1/notifications/destinations";
+const MAIL_ACCOUNTS_URL = "/api/v1/notifications/email-accounts";
 const LOG_URL = "/api/v1/notifications/log?limit=15";
 const LOG_POLL_MS = 30000;
 
+// the kinds of destination that can be added, and what a new one is called
 const TYPES = {
-  imessage: { label: "iMessage", field: "phone number or Apple ID" },
-  mac: { label: "This Mac", field: null },
+  mac: { name: "This Mac", menu: "This Mac", field: null },
+  imessage: { name: "iPhone", menu: "iPhone", field: "phone number or Apple ID" },
+  email: { name: "Email", menu: "Email", field: "name@example.com" },
 };
 
 // the failures a destination can choose to hear about; they are always sent as they happen
@@ -59,7 +63,7 @@ function newDestination(type) {
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     type,
-    name: TYPES[type].label,
+    name: TYPES[type].name,
     target: "",
     failures: ["health", "failed", "skipped", "maint", "watchdog"],
     success: { ...DEFAULT_SUCCESS },
@@ -73,54 +77,44 @@ function failuresLabel(d) {
   return `${n} of ${FAILURES.length} failures`;
 }
 
-/** A list of check boxes that opens inside the cell: which failures this destination is told about. */
+/** A drop-down of check boxes that floats over the page: which failures this destination is told about. */
 function FailuresPicker({ d, onChange }) {
-  const [open, setOpen] = useState(false);
   const has = (id) => d.failures?.includes(id);
   const toggle = (id) => onChange(has(id) ? d.failures.filter((x) => x !== id) : [...(d.failures || []), id]);
   // failure types this page does not list are kept as they are
   const others = (d.failures || []).filter((id) => !FAILURES.some((f) => f.id === id));
 
   return (
-    <div>
-      <Button
-        size="sm"
-        variant="light"
-        className="w-100 text-start"
-        aria-label={`Failures for ${d.name}`}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        {failuresLabel(d)} {open ? "▴" : "▾"}
-      </Button>
-      {open && (
-        <div className="mt-1">
-          {FAILURES.map((f) => (
-            <Form.Check
-              key={f.id}
-              type="checkbox"
-              id={`${d.id}-failure-${f.id}`}
-              label={f.name}
-              checked={!!has(f.id)}
-              onChange={() => toggle(f.id)}
-            />
-          ))}
-          <div className="d-flex gap-3 mt-1 small">
-            <Button
-              variant="link"
-              size="sm"
-              className="p-0"
-              onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}
-            >
-              All
-            </Button>
-            <Button variant="link" size="sm" className="p-0" onClick={() => onChange(others)}>
-              None
-            </Button>
-          </div>
+    <Dropdown autoClose="outside">
+      <Dropdown.Toggle size="sm" variant="light" className="w-100 text-start" aria-label={`Failures for ${d.name}`}>
+        {failuresLabel(d)}
+      </Dropdown.Toggle>
+      <Dropdown.Menu className="p-2" style={{ minWidth: "19rem" }}>
+        {FAILURES.map((f) => (
+          <Form.Check
+            key={f.id}
+            type="checkbox"
+            id={`${d.id}-failure-${f.id}`}
+            label={f.name}
+            checked={!!has(f.id)}
+            onChange={() => toggle(f.id)}
+          />
+        ))}
+        <div className="d-flex gap-3 mt-2 small">
+          <Button
+            variant="link"
+            size="sm"
+            className="p-0"
+            onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}
+          >
+            All
+          </Button>
+          <Button variant="link" size="sm" className="p-0" onClick={() => onChange(others)}>
+            None
+          </Button>
         </div>
-      )}
-    </div>
+      </Dropdown.Menu>
+    </Dropdown>
   );
 }
 
@@ -141,42 +135,45 @@ function WhenCell({ d, onChange }) {
   const minutes = MINUTES.includes(tm.m) ? MINUTES : [...MINUTES, tm.m].sort((a, b) => a - b);
 
   return (
-    <div className="d-flex flex-column gap-1">
-      {s.freq === "weekly" && (
-        <Form.Select
-          size="sm"
-          aria-label={`Day of week for ${d.name}`}
-          value={s.weekday ?? 0}
-          onChange={(e) => set({ weekday: Number(e.target.value) })}
-        >
-          {WEEKDAYS.map((n, i) => (
-            <option key={n} value={i}>
-              {n}
-            </option>
-          ))}
-        </Form.Select>
-      )}
-      {s.freq === "monthly" && (
-        <Form.Select
-          size="sm"
-          aria-label={`Day of month for ${d.name}`}
-          value={s.dom ?? 1}
-          onChange={(e) => set({ dom: Number(e.target.value) })}
-        >
-          {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              Day {n}
-            </option>
-          ))}
-          <option value={0}>Last day</option>
-        </Form.Select>
-      )}
+    <div>
       <div className="d-flex gap-1">
+        {s.freq === "weekly" && (
+          <Form.Select
+            size="sm"
+            aria-label={`Day of week for ${d.name}`}
+            value={s.weekday ?? 0}
+            onChange={(e) => set({ weekday: Number(e.target.value) })}
+            style={{ width: "auto" }}
+          >
+            {WEEKDAYS.map((n, i) => (
+              <option key={n} value={i}>
+                {n}
+              </option>
+            ))}
+          </Form.Select>
+        )}
+        {s.freq === "monthly" && (
+          <Form.Select
+            size="sm"
+            aria-label={`Day of month for ${d.name}`}
+            value={s.dom ?? 1}
+            onChange={(e) => set({ dom: Number(e.target.value) })}
+            style={{ width: "auto" }}
+          >
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>
+                Day {n}
+              </option>
+            ))}
+            <option value={0}>Last day</option>
+          </Form.Select>
+        )}
         <Form.Select
           size="sm"
           aria-label={`Hour for ${d.name}`}
           value={tm.h}
           onChange={(e) => setTime({ h: Number(e.target.value) })}
+          style={{ width: "auto" }}
         >
           {HOURS.map((h) => (
             <option key={h} value={h}>
@@ -189,6 +186,7 @@ function WhenCell({ d, onChange }) {
           aria-label={`Minute for ${d.name}`}
           value={tm.m}
           onChange={(e) => setTime({ m: Number(e.target.value) })}
+          style={{ width: "auto" }}
         >
           {minutes.map((m) => (
             <option key={m} value={m}>
@@ -201,54 +199,26 @@ function WhenCell({ d, onChange }) {
           aria-label={`AM or PM for ${d.name}`}
           value={tm.ap}
           onChange={(e) => setTime({ ap: e.target.value })}
+          style={{ width: "auto" }}
         >
           <option value="AM">AM</option>
           <option value="PM">PM</option>
         </Form.Select>
       </div>
       <div className="small text-muted" data-testid={`next-${d.id}`}>
-        Next: <strong className="text-body">{fmtNext(nextRollup(s))}</strong>
+        Next: {fmtNext(nextRollup(s))}
       </div>
     </div>
   );
 }
 
-function Bubble({ d, m }) {
-  if (d.type === "mac") {
-    return (
-      <div className="border rounded-3 p-2 bg-body-tertiary" data-testid="preview-message">
-        <div className="fw-semibold small">{m.title}</div>
-        <div className="small" style={{ whiteSpace: "pre-line" }}>
-          {m.body}
-        </div>
-        <div className="text-muted" style={{ fontSize: "0.7rem" }}>
-          Kopia
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div
-      className="align-self-end text-white rounded-4 px-3 py-2"
-      style={{ background: "#2b6ef0", maxWidth: "92%", whiteSpace: "pre-line", overflowWrap: "anywhere" }}
-      data-testid="preview-message"
-    >
-      <strong>{m.title}</strong>
-      {"\n"}
-      {m.body}
-    </div>
-  );
-}
-
-/** Where backup alerts go: one row per destination, then a preview and the recent messages. */
+/** Where backup alerts go: one row per destination, then the recent messages. */
 export function NotificationDestinations() {
   const [dests, setDests] = useState(null);
   const [loadError, setLoadError] = useState("");
-  const [selected, setSelected] = useState("");
   const [status, setStatus] = useState({ kind: "", text: "" });
-  const [preview, setPreview] = useState(null);
   const [log, setLog] = useState([]);
-  const [revision, setRevision] = useState(0);
+  const [mailAccounts, setMailAccounts] = useState([]);
   const latestRef = useRef([]);
   const saveSeqRef = useRef(0);
 
@@ -270,7 +240,6 @@ export function NotificationDestinations() {
         const list = r.data?.destinations || [];
         latestRef.current = list;
         setDests(list);
-        setSelected(list[0]?.id || "");
       })
       .catch((e) => setLoadError(errorText(e)));
   }, []);
@@ -281,15 +250,17 @@ export function NotificationDestinations() {
     return () => window.clearInterval(t);
   }, [refreshLog]);
 
+  // the Mail app is only asked about its accounts once there is an email destination
+  const hasEmail = !!dests?.some((d) => d.type === "email");
   useEffect(() => {
-    if (!selected) {
+    if (!hasEmail) {
       return;
     }
     axios
-      .get(`/api/v1/notifications/preview?destination=${encodeURIComponent(selected)}`)
-      .then((r) => setPreview(r.data))
-      .catch(() => setPreview(null));
-  }, [selected, revision]);
+      .get(MAIL_ACCOUNTS_URL)
+      .then((r) => setMailAccounts(r.data?.accounts || []))
+      .catch((e) => setStatus({ kind: "error", text: "Unable to read the accounts in Mail: " + errorText(e) }));
+  }, [hasEmail]);
 
   const persist = (list) => {
     const seq = ++saveSeqRef.current;
@@ -298,7 +269,6 @@ export function NotificationDestinations() {
       .then(() => {
         if (seq === saveSeqRef.current) {
           setStatus({ kind: "ok", text: "Saved." });
-          setRevision((n) => n + 1);
         }
       })
       .catch((e) => {
@@ -323,21 +293,11 @@ export function NotificationDestinations() {
       save,
     );
 
-  const add = (type) => {
-    const d = newDestination(type);
-    setSelected(d.id);
-    change([...latestRef.current, d]);
-  };
-
   const remove = (d) => {
     if (!window.confirm(`Delete the destination "${d.name}"?`)) {
       return;
     }
-    const list = latestRef.current.filter((x) => x.id !== d.id);
-    if (selected === d.id) {
-      setSelected(list[0]?.id || "");
-    }
-    change(list);
+    change(latestRef.current.filter((x) => x.id !== d.id));
   };
 
   const test = (d) => {
@@ -356,8 +316,11 @@ export function NotificationDestinations() {
     return <p className="text-muted">Loading…</p>;
   }
 
-  const sel = dests.find((d) => d.id === selected) || dests[0];
   const nameOf = (id) => dests.find((d) => d.id === id)?.name || id;
+  // the sending account is only a choice when Mail has more than one
+  const fromChoices = mailAccounts.flatMap((a) =>
+    a.addresses.map((address) => ({ address, label: `${a.name} (${address})` })),
+  );
 
   return (
     <div data-testid="notification-destinations" className="fw-normal">
@@ -369,160 +332,119 @@ export function NotificationDestinations() {
               {status.text}
             </span>
           )}
-          <AddDestination onAdd={add} />
+          <Dropdown align="end">
+            <Dropdown.Toggle size="sm" variant="primary">
+              + Add destination
+            </Dropdown.Toggle>
+            <Dropdown.Menu>
+              {Object.entries(TYPES).map(([type, t]) => (
+                <Dropdown.Item key={type} onClick={() => change([...latestRef.current, newDestination(type)])}>
+                  {t.menu}
+                </Dropdown.Item>
+              ))}
+            </Dropdown.Menu>
+          </Dropdown>
         </div>
       </div>
 
       {dests.length === 0 ? (
         <p className="text-muted">No destinations. Nothing is sent. Add one to be told about backup problems.</p>
       ) : (
-        <div className="table-responsive">
-          <Table
-            bordered
-            size="sm"
-            className="align-middle mb-2"
-            style={{ minWidth: "54rem" }}
-            data-testid="destination-grid"
-          >
-            <thead className="table-light">
-              <tr>
-                <th scope="col">Destination</th>
-                <th scope="col">Address</th>
-                <th scope="col">
-                  Failures <span className="fw-normal text-muted small">(always immediate)</span>
-                </th>
-                <th scope="col">Success</th>
-                <th scope="col">When</th>
-                <th scope="col" style={{ width: "1%" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {dests.map((d) => (
-                <tr key={d.id} className={d.id === sel?.id ? "table-active" : ""}>
-                  <td>
+        <Table bordered size="sm" className="align-middle mb-3" data-testid="destination-grid">
+          <thead className="table-light">
+            <tr>
+              <th scope="col">Destination</th>
+              <th scope="col">Address</th>
+              <th scope="col">Failures</th>
+              <th scope="col">Success</th>
+              <th scope="col">When</th>
+              <th scope="col" style={{ width: "1%" }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {dests.map((d) => (
+              <tr key={d.id}>
+                <td>
+                  <Form.Control
+                    size="sm"
+                    className="fw-semibold"
+                    aria-label={`Name of ${d.name}`}
+                    value={d.name}
+                    onChange={(e) => replace({ ...d, name: e.target.value }, false)}
+                    onBlur={() => persist(latestRef.current)}
+                  />
+                </td>
+                <td className={TYPES[d.type]?.field ? "" : "bg-body-secondary"}>
+                  {TYPES[d.type]?.field && (
                     <Form.Control
                       size="sm"
-                      className="fw-semibold"
-                      aria-label={`Name of ${d.name}`}
-                      value={d.name}
-                      onFocus={() => setSelected(d.id)}
-                      onChange={(e) => replace({ ...d, name: e.target.value }, false)}
+                      aria-label={`Send to for ${d.name}`}
+                      placeholder={TYPES[d.type].field}
+                      value={d.target || ""}
+                      onChange={(e) => replace({ ...d, target: e.target.value }, false)}
                       onBlur={() => persist(latestRef.current)}
                     />
-                    <div className="text-muted small">{TYPES[d.type]?.label || d.type}</div>
-                  </td>
-                  <td className={TYPES[d.type]?.field ? "" : "bg-body-secondary"}>
-                    {TYPES[d.type]?.field && (
-                      <Form.Control
-                        size="sm"
-                        aria-label={`Send to for ${d.name}`}
-                        placeholder={TYPES[d.type].field}
-                        value={d.target || ""}
-                        onFocus={() => setSelected(d.id)}
-                        onChange={(e) => replace({ ...d, target: e.target.value }, false)}
-                        onBlur={() => persist(latestRef.current)}
-                      />
-                    )}
-                  </td>
-                  <td>
-                    <FailuresPicker
-                      d={d}
-                      onChange={(failures) => {
-                        setSelected(d.id);
-                        replace({ ...d, failures });
-                      }}
-                    />
-                  </td>
-                  <td>
+                  )}
+                  {d.type === "email" && fromChoices.length > 1 && (
                     <Form.Select
                       size="sm"
-                      aria-label={`Success messages for ${d.name}`}
-                      value={d.success?.freq || "off"}
-                      onChange={(e) => {
-                        setSelected(d.id);
-                        replace({ ...d, success: { ...DEFAULT_SUCCESS, ...d.success, freq: e.target.value } });
-                      }}
+                      className="mt-1"
+                      aria-label={`Send from for ${d.name}`}
+                      value={d.from || ""}
+                      onChange={(e) => replace({ ...d, from: e.target.value })}
                     >
-                      {SUCCESS.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
+                      <option value="">From: Mail&apos;s default account</option>
+                      {fromChoices.map((c) => (
+                        <option key={c.address} value={c.address}>
+                          From: {c.label}
                         </option>
                       ))}
                     </Form.Select>
-                  </td>
-                  <td>
-                    <WhenCell d={d} onChange={(x) => replace(x)} />
-                  </td>
-                  <td className="text-nowrap">
-                    <Button size="sm" variant="secondary" onClick={() => test(d)} aria-label={`Test ${d.name}`}>
-                      Test
-                    </Button>
-                    <Button size="sm" variant="danger" onClick={() => remove(d)} aria-label={`Delete ${d.name}`}>
-                      Delete
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
+                  )}
+                </td>
+                <td>
+                  <FailuresPicker d={d} onChange={(failures) => replace({ ...d, failures })} />
+                </td>
+                <td>
+                  <Form.Select
+                    size="sm"
+                    aria-label={`Success messages for ${d.name}`}
+                    value={d.success?.freq || "off"}
+                    onChange={(e) =>
+                      replace({ ...d, success: { ...DEFAULT_SUCCESS, ...d.success, freq: e.target.value } })
+                    }
+                  >
+                    {SUCCESS.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </td>
+                <td>
+                  <WhenCell d={d} onChange={(x) => replace(x)} />
+                </td>
+                <td className="text-nowrap">
+                  <Button size="sm" variant="secondary" onClick={() => test(d)} aria-label={`Test ${d.name}`}>
+                    Test
+                  </Button>
+                  <Button size="sm" variant="danger" onClick={() => remove(d)} aria-label={`Delete ${d.name}`}>
+                    Delete
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
       )}
 
-      {sel && (
-        <section className="mt-3" data-testid="notification-preview">
-          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-            <h6 className="mb-0">What {sel.name} would receive</h6>
-            <div className="d-flex flex-wrap gap-1" role="group" aria-label="Destination to preview">
-              {dests.map((d) => (
-                <Button
-                  key={d.id}
-                  size="sm"
-                  variant={d.id === sel.id ? "primary" : "secondary"}
-                  className="rounded-pill"
-                  aria-pressed={d.id === sel.id}
-                  onClick={() => setSelected(d.id)}
-                >
-                  {d.name}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="d-flex flex-wrap gap-3">
-            <div
-              className="border rounded p-3 d-flex flex-column gap-2"
-              style={{ flex: "1 1 22rem", maxWidth: "36rem" }}
-            >
-              <div className="text-muted small text-uppercase fw-semibold">Immediately, as each event happens</div>
-              {(preview?.immediate || []).length === 0 ? (
-                <p className="text-muted fst-italic mb-0">Nothing is sent immediately.</p>
-              ) : (
-                preview.immediate.map((m) => <Bubble key={m.title + m.body} d={sel} m={m} />)
-              )}
-            </div>
-            <div
-              className="border rounded p-3 d-flex flex-column gap-2"
-              style={{ flex: "1 1 22rem", maxWidth: "36rem" }}
-            >
-              <div className="text-muted small text-uppercase fw-semibold">
-                {scheduled(sel) ? `${sel.success.freq} summary, from the latest data` : "Summary"}
-              </div>
-              {preview?.summary ? (
-                <Bubble d={sel} m={preview.summary} />
-              ) : (
-                <p className="text-muted fst-italic mb-0">No summary is sent.</p>
-              )}
-            </div>
-          </div>
-          <p className="text-muted small mt-2">
-            Only counts, source folders and times are sent. File names, error causes and paths stay on this Mac, in the
-            Tasks page. A failure that keeps happening is sent once and again after 12 hours, and you are told when it
-            ends. Use your iPhone&apos;s Focus modes for quiet hours; a Focus can silence messages from yourself, so
-            allow your own contact card in it.
-          </p>
-        </section>
-      )}
+      <p className="text-muted small">
+        Failures are always sent as they happen. One that keeps happening is sent once and again after 12 hours, and you
+        are told when it ends. Messages contain counts, source folders and times only; file names and error details stay
+        on this Mac, in the Tasks page. Email is sent through the Mail app on this Mac.
+      </p>
 
-      <section className="mt-3" data-testid="recent-messages">
+      <section data-testid="recent-messages">
         <h6>Recent messages</h6>
         <Table size="sm" className="align-middle">
           <thead>
@@ -561,31 +483,6 @@ export function NotificationDestinations() {
           </tbody>
         </Table>
       </section>
-    </div>
-  );
-}
-
-function AddDestination({ onAdd }) {
-  const [type, setType] = useState("imessage");
-
-  return (
-    <div className="d-flex gap-1">
-      <Form.Select
-        size="sm"
-        aria-label="Destination type"
-        value={type}
-        onChange={(e) => setType(e.target.value)}
-        style={{ width: "auto" }}
-      >
-        {Object.entries(TYPES).map(([id, t]) => (
-          <option key={id} value={id}>
-            {t.label}
-          </option>
-        ))}
-      </Form.Select>
-      <Button size="sm" variant="primary" onClick={() => onAdd(type)}>
-        + Add destination
-      </Button>
     </div>
   );
 }

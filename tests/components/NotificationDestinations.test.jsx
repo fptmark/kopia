@@ -22,10 +22,10 @@ const mac = {
   success: { freq: "daily", time: "08:00" },
 };
 
-function mockApi({ destinations = [iphone, mac], preview = { immediate: [], summary: null }, log = [] } = {}) {
+function mockApi({ destinations = [iphone, mac], accounts = [], log = [] } = {}) {
   axios.get.mockImplementation((url) => {
     if (url.startsWith("/api/v1/notifications/destinations")) return Promise.resolve({ data: { destinations } });
-    if (url.startsWith("/api/v1/notifications/preview")) return Promise.resolve({ data: preview });
+    if (url === "/api/v1/notifications/email-accounts") return Promise.resolve({ data: { accounts } });
     if (url.startsWith("/api/v1/notifications/log")) return Promise.resolve({ data: log });
     return Promise.reject(new Error("unexpected " + url));
   });
@@ -55,12 +55,22 @@ describe("NotificationDestinations", () => {
     expect(screen.getByLabelText("Success messages for This Mac")).toHaveValue("daily");
   });
 
-  it("has no frequency choice for failures: they are always immediate", async () => {
+  it("has no frequency choice for failures and no preview: the page explains itself", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
-    expect(await screen.findByText(/always immediate/)).toBeInTheDocument();
+    expect(await screen.findByText(/Failures are always sent as they happen/)).toBeInTheDocument();
     expect(screen.queryByText(/Roll-up/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/would receive/)).not.toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalledWith(expect.stringContaining("/preview"));
+  });
+
+  it("names a destination once: the name is not repeated as a type label", async () => {
+    mockApi();
+    render(<NotificationDestinations />);
+
+    expect(await screen.findByLabelText("Name of This Mac")).toHaveValue("This Mac");
+    expect(screen.queryAllByText("This Mac")).toHaveLength(0); // no second, separate label
   });
 
   it("chooses failure types with check boxes and saves each change", async () => {
@@ -171,22 +181,74 @@ describe("NotificationDestinations", () => {
     await waitFor(() => expect(screen.queryByLabelText("Hour for This Mac")).not.toBeInTheDocument());
   });
 
-  it("adds a destination of the chosen type: every failure, no success messages", async () => {
+  it("offers three kinds of destination to add: This Mac, iPhone and Email", async () => {
+    mockApi({ destinations: [] });
+    render(<NotificationDestinations />);
+
+    fireEvent.click(await screen.findByText("+ Add destination"));
+    const items = screen.getAllByRole("button").filter((b) => ["This Mac", "iPhone", "Email"].includes(b.textContent));
+    expect(items.map((b) => b.textContent)).toEqual(["This Mac", "iPhone", "Email"]);
+  });
+
+  it("adds a destination with every failure and no success messages", async () => {
     mockApi();
     render(<NotificationDestinations />);
 
     fireEvent.click(await screen.findByText("+ Add destination"));
+    fireEvent.click(screen.getByText("iPhone", { selector: ".dropdown-item" }));
     await waitFor(() => expect(axios.put).toHaveBeenCalled());
 
     const list = lastPut();
     expect(list).toHaveLength(3);
     expect(list[2]).toMatchObject({
       type: "imessage",
-      name: "iMessage",
+      name: "iPhone",
       failures: ["health", "failed", "skipped", "maint", "watchdog"],
       success: { freq: "off" },
     });
-    expect(await screen.findByLabelText("Send to for iMessage")).toBeInTheDocument();
+    expect((await screen.findAllByLabelText("Send to for iPhone")).length).toBeGreaterThan(0);
+  });
+
+  it("asks which Mail account sends only when Mail has more than one", async () => {
+    const email = {
+      id: "e",
+      type: "email",
+      name: "Email",
+      target: "me@gmail.com",
+      failures: [],
+      success: { freq: "off" },
+    };
+
+    mockApi({ destinations: [email], accounts: [{ name: "Gmail", addresses: ["me@gmail.com"] }] });
+    const { unmount } = render(<NotificationDestinations />);
+    expect(await screen.findByLabelText("Send to for Email")).toHaveValue("me@gmail.com");
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/api/v1/notifications/email-accounts"));
+    expect(screen.queryByLabelText("Send from for Email")).not.toBeInTheDocument();
+    unmount();
+    cleanup();
+
+    mockApi({
+      destinations: [email],
+      accounts: [
+        { name: "Gmail", addresses: ["me@gmail.com"] },
+        { name: "Work", addresses: ["me@work.example"] },
+      ],
+    });
+    render(<NotificationDestinations />);
+
+    const from = await screen.findByLabelText("Send from for Email");
+    expect(from).toHaveValue("");
+    fireEvent.change(from, { target: { value: "me@work.example" } });
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    expect(lastPut()[0]).toMatchObject({ target: "me@gmail.com", from: "me@work.example" });
+  });
+
+  it("does not ask Mail about accounts when there is no email destination", async () => {
+    mockApi();
+    render(<NotificationDestinations />);
+
+    await screen.findByLabelText("Name of iPhone");
+    expect(axios.get).not.toHaveBeenCalledWith("/api/v1/notifications/email-accounts");
   });
 
   it("deletes a destination only after confirmation", async () => {
@@ -217,33 +279,6 @@ describe("NotificationDestinations", () => {
     axios.post.mockRejectedValue({ response: { data: { message: "Messages is not running" } } });
     fireEvent.click(screen.getByLabelText("Test This Mac"));
     expect(await screen.findByText(/Test to This Mac failed: Messages is not running/)).toBeInTheDocument();
-  });
-
-  it("previews the immediate messages and the summary of the chosen destination", async () => {
-    mockApi({
-      preview: {
-        immediate: [{ title: "Snapshot failed", body: "/Users/me could not be backed up." }],
-        summary: { title: "Backup summary, last 24 hours", body: "Failed snapshots: 0" },
-      },
-    });
-    render(<NotificationDestinations />);
-
-    const msgs = await screen.findAllByTestId("preview-message");
-    expect(msgs).toHaveLength(2);
-    expect(msgs[0]).toHaveTextContent("/Users/me could not be backed up.");
-    expect(msgs[1]).toHaveTextContent("Backup summary, last 24 hours");
-    expect(axios.get).toHaveBeenCalledWith("/api/v1/notifications/preview?destination=iphone");
-
-    fireEvent.click(screen.getByRole("button", { name: "This Mac" }));
-    await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/api/v1/notifications/preview?destination=mac"));
-  });
-
-  it("says when nothing is sent immediately or as a summary", async () => {
-    mockApi();
-    render(<NotificationDestinations />);
-
-    expect(await screen.findByText("Nothing is sent immediately.")).toBeInTheDocument();
-    expect(screen.getByText("No summary is sent.")).toBeInTheDocument();
   });
 
   it("lists recent messages with their destination, message and result", async () => {
