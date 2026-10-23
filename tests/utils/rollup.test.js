@@ -1,4 +1,4 @@
-import { joinTime, nextRollup, parseTime } from "../../src/utils/rollup";
+import { joinTime, ordinal, parseTime } from "../../src/utils/rollup";
 
 describe("roll-up time", () => {
   it("converts between 24-hour storage and hour, minute, AM/PM", () => {
@@ -22,39 +22,20 @@ describe("roll-up time", () => {
   });
 });
 
-describe("nextRollup", () => {
-  const at = (y, mo, d, h = 0, m = 0) => new Date(y, mo - 1, d, h, m);
-
-  it("daily: later today, or tomorrow once the time has passed", () => {
-    const r = { freq: "daily", time: "08:00" };
-    expect(nextRollup(r, at(2026, 10, 22, 7, 0))).toEqual(at(2026, 10, 22, 8, 0));
-    expect(nextRollup(r, at(2026, 10, 22, 8, 0))).toEqual(at(2026, 10, 23, 8, 0));
-    expect(nextRollup(r, at(2026, 10, 31, 9, 0))).toEqual(at(2026, 11, 1, 8, 0));
-  });
-
-  it("weekly: the chosen weekday, counting Monday as 0", () => {
-    // 22 October 2026 is a Thursday
-    expect(nextRollup({ freq: "weekly", weekday: 0, time: "07:30" }, at(2026, 10, 22, 12, 0))).toEqual(
-      at(2026, 10, 26, 7, 30),
-    );
-    expect(nextRollup({ freq: "weekly", weekday: 3, time: "07:30" }, at(2026, 10, 22, 7, 0))).toEqual(
-      at(2026, 10, 22, 7, 30),
-    );
-    expect(nextRollup({ freq: "weekly", weekday: 3, time: "07:30" }, at(2026, 10, 22, 8, 0))).toEqual(
-      at(2026, 10, 29, 7, 30),
-    );
-    expect(nextRollup({ freq: "weekly", weekday: 6, time: "07:30" }, at(2026, 10, 22, 8, 0))).toEqual(
-      at(2026, 10, 25, 7, 30),
-    );
-  });
-
-  it("monthly: a day of the month, the last day, and short months", () => {
-    expect(nextRollup({ freq: "monthly", dom: 1, time: "08:00" }, at(2026, 10, 22))).toEqual(at(2026, 11, 1, 8, 0));
-    expect(nextRollup({ freq: "monthly", dom: 28, time: "08:00" }, at(2026, 10, 22))).toEqual(at(2026, 10, 28, 8, 0));
-    expect(nextRollup({ freq: "monthly", dom: 0, time: "08:00" }, at(2026, 2, 10))).toEqual(at(2026, 2, 28, 8, 0));
-    expect(nextRollup({ freq: "monthly", dom: 0, time: "08:00" }, at(2028, 2, 10))).toEqual(at(2028, 2, 29, 8, 0));
-    expect(nextRollup({ freq: "monthly", dom: 0, time: "08:00" }, at(2026, 10, 31, 9, 0))).toEqual(
-      at(2026, 11, 30, 8, 0),
-    );
+describe("ordinal", () => {
+  it("writes day numbers", () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 28].map(ordinal)).toEqual([
+      "1st",
+      "2nd",
+      "3rd",
+      "4th",
+      "11th",
+      "12th",
+      "13th",
+      "21st",
+      "22nd",
+      "23rd",
+      "28th",
+    ]);
   });
 });

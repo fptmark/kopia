@@ -6,7 +6,7 @@ import Button from "react-bootstrap/Button";
 import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
-import { DEFAULT_SUCCESS, joinTime, nextRollup, parseTime, WEEKDAYS } from "../utils/rollup";
+import { DEFAULT_SUCCESS, joinTime, ordinal, parseTime, WEEKDAYS } from "../utils/rollup";
 
 const DESTINATIONS_URL = "/api/v1/notifications/destinations";
 const MAIL_ACCOUNTS_URL = "/api/v1/notifications/email-accounts";
@@ -47,15 +47,12 @@ const EVENT_NAME = {
   test: "Test message",
 };
 
-const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 const HOURS = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 const errorText = (e) => e?.response?.data?.message || e?.response?.data?.error || e?.message || "unknown error";
 
 const scheduled = (d) => ["daily", "weekly", "monthly"].includes(d.success?.freq);
 
-const fmtNext = (dt) =>
-  dt.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const when = (t) =>
   t ? new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
@@ -118,7 +115,7 @@ function FailuresPicker({ d, onChange }) {
   );
 }
 
-/** The day and time a summary is sent: hour, minute and AM/PM in 5-minute steps. */
+/** The day and hour a summary is sent: a short day, the hour, AM or PM. */
 function WhenCell({ d, onChange }) {
   const s = d.success || DEFAULT_SUCCESS;
 
@@ -128,86 +125,69 @@ function WhenCell({ d, onChange }) {
 
   const tm = parseTime(s.time);
   const set = (patch) => onChange({ ...d, success: { ...s, ...patch } });
+  // the time is on the hour; editing it drops any minutes set by hand in the file
   const setTime = (patch) => {
     const t = { ...tm, ...patch };
-    set({ time: joinTime(t.h, t.m, t.ap) });
+    set({ time: joinTime(t.h, 0, t.ap) });
   };
-  const minutes = MINUTES.includes(tm.m) ? MINUTES : [...MINUTES, tm.m].sort((a, b) => a - b);
+  const narrow = { width: "auto" };
 
   return (
-    <div>
-      <div className="d-flex gap-1">
-        {s.freq === "weekly" && (
-          <Form.Select
-            size="sm"
-            aria-label={`Day of week for ${d.name}`}
-            value={s.weekday ?? 0}
-            onChange={(e) => set({ weekday: Number(e.target.value) })}
-            style={{ width: "auto" }}
-          >
-            {WEEKDAYS.map((n, i) => (
-              <option key={n} value={i}>
-                {n}
-              </option>
-            ))}
-          </Form.Select>
-        )}
-        {s.freq === "monthly" && (
-          <Form.Select
-            size="sm"
-            aria-label={`Day of month for ${d.name}`}
-            value={s.dom ?? 1}
-            onChange={(e) => set({ dom: Number(e.target.value) })}
-            style={{ width: "auto" }}
-          >
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => (
-              <option key={n} value={n}>
-                Day {n}
-              </option>
-            ))}
-            <option value={0}>Last day</option>
-          </Form.Select>
-        )}
+    <div className="d-flex gap-1">
+      {s.freq === "weekly" && (
         <Form.Select
           size="sm"
-          aria-label={`Hour for ${d.name}`}
-          value={tm.h}
-          onChange={(e) => setTime({ h: Number(e.target.value) })}
-          style={{ width: "auto" }}
+          aria-label={`Day of week for ${d.name}`}
+          value={s.weekday ?? 0}
+          onChange={(e) => set({ weekday: Number(e.target.value) })}
+          style={narrow}
         >
-          {HOURS.map((h) => (
-            <option key={h} value={h}>
-              {h}
+          {WEEKDAYS.map((n, i) => (
+            <option key={n} value={i}>
+              {n.slice(0, 3)}
             </option>
           ))}
         </Form.Select>
+      )}
+      {s.freq === "monthly" && (
         <Form.Select
           size="sm"
-          aria-label={`Minute for ${d.name}`}
-          value={tm.m}
-          onChange={(e) => setTime({ m: Number(e.target.value) })}
-          style={{ width: "auto" }}
+          aria-label={`Day of month for ${d.name}`}
+          value={s.dom ?? 1}
+          onChange={(e) => set({ dom: Number(e.target.value) })}
+          style={narrow}
         >
-          {minutes.map((m) => (
-            <option key={m} value={m}>
-              {String(m).padStart(2, "0")}
+          {Array.from({ length: 28 }, (_, i) => i + 1).map((n) => (
+            <option key={n} value={n}>
+              {ordinal(n)}
             </option>
           ))}
+          <option value={0}>Last</option>
         </Form.Select>
-        <Form.Select
-          size="sm"
-          aria-label={`AM or PM for ${d.name}`}
-          value={tm.ap}
-          onChange={(e) => setTime({ ap: e.target.value })}
-          style={{ width: "auto" }}
-        >
-          <option value="AM">AM</option>
-          <option value="PM">PM</option>
-        </Form.Select>
-      </div>
-      <div className="small text-muted" data-testid={`next-${d.id}`}>
-        Next: {fmtNext(nextRollup(s))}
-      </div>
+      )}
+      <Form.Select
+        size="sm"
+        aria-label={`Hour for ${d.name}`}
+        value={tm.h}
+        onChange={(e) => setTime({ h: Number(e.target.value) })}
+        style={narrow}
+      >
+        {HOURS.map((h) => (
+          <option key={h} value={h}>
+            {h}
+          </option>
+        ))}
+      </Form.Select>
+      <Form.Select
+        size="sm"
+        aria-label={`AM or PM for ${d.name}`}
+        value={tm.ap}
+        onChange={(e) => setTime({ ap: e.target.value })}
+        style={narrow}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </Form.Select>
     </div>
   );
 }
@@ -353,11 +333,19 @@ export function NotificationDestinations() {
         <Table bordered size="sm" className="align-middle mb-3" data-testid="destination-grid">
           <thead className="table-light">
             <tr>
-              <th scope="col">Destination</th>
+              <th scope="col" style={{ width: "16%" }}>
+                Destination
+              </th>
               <th scope="col">Address</th>
-              <th scope="col">Failures</th>
-              <th scope="col">Success</th>
-              <th scope="col">When</th>
+              <th scope="col" style={{ width: "11rem" }}>
+                Failures
+              </th>
+              <th scope="col" style={{ width: "13rem" }}>
+                Success
+              </th>
+              <th scope="col" style={{ width: "1%" }}>
+                When
+              </th>
               <th scope="col" style={{ width: "1%" }}></th>
             </tr>
           </thead>
@@ -421,7 +409,7 @@ export function NotificationDestinations() {
                     ))}
                   </Form.Select>
                 </td>
-                <td>
+                <td className="text-nowrap">
                   <WhenCell d={d} onChange={(x) => replace(x)} />
                 </td>
                 <td className="text-nowrap">
