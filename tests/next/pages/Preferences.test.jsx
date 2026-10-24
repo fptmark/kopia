@@ -19,6 +19,7 @@ const setters = () => ({
   setByteStringBase: vi.fn(),
   setPageSize: vi.fn(),
   setKeepAwake: vi.fn(),
+  setVerifyNewData: vi.fn(),
 });
 
 const renderPrefs = (search = "", prefs = {}) =>
@@ -135,6 +136,16 @@ describe("Preferences page", () => {
 
     fireEvent.click(screen.getByText("Show all 7"));
     await waitFor(() => expect(screen.getByTestId("check-failures")).toHaveTextContent("/p/f6"));
+  });
+
+  it("turns on reading back the data each snapshot adds", async () => {
+    axios.get.mockResolvedValue({ data: { state: "ok", checks: [] } });
+    const setVerifyNewData = vi.fn();
+    renderPrefs("?tab=health", { verifyNewData: false, setVerifyNewData });
+    await waitFor(() => expect(screen.getByTestId("verify-new-data")).toBeInTheDocument());
+    expect(screen.getByTestId("verify-new-data")).not.toBeChecked();
+    fireEvent.click(screen.getByTestId("verify-new-data"));
+    expect(setVerifyNewData).toHaveBeenCalledWith(true);
   });
 
   it("lists ignored errors and removes one", async () => {

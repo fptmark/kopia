@@ -28,6 +28,7 @@ export interface UIPreferences {
   get fontSize(): FontSize;
   get keepAwake(): KeepAwake;
   get verifierIMessageTo(): string;
+  get verifyNewData(): boolean;
   setTheme: (theme: Theme) => void;
   setPageSize: (pageSize: number) => void;
   setByteStringBase: (bytesStringBase2: string) => void;
@@ -35,6 +36,7 @@ export interface UIPreferences {
   setFontSize: (size: string) => void;
   setKeepAwake: (keepAwake: string) => void;
   setVerifierIMessageTo: (to: string) => void;
+  setVerifyNewData: (on: boolean) => void;
 }
 
 interface SerializedUIPreferences {
@@ -45,6 +47,7 @@ interface SerializedUIPreferences {
   fontSize: FontSize;
   keepAwake?: KeepAwake;
   verifierIMessageTo?: string;
+  verifyNewData?: boolean;
 }
 
 export interface UIPreferenceProviderProps {
@@ -114,6 +117,11 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
   const setKeepAwake = (input: string) =>
     setPreferences((oldPreferences) => {
       return { ...oldPreferences, keepAwake: input as KeepAwake };
+    });
+
+  const setVerifyNewData = (input: boolean) =>
+    setPreferences((oldPreferences) => {
+      return { ...oldPreferences, verifyNewData: input };
     });
 
   const setVerifierIMessageTo = (input: string) =>
@@ -194,6 +202,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
     setFontSize,
     setKeepAwake,
     setVerifierIMessageTo,
+    setVerifyNewData,
   } as UIPreferences;
 
   return <UIPreferencesContext value={providedValue}>{props.children}</UIPreferencesContext>;
