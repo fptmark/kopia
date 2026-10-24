@@ -13,3 +13,4 @@ export { FailedFilesDialog, FailedBadge, TaskErrorDialog } from "./FailedFiles";
 export { LogView } from "./LogView";
 export { Breadcrumbs } from "./Breadcrumbs";
 export { CliCommand } from "./CliCommand";
+export { HealthBanner } from "./HealthBanner";

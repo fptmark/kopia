@@ -4,13 +4,16 @@ import React, { use, useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
 import { api, setupApi } from "./api";
 import { NextContext } from "./context";
+import { HealthBanner } from "./ui";
 import { UIPreferenceProvider, UIPreferencesContext } from "../contexts/UIPreferencesContext";
 import { Spec } from "./pages/Spec";
 import { Exclusions } from "./pages/Exclusions";
 import { Snapshots } from "./pages/Snapshots";
 import { SnapshotHistory } from "./pages/SnapshotHistory";
 import { SnapshotDiff } from "./pages/SnapshotDiff";
+import { About } from "./pages/About";
 import { Files } from "./pages/Files";
+import { Preferences } from "./pages/Preferences";
 import { Policies } from "./pages/Policies";
 import { Policy } from "./pages/Policy";
 import { SnapshotCreate } from "./pages/SnapshotCreate";
@@ -100,7 +103,10 @@ function Shell({ children }) {
             <span className="nx-repo">{repo.description}</span>
           </div>
         </nav>
-        <main className="nx-shell">{children}</main>
+        <main className="nx-shell">
+          <HealthBanner />
+          {children}
+        </main>
       </div>
     </NextContext>
   );
@@ -118,6 +124,8 @@ export default function NextApp() {
             <Route path="snapshots/diff" element={<SnapshotDiff />} />
             <Route path="exclusions" element={<Exclusions />} />
             <Route path="files" element={<Files />} />
+            <Route path="preferences" element={<Preferences />} />
+            <Route path="about" element={<About />} />
             <Route path="policies" element={<Policies />} />
             <Route path="policies/edit" element={<Policy />} />
             <Route path="snapshots/new" element={<SnapshotCreate />} />
