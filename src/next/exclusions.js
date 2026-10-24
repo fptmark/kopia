@@ -54,3 +54,17 @@ export function reconcileExclusions(sources) {
 export function previewExclusions(source, patterns) {
   return api.post("/api/v1/exclusions/preview", { source, patterns }).then((r) => r.data);
 }
+
+/** Which of these absolute paths a source's rules already leave out: {path: pattern}. */
+export function coveredPaths(source, paths) {
+  if (!source || !paths.length) {
+    return Promise.resolve({});
+  }
+  return api.post("/api/v1/exclusions/covered", { source, paths }).then((r) => {
+    const out = {};
+    for (const c of r.data.covered || []) {
+      out[c.path] = c.pattern;
+    }
+    return out;
+  });
+}

@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import Modal from "react-bootstrap/Modal";
 import { Link } from "react-router";
 import { api, errorMessage } from "../api";
-import { addExclusions } from "../exclusions";
+import { addExclusions, coveredPaths } from "../exclusions";
 import { addIgnoredError, EXPIRY_CHOICES, KIND_LABELS } from "../../utils/ignoredErrors";
 import { groupFailures } from "../../utils/uiutil";
 import { shortTaskError, taskErrorHint } from "../../utils/taskutil";
@@ -143,8 +143,10 @@ function ExcludeDialog({ source, target, onClose, onDone }) {
   );
 }
 
-function Group({ group, onIgnore, onExclude, excluded }) {
+function Group({ group, onIgnore, onExclude, covered }) {
   const [open, setOpen] = useState(false);
+  const allCovered = group.items.length > 0 && group.items.every((i) => covered[i.path]);
+  const patterns = [...new Set(group.items.map((i) => covered[i.path]).filter(Boolean))];
 
   return (
     <div className="mb-3" data-testid="failure-group">
@@ -160,14 +162,25 @@ function Group({ group, onIgnore, onExclude, excluded }) {
         </button>
         {onIgnore && (
           <span className="ms-auto d-flex gap-2">
+            {allCovered && (
+              <span className="nx-muted align-self-center" data-testid="group-excluded">
+                Excluded{patterns.length === 1 ? " by " + patterns[0] : ""}
+              </span>
+            )}
             <Button
               size="sm"
               variant="secondary"
+              disabled={allCovered}
               onClick={() => onIgnore({ path: group.place, kind: group.kind, file: group.count === 1 })}
             >
               Ignore
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => onExclude({ path: group.place })}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={allCovered}
+              onClick={() => onExclude({ path: group.place })}
+            >
               Exclude
             </Button>
           </span>
@@ -179,19 +192,27 @@ function Group({ group, onIgnore, onExclude, excluded }) {
             <li key={i.path} className="mb-1">
               <div className="d-flex flex-wrap align-items-baseline gap-2">
                 <PathText>{i.path}</PathText>
-                {excluded.some((p) => i.path === p || i.path.startsWith(p + "/")) && (
-                  <span className="nx-muted">(excluded, skipped from the next snapshot)</span>
-                )}
                 {onIgnore && (
                   <span className="ms-auto d-flex gap-2">
+                    {covered[i.path] && (
+                      <span className="nx-muted align-self-center" data-testid="file-excluded">
+                        Excluded by {covered[i.path]}
+                      </span>
+                    )}
                     <Button
                       size="sm"
                       variant="secondary"
+                      disabled={!!covered[i.path]}
                       onClick={() => onIgnore({ path: i.path, kind: i.kind, file: true })}
                     >
                       Ignore
                     </Button>
-                    <Button size="sm" variant="secondary" onClick={() => onExclude({ path: i.path })}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={!!covered[i.path]}
+                      onClick={() => onExclude({ path: i.path })}
+                    >
                       Exclude
                     </Button>
                   </span>
@@ -214,11 +235,27 @@ function Group({ group, onIgnore, onExclude, excluded }) {
 export function FailedFilesDialog({ summ, onClose }) {
   const [errors, setErrors] = useState(summ.errors || []);
   const [dialog, setDialog] = useState(null);
-  const [excluded, setExcluded] = useState([]);
+  const [covered, setCovered] = useState({});
   const [note, setNote] = useState("");
 
   const canAct = !!summ.source;
   const shown = errors.filter((e) => !e.ignored);
+
+  // which failed paths the rules already leave out; a failed lookup just leaves the buttons active
+  const [recheck, setRecheck] = useState(0);
+  useEffect(() => {
+    const paths = errors.filter((e) => !e.ignored).map((e) => e.path);
+    if (!canAct || !paths.length) {
+      return;
+    }
+    try {
+      coveredPaths(summ.source, paths)
+        .then(setCovered)
+        .catch(() => {});
+    } catch {
+      // nothing to show
+    }
+  }, [canAct, summ.source, errors, recheck]);
   const nowIgnored = errors.filter((e) => e.ignored).length - (summ.ignored || 0);
   const numFailed = Math.max(0, summ.numFailed - Math.max(0, nowIgnored));
 
@@ -243,7 +280,7 @@ export function FailedFilesDialog({ summ, onClose }) {
           <Group
             key={g.reason + g.label}
             group={g}
-            excluded={excluded}
+            covered={covered}
             onIgnore={canAct ? (t) => setDialog({ type: "ignore", target: t }) : null}
             onExclude={canAct ? (t) => setDialog({ type: "exclude", target: t }) : null}
           />
@@ -284,7 +321,7 @@ export function FailedFilesDialog({ summ, onClose }) {
           onClose={() => setDialog(null)}
           onDone={(pattern, r) => {
             setDialog(null);
-            setExcluded([...excluded, dialog.target.path]);
+            setRecheck((n) => n + 1);
             setNote(
               r.applyError
                 ? `Rule ${pattern} added, but Kopia's policy was not updated: ${r.applyError}`
