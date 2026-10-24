@@ -86,7 +86,7 @@ function Shell({ children }) {
       <div className="nx" data-bs-theme={bsTheme(theme)}>
         <nav className="nx-nav" aria-label="Main">
           <div className="nx-nav-inner">
-            <a className="nx-brand" href="/next/snapshots">
+            <a className="nx-brand" href="/snapshots">
               <img src="/kopia-flat.svg" alt="Kopia" />
             </a>
             <div>
@@ -118,7 +118,7 @@ function Shell({ children }) {
 
 export default function NextApp() {
   return (
-    <BrowserRouter basename="/next">
+    <BrowserRouter>
       <UIPreferenceProvider>
         <Shell>
           <Routes>

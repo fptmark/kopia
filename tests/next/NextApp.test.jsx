@@ -52,32 +52,32 @@ describe("NextApp", () => {
     axios.put.mockReset().mockResolvedValue({ data: {} });
   });
 
-  it("shows the page of the address, under /next", async () => {
-    await renderAt("/next/exclusions");
+  it("shows the page of the address", async () => {
+    await renderAt("/exclusions");
     await waitFor(() => expect(screen.getByTestId("page-Exclusions")).toBeInTheDocument());
   });
 
   it("sends the front page to the snapshots", async () => {
-    await renderAt("/next/");
+    await renderAt("/");
     await waitFor(() => expect(screen.getByTestId("page-Snapshots")).toBeInTheDocument());
   });
 
   it("routes every page", async () => {
     const cases = [
-      ["/next/snapshots/single-source?path=%2Fa", "SnapshotHistory"],
-      ["/next/snapshots/diff?from=a&to=b", "SnapshotDiff"],
-      ["/next/snapshots/dir/k1", "SnapshotDirectory"],
-      ["/next/snapshots/dir/k1/restore", "SnapshotRestore"],
-      ["/next/snapshots/new", "SnapshotCreate"],
-      ["/next/files", "Files"],
-      ["/next/policies", "Policies"],
-      ["/next/policies/edit?path=%2Fa", "Policy"],
-      ["/next/tasks", "Tasks"],
-      ["/next/tasks/t1", "Task"],
-      ["/next/preferences", "Preferences"],
-      ["/next/repo", "Repository"],
-      ["/next/about", "About"],
-      ["/next/spec", "Spec"],
+      ["/snapshots/single-source?path=%2Fa", "SnapshotHistory"],
+      ["/snapshots/diff?from=a&to=b", "SnapshotDiff"],
+      ["/snapshots/dir/k1", "SnapshotDirectory"],
+      ["/snapshots/dir/k1/restore", "SnapshotRestore"],
+      ["/snapshots/new", "SnapshotCreate"],
+      ["/files", "Files"],
+      ["/policies", "Policies"],
+      ["/policies/edit?path=%2Fa", "Policy"],
+      ["/tasks", "Tasks"],
+      ["/tasks/t1", "Task"],
+      ["/preferences", "Preferences"],
+      ["/repo", "Repository"],
+      ["/about", "About"],
+      ["/spec", "Spec"],
     ];
     for (const [path, page] of cases) {
       const { unmount } = await renderAt(path);
@@ -87,7 +87,7 @@ describe("NextApp", () => {
   });
 
   it("has a tab for each page, with the repository's name", async () => {
-    await renderAt("/next/snapshots");
+    await renderAt("/snapshots");
     await waitFor(() => expect(screen.getByText("Repository in SFTP")).toBeInTheDocument());
     for (const t of ["Snapshots", "Files", "Exclusions", "Policies", "Tasks", "Repository", "Preferences", "About"]) {
       expect(screen.getByRole("link", { name: new RegExp("^" + t) })).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe("NextApp", () => {
   });
 
   it("mutes the tabs that need a repository while there is none", async () => {
-    await renderAt("/next/repo", { connected: false });
+    await renderAt("/repo", { connected: false });
     await waitFor(() => expect(screen.getByTestId("page-Repository")).toBeInTheDocument());
     expect(screen.getByTestId("tab-snapshots")).toHaveClass("disabled");
     expect(screen.getByTestId("tab-tasks")).toHaveClass("disabled");
@@ -105,17 +105,17 @@ describe("NextApp", () => {
   });
 
   it("shows how many tasks are running", async () => {
-    await renderAt("/next/snapshots", { running: 2 });
+    await renderAt("/snapshots", { running: 2 });
     await waitFor(() => expect(screen.getByTestId("tab-tasks")).toHaveTextContent("Tasks (2)"));
   });
 
   it("follows the saved theme, with light for the old UI's other themes", async () => {
-    const { container } = await renderAt("/next/snapshots", { theme: "dark" });
+    const { container } = await renderAt("/snapshots", { theme: "dark" });
     await waitFor(() => expect(container.querySelector(".nx")).toHaveAttribute("data-bs-theme", "dark"));
   });
 
   it("uses light for a theme the old UI had", async () => {
-    const { container } = await renderAt("/next/snapshots", { theme: "ocean" });
+    const { container } = await renderAt("/snapshots", { theme: "ocean" });
     await waitFor(() => expect(container.querySelector(".nx")).toHaveAttribute("data-bs-theme", "light"));
   });
 });

@@ -29,7 +29,7 @@ describe("setupApi", () => {
     const replace = vi.fn();
     Object.defineProperty(window, "location", {
       configurable: true,
-      value: { pathname: "/next/snapshots", reload, replace },
+      value: { pathname: "/snapshots", reload, replace },
     });
 
     await expect(handlers[0]({ response: { status: 401, data: "invalid CSRF token" } })).rejects.toBeTruthy();
@@ -37,7 +37,7 @@ describe("setupApi", () => {
     expect(reload).toHaveBeenCalledTimes(1);
 
     await expect(handlers[0]({ response: { status: 400, data: { code: "NOT_CONNECTED" } } })).rejects.toBeTruthy();
-    expect(replace).toHaveBeenCalledWith("/next/repo");
+    expect(replace).toHaveBeenCalledWith("/repo");
     spy.mockRestore();
   });
 });

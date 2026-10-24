@@ -173,7 +173,7 @@ export function Repository() {
     repoDescription: "",
     repositoryUpdated: (connected) => {
       shell.refreshRepo();
-      window.location.replace(connected ? "/next/snapshots" : "/next/repo");
+      window.location.replace(connected ? "/snapshots" : "/repo");
     },
     repositoryDescriptionUpdated: () => shell.refreshRepo(),
   };

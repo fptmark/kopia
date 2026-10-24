@@ -24,9 +24,9 @@ export function setupApi() {
     // a page that needs the repository has nothing to show without one
     if (
       error?.response?.data?.code === "NOT_CONNECTED" &&
-      !/^\/next\/(repo|preferences|about)/.test(window.location.pathname)
+      !/^\/(repo|preferences|about)/.test(window.location.pathname)
     ) {
-      window.location.replace("/next/repo");
+      window.location.replace("/repo");
     }
     return Promise.reject(error);
   });
