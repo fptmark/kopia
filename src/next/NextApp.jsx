@@ -6,6 +6,10 @@ import { api, setupApi } from "./api";
 import { NextContext } from "./context";
 import { UIPreferenceProvider, UIPreferencesContext } from "../contexts/UIPreferencesContext";
 import { Spec } from "./pages/Spec";
+import { Exclusions } from "./pages/Exclusions";
+import { Snapshots } from "./pages/Snapshots";
+import { SnapshotHistory } from "./pages/SnapshotHistory";
+import { SnapshotDiff } from "./pages/SnapshotDiff";
 
 setupApi();
 
@@ -101,6 +105,10 @@ export default function NextApp() {
         <Shell>
           <Routes>
             <Route path="spec" element={<Spec />} />
+            <Route path="snapshots" element={<Snapshots />} />
+            <Route path="snapshots/single-source" element={<SnapshotHistory />} />
+            <Route path="snapshots/diff" element={<SnapshotDiff />} />
+            <Route path="exclusions" element={<Exclusions />} />
             <Route path="/" element={<Navigate to="/snapshots" replace />} />
             <Route path="*" element={<div className="nx-empty">Not built yet.</div>} />
           </Routes>

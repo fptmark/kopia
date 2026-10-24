@@ -9,3 +9,4 @@ export { Field, SwitchField, FormSection } from "./Form";
 export { TabNav } from "./TabNav";
 export { SearchBox } from "./SearchBox";
 export { DataTable } from "./DataTable";
+export { FailedFilesDialog, FailedBadge, TaskErrorDialog } from "./FailedFiles";

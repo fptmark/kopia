@@ -1,0 +1,441 @@
+import React, { use, useMemo, useState } from "react";
+import Button from "react-bootstrap/Button";
+import Form from "react-bootstrap/Form";
+import { Link, useLocation, useNavigate } from "react-router";
+import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
+import { objectLink } from "../../utils/formatutils";
+import { errorMessage } from "../api";
+import { formatDate, formatSizeChange } from "../format";
+import { useLoad } from "../hooks";
+import {
+  deleteSnapshots,
+  editSnapshots,
+  loadHistory,
+  loadStorageStats,
+  sizeJump,
+  sourceFromSearch,
+} from "../snapshots";
+import {
+  ConfirmDialog,
+  CountText,
+  DataTable,
+  DateTimeText,
+  Field,
+  Loaded,
+  Notice,
+  Page,
+  Panel,
+  SizeText,
+  Stat,
+  Stats,
+  StatusBadge,
+  Toolbar,
+} from "../ui";
+import { FailedBadge, FailedFilesDialog } from "../ui";
+
+function Retention({ snap, onPin }) {
+  return (
+    <span className="d-inline-flex flex-wrap gap-1 align-items-center">
+      {(snap.retention || []).map((l) => (
+        <StatusBadge key={l} kind="neutral">
+          {l}
+        </StatusBadge>
+      ))}
+      {(snap.pins || []).map((p) => (
+        <button
+          key={p}
+          type="button"
+          className="btn btn-sm p-0 border-0"
+          title="Edit pin"
+          onClick={() => onPin(snap, p)}
+        >
+          <StatusBadge kind="info">pin: {p}</StatusBadge>
+        </button>
+      ))}
+    </span>
+  );
+}
+
+export function SnapshotHistory() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const prefs = use(UIPreferencesContext);
+  const source = useMemo(() => sourceFromSearch(location.search), [location.search]);
+  const [showAll, setShowAll] = useState(false);
+  const [selected, setSelected] = useState({});
+  const [message, setMessage] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [alsoSource, setAlsoSource] = useState(false);
+  const [edit, setEdit] = useState(null); // {type: "note" | "pin", snap, pin?}
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failures, setFailures] = useState(null);
+
+  const state = useLoad(() => loadHistory(source, showAll), [source, showAll]);
+  const stats = useLoad(() => loadStorageStats(source), [source, state.data]);
+
+  const snapshots = useMemo(
+    () => [...(state.data?.snapshots ?? [])].sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
+    [state.data],
+  );
+  const statById = useMemo(() => Object.fromEntries((stats.data?.snapshots ?? []).map((s) => [s.id, s])), [stats.data]);
+  const stored = (stats.data?.snapshots ?? []).reduce((n, s) => n + s.newBytes, 0);
+  const chosen = snapshots.filter((s) => selected[s.id]);
+
+  const report = (kind, t) => setMessage({ kind, text: t });
+  const afterChange = () => {
+    setSelected({});
+    state.reload();
+  };
+
+  const remove = () => {
+    setBusy(true);
+    deleteSnapshots(
+      source,
+      chosen.map((s) => s.id),
+      alsoSource,
+    )
+      .then(() => {
+        if (alsoSource) {
+          navigate("/snapshots");
+          return;
+        }
+        report(
+          "success",
+          `Deleted ${chosen.length} ${chosen.length === 1 ? "snapshot" : "snapshots"}. The space is freed when maintenance next runs.`,
+        );
+        afterChange();
+      })
+      .catch((e) => report("error", "Not deleted: " + errorMessage(e)))
+      .finally(() => {
+        setBusy(false);
+        setConfirmDelete(false);
+      });
+  };
+
+  const saveEdit = (req) => {
+    setBusy(true);
+    editSnapshots(req)
+      .then(() => {
+        setEdit(null);
+        state.reload();
+      })
+      .catch((e) => report("error", "Not saved: " + errorMessage(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const compare = () => {
+    const [a, b] = [...chosen].sort((x, y) => new Date(x.startTime) - new Date(y.startTime));
+    navigate("/snapshots/diff?from=" + a.id + "&to=" + b.id);
+  };
+
+  const columns = [
+    {
+      id: "start",
+      header: "Snapshot",
+      accessor: (s) => s.startTime,
+      cell: (s) => (
+        <>
+          <Link to={objectLink(s.rootID)} state={{ label: source.path }} title="Browse this snapshot">
+            <DateTimeText value={s.startTime} />
+          </Link>
+          {s.description && <div className="nx-muted small">{s.description}</div>}
+        </>
+      ),
+    },
+    {
+      id: "retention",
+      header: "Kept as",
+      cell: (s) => (
+        <Retention
+          snap={s}
+          onPin={(snap, pin) => {
+            setText(pin);
+            setEdit({ type: "pin", snap, pin });
+          }}
+        />
+      ),
+    },
+    {
+      id: "size",
+      header: () => <span title="Total size of the files, before deduplication and compression.">Logical size</span>,
+      align: "end",
+      accessor: (s) => s.summary?.size ?? 0,
+      cell: (s) => {
+        const i = snapshots.indexOf(s);
+        const jump = sizeJump(s.summary?.size, snapshots[i + 1]?.summary?.size);
+        return (
+          <span className="d-inline-flex align-items-center gap-2 justify-content-end">
+            {jump !== null && (
+              <span
+                className={jump > 0 ? "text-warning" : "nx-muted"}
+                data-testid="size-jump"
+                title={`Logical size changed by ${formatSizeChange(jump, !!prefs.bytesStringBase2)} compared with the previous snapshot.`}
+              >
+                {"⚠"} {formatSizeChange(jump, !!prefs.bytesStringBase2)}
+              </span>
+            )}
+            <SizeText bytes={s.summary?.size} />
+            <FailedBadge
+              summ={
+                s.summary?.numFailed
+                  ? { ...s.summary, source: source.path, userName: source.userName, host: source.host }
+                  : null
+              }
+              onOpen={setFailures}
+            />
+          </span>
+        );
+      },
+    },
+    {
+      id: "new",
+      header: () => (
+        <span title="Data this snapshot added to the repository (compressed). Depends on snapshot order.">
+          New data
+        </span>
+      ),
+      align: "end",
+      accessor: (s) => statById[s.id]?.newBytes ?? -1,
+      cell: (s) => {
+        if (stats.loading && !stats.data) {
+          return <span className="nx-muted">{"…"}</span>;
+        }
+        const st = statById[s.id];
+        return st ? (
+          <span title={`${st.newFiles} new files, ${st.newDirs} new folders`}>
+            <SizeText bytes={st.newBytes} />
+          </span>
+        ) : (
+          <span className="nx-muted">{"—"}</span>
+        );
+      },
+    },
+    {
+      id: "files",
+      header: "Files",
+      align: "end",
+      accessor: (s) => s.summary?.files ?? 0,
+      cell: (s) => <CountText n={s.summary?.files ?? 0} />,
+    },
+    {
+      id: "dirs",
+      header: "Folders",
+      align: "end",
+      accessor: (s) => s.summary?.dirs ?? 0,
+      cell: (s) => <CountText n={s.summary?.dirs ?? 0} />,
+    },
+    {
+      id: "actions",
+      header: "",
+      align: "end",
+      cell: (s) => (
+        <span className="d-inline-flex gap-1">
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label={"Note for " + s.id}
+            onClick={() => {
+              setText(s.description || "");
+              setEdit({ type: "note", snap: s });
+            }}
+          >
+            Note
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label={"Pin " + s.id}
+            onClick={() => {
+              setText("do-not-delete");
+              setEdit({ type: "pin", snap: s, pin: "" });
+            }}
+          >
+            Pin
+          </Button>
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <Page
+      title="History"
+      subtitle={
+        <>
+          <span className="nx-path">{source.path}</span>{" "}
+          <span className="nx-muted">
+            {source.userName}@{source.host}
+          </span>
+        </>
+      }
+      back="/snapshots"
+      backLabel="Snapshots"
+    >
+      {message && (
+        <Notice kind={message.kind} onClose={() => setMessage(null)}>
+          {message.text}
+        </Notice>
+      )}
+      <Loaded state={state}>
+        {(d) => (
+          <>
+            <Panel>
+              <Stats data-testid="history-summary">
+                <Stat
+                  label="Snapshots"
+                  value={snapshots.length}
+                  note={
+                    d.unfilteredCount !== d.uniqueCount ? `${d.unfilteredCount} counting identical ones` : undefined
+                  }
+                />
+                <Stat label="Newest" value={<SizeText bytes={snapshots[0]?.summary?.size} />} note="logical size" />
+                <Stat
+                  label="Stored for all of them"
+                  value={stats.data ? <SizeText bytes={stored} /> : "…"}
+                  note="after deduplication and compression"
+                />
+                <Stat
+                  label="Since"
+                  value={snapshots.length ? formatDate(snapshots[snapshots.length - 1].startTime) : "—"}
+                />
+              </Stats>
+            </Panel>
+
+            <Toolbar>
+              <Toolbar.Group label="Show">
+                <Form.Check
+                  type="checkbox"
+                  id="show-identical"
+                  label={`Identical snapshots too (${d.unfilteredCount})`}
+                  checked={showAll}
+                  disabled={d.unfilteredCount === d.uniqueCount && !showAll}
+                  onChange={(e) => setShowAll(e.target.checked)}
+                />
+              </Toolbar.Group>
+              <Toolbar.Group label="Selected" end>
+                <span className={chosen.length ? "" : "nx-muted"}>{chosen.length === 0 ? "none" : chosen.length}</span>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={chosen.length !== 2}
+                  onClick={compare}
+                  title="Select two snapshots to see what changed between them"
+                >
+                  Compare
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={chosen.length === 0}
+                  onClick={() => {
+                    setAlsoSource(false);
+                    setConfirmDelete(true);
+                  }}
+                >
+                  Delete
+                </Button>
+              </Toolbar.Group>
+            </Toolbar>
+
+            <DataTable
+              label="snapshots"
+              data={snapshots}
+              columns={columns}
+              getRowId={(s) => s.id}
+              selection={{ selected, onChange: setSelected }}
+              initialSort={{ id: "start", desc: true }}
+              emptyText="This folder has no snapshots."
+            />
+            {snapshots.length === 0 && (
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setAlsoSource(true);
+                  setConfirmDelete(true);
+                }}
+                data-testid="delete-source"
+              >
+                Remove this folder and its policy
+              </Button>
+            )}
+          </>
+        )}
+      </Loaded>
+
+      <ConfirmDialog
+        show={confirmDelete}
+        title={alsoSource && chosen.length === 0 ? "Remove this folder?" : "Delete snapshots?"}
+        confirmLabel="Delete"
+        danger
+        busy={busy}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={remove}
+      >
+        {chosen.length > 0 ? (
+          <p>
+            Delete <b>{chosen.length}</b> selected {chosen.length === 1 ? "snapshot" : "snapshots"} of{" "}
+            <span className="nx-path">{source.path}</span>? This cannot be undone.
+          </p>
+        ) : (
+          <p>
+            Remove <span className="nx-path">{source.path}</span> from the list, with its policy?
+          </p>
+        )}
+        {chosen.length > 0 && chosen.length === snapshots.length && (
+          <Form.Check
+            type="checkbox"
+            id="also-source"
+            label="Also remove this folder and its policy."
+            checked={alsoSource}
+            onChange={(e) => setAlsoSource(e.target.checked)}
+          />
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        show={edit?.type === "note"}
+        title="Note on this snapshot"
+        confirmLabel="Save"
+        busy={busy}
+        disabled={edit && text === (edit.snap.description || "")}
+        onCancel={() => setEdit(null)}
+        onConfirm={() => saveEdit({ snapshots: [edit.snap.id], description: text })}
+      >
+        <Field label="Note">
+          {(id) => (
+            <Form.Control id={id} as="textarea" rows={3} value={text} onChange={(e) => setText(e.target.value)} />
+          )}
+        </Field>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        show={edit?.type === "pin"}
+        title={edit?.pin ? "Pin" : "Pin this snapshot"}
+        confirmLabel={edit?.pin ? "Update" : "Pin"}
+        busy={busy}
+        disabled={!text || (edit && text === edit.pin)}
+        onCancel={() => setEdit(null)}
+        onConfirm={() =>
+          saveEdit({ snapshots: [edit.snap.id], addPins: [text], removePins: edit.pin ? [edit.pin] : [] })
+        }
+      >
+        <Field label="Name of the pin" help="A pinned snapshot is kept whatever the retention rules say.">
+          {(id) => <Form.Control id={id} value={text} onChange={(e) => setText(e.target.value)} />}
+        </Field>
+        {edit?.pin && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => saveEdit({ snapshots: [edit.snap.id], removePins: [edit.pin] })}
+          >
+            Remove this pin
+          </Button>
+        )}
+      </ConfirmDialog>
+
+      {failures && <FailedFilesDialog summ={failures} onClose={() => setFailures(null)} />}
+    </Page>
+  );
+}
