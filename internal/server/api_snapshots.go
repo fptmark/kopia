@@ -12,6 +12,7 @@ import (
 	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
+	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
 
 func handleListSnapshots(ctx context.Context, rc requestContext) (any, *apiError) {
@@ -49,6 +50,50 @@ func handleListSnapshots(ctx context.Context, rc requestContext) (any, *apiError
 		resp.UniqueCount = len(resp.Snapshots)
 	} else {
 		resp.UniqueCount = len(uniqueSnapshots(resp.Snapshots))
+	}
+
+	return resp, nil
+}
+
+// handleSnapshotStorageStats reports, for every snapshot of one source, how much data it added to the
+// repository. It walks all the snapshots, so the UI asks for it separately from the list.
+func handleSnapshotStorageStats(ctx context.Context, rc requestContext) (any, *apiError) {
+	si := getSnapshotSourceFromURL(rc.req.URL)
+
+	manifestIDs, err := snapshot.ListSnapshotManifests(ctx, rc.rep, &si, nil)
+	if err != nil {
+		return nil, internalServerError(err)
+	}
+
+	manifests, err := snapshot.LoadSnapshots(ctx, rc.rep, manifestIDs)
+	if err != nil {
+		return nil, internalServerError(err)
+	}
+
+	resp := &serverapi.SnapshotStorageStatsResponse{
+		Snapshots: []*serverapi.SnapshotStorageStat{},
+	}
+
+	if len(manifests) == 0 {
+		return resp, nil
+	}
+
+	manifests = snapshot.SortByTime(manifests, false)
+
+	if err := snapshotfs.CalculateStorageStats(ctx, rc.rep, manifests, func(m *snapshot.Manifest) error {
+		n := m.StorageStats.NewData
+
+		resp.Snapshots = append(resp.Snapshots, &serverapi.SnapshotStorageStat{
+			ID:               m.ID,
+			NewBytes:         n.PackedContentBytes,
+			NewOriginalBytes: n.OriginalContentBytes,
+			NewFiles:         n.FileObjectCount,
+			NewDirs:          n.DirObjectCount,
+		})
+
+		return nil
+	}); err != nil {
+		return nil, internalServerError(err)
 	}
 
 	return resp, nil

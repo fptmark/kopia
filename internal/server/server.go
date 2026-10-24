@@ -138,6 +138,8 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 
 	// snapshots
 	m.HandleFunc("/api/v1/snapshots", s.handleUI(handleListSnapshots)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/snapshots/storage-stats", s.handleUI(handleSnapshotStorageStats)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/snapshots/diff", s.handleUI(handleSnapshotDiff)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/snapshots/delete", s.handleUI(handleDeleteSnapshots)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/snapshots/edit", s.handleUI(handleEditSnapshots)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/policy", s.handleUI(handlePolicyGet)).Methods(http.MethodGet)

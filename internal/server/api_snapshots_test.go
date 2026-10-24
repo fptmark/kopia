@@ -256,3 +256,152 @@ func TestEditSnapshots(t *testing.T) {
 	require.Equal(t, []string{"pin2"}, updated[0].Pins)
 	require.Equal(t, newDesc2, updated[0].Description)
 }
+
+func TestSnapshotStorageStats(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+
+	si := env.LocalPathSourceInfo("/dummy/path")
+
+	var id1, id2, id3 manifest.ID
+
+	require.NoError(t, repo.WriteSession(ctx, env.Repository, repo.WriteSessionOptions{Purpose: "Test"}, func(ctx context.Context, w repo.RepositoryWriter) error {
+		u := upload.NewUploader(w)
+
+		dir := mockfs.NewDirectory()
+		dir.AddFile("file1", []byte{1, 2, 3}, 0o644)
+
+		m1, err := u.Upload(ctx, dir, nil, si)
+		require.NoError(t, err)
+		id1, err = snapshot.SaveSnapshot(ctx, w, m1)
+		require.NoError(t, err)
+
+		// nothing changed: adds no new data
+		m2, err := u.Upload(ctx, dir, nil, si)
+		require.NoError(t, err)
+		id2, err = snapshot.SaveSnapshot(ctx, w, m2)
+		require.NoError(t, err)
+
+		dir.AddFile("file2", []byte{4, 5, 6, 7}, 0o644)
+
+		m3, err := u.Upload(ctx, dir, nil, si)
+		require.NoError(t, err)
+		id3, err = snapshot.SaveSnapshot(ctx, w, m3)
+		require.NoError(t, err)
+
+		return nil
+	}))
+
+	srvInfo := servertesting.StartServer(t, env, false)
+
+	cli, err := apiclient.NewKopiaAPIClient(apiclient.Options{
+		BaseURL:                             srvInfo.BaseURL,
+		TrustedServerCertificateFingerprint: srvInfo.TrustedServerCertificateFingerprint,
+		Username:                            servertesting.TestUIUsername,
+		Password:                            servertesting.TestUIPassword,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cli.FetchCSRFTokenForTesting(ctx))
+
+	resp, err := serverapi.SnapshotStorageStats(ctx, cli, si)
+	require.NoError(t, err)
+	require.Len(t, resp.Snapshots, 3)
+
+	byID := map[manifest.ID]*serverapi.SnapshotStorageStat{}
+	for _, s := range resp.Snapshots {
+		byID[s.ID] = s
+	}
+
+	require.Equal(t, int32(1), byID[id1].NewFiles)
+	require.Positive(t, byID[id1].NewBytes)
+	require.Zero(t, byID[id2].NewFiles)
+	require.Zero(t, byID[id2].NewBytes)
+	require.Equal(t, int32(1), byID[id3].NewFiles)
+
+	// a source with no snapshots is an empty list, not an error
+	resp, err = serverapi.SnapshotStorageStats(ctx, cli, env.LocalPathSourceInfo("/no/such/path"))
+	require.NoError(t, err)
+	require.Empty(t, resp.Snapshots)
+}
+
+func TestSnapshotDiff(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+
+	si := env.LocalPathSourceInfo("/dummy/path")
+
+	var id1, id2 manifest.ID
+
+	require.NoError(t, repo.WriteSession(ctx, env.Repository, repo.WriteSessionOptions{Purpose: "Test"}, func(ctx context.Context, w repo.RepositoryWriter) error {
+		u := upload.NewUploader(w)
+
+		dir := mockfs.NewDirectory()
+		dir.AddFile("keep", []byte{1}, 0o644)
+		dir.AddFile("change", []byte{1, 2}, 0o644)
+		dir.AddFile("gone", []byte{1, 2, 3}, 0o644)
+		dir.AddDir("same", 0o755).AddFile("f", []byte{9}, 0o644)
+		dir.AddDir("sub", 0o755).AddFile("old", []byte{5, 5}, 0o644)
+
+		m1, err := u.Upload(ctx, dir, nil, si)
+		require.NoError(t, err)
+		id1, err = snapshot.SaveSnapshot(ctx, w, m1)
+		require.NoError(t, err)
+
+		dir2 := mockfs.NewDirectory()
+		dir2.AddFile("keep", []byte{1}, 0o644)
+		dir2.AddFile("change", []byte{1, 2, 3, 4}, 0o644)
+		dir2.AddFile("new", []byte{7, 7, 7, 7, 7}, 0o644)
+		dir2.AddDir("same", 0o755).AddFile("f", []byte{9}, 0o644)
+		dir2.AddDir("sub", 0o755).AddFile("old", []byte{5, 5}, 0o644)
+		dir2.AddDir("fresh", 0o755).AddFile("a", []byte{1, 1}, 0o644)
+
+		m2, err := u.Upload(ctx, dir2, nil, si)
+		require.NoError(t, err)
+		id2, err = snapshot.SaveSnapshot(ctx, w, m2)
+		require.NoError(t, err)
+
+		return nil
+	}))
+
+	srvInfo := servertesting.StartServer(t, env, false)
+
+	cli, err := apiclient.NewKopiaAPIClient(apiclient.Options{
+		BaseURL:                             srvInfo.BaseURL,
+		TrustedServerCertificateFingerprint: srvInfo.TrustedServerCertificateFingerprint,
+		Username:                            servertesting.TestUIUsername,
+		Password:                            servertesting.TestUIPassword,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cli.FetchCSRFTokenForTesting(ctx))
+
+	resp, err := serverapi.SnapshotDiff(ctx, cli, id1, id2)
+	require.NoError(t, err)
+
+	require.Equal(t, si, resp.Source)
+
+	got := map[string]string{}
+	for _, e := range resp.Entries {
+		got[e.Path] = e.Change
+	}
+
+	require.Equal(t, map[string]string{
+		"change": "modified",
+		"gone":   "removed",
+		"new":    "added",
+		"fresh":  "added",
+	}, got)
+
+	require.Equal(t, int64(2), resp.Added) // new + fresh/a
+	require.Equal(t, int64(7), resp.AddedBytes)
+	require.Equal(t, int64(1), resp.Removed)
+	require.Equal(t, int64(3), resp.RemovedBytes)
+	require.Equal(t, int64(1), resp.Modified)
+	require.Equal(t, int64(2), resp.ModifiedDeltaBytes)
+
+	// the other way round
+	resp, err = serverapi.SnapshotDiff(ctx, cli, id2, id1)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), resp.Added)
+	require.Equal(t, int64(2), resp.Removed)
+
+	_, err = serverapi.SnapshotDiff(ctx, cli, id1, manifest.ID("0000"))
+	require.Error(t, err)
+}

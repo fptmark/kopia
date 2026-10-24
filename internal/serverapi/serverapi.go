@@ -198,6 +198,51 @@ type SnapshotsResponse struct {
 	UniqueCount     int         `json:"uniqueCount"`
 }
 
+// SnapshotStorageStat describes how much data one snapshot added to the repository.
+type SnapshotStorageStat struct {
+	ID manifest.ID `json:"id"`
+	// bytes stored (compressed) for content first seen in this snapshot; depends on snapshot order.
+	NewBytes int64 `json:"newBytes"`
+	// bytes before compression for the same content.
+	NewOriginalBytes int64 `json:"newOriginalBytes"`
+	NewFiles         int32 `json:"newFiles"`
+	NewDirs          int32 `json:"newDirs"`
+}
+
+// SnapshotStorageStatsResponse contains the storage cost of each snapshot of one source.
+type SnapshotStorageStatsResponse struct {
+	Snapshots []*SnapshotStorageStat `json:"snapshots"`
+}
+
+// SnapshotDiffEntry is one difference between two snapshots. A directory that exists in only one
+// of them is a single entry that carries its totals.
+type SnapshotDiffEntry struct {
+	Path    string `json:"path"`
+	Change  string `json:"change"` // added, removed or modified
+	IsDir   bool   `json:"isDir"`
+	OldSize int64  `json:"oldSize"`
+	NewSize int64  `json:"newSize"`
+	// files under an added or removed directory
+	Files int64 `json:"files,omitempty"`
+}
+
+// SnapshotDiffResponse lists what changed between two snapshots of one source.
+type SnapshotDiffResponse struct {
+	Source    snapshot.SourceInfo  `json:"source"`
+	From      *Snapshot            `json:"from"`
+	To        *Snapshot            `json:"to"`
+	Entries   []*SnapshotDiffEntry `json:"entries"`
+	Truncated bool                 `json:"truncated"`
+	// totals count every changed file, also when the list is truncated
+	Added        int64 `json:"added"`
+	Removed      int64 `json:"removed"`
+	Modified     int64 `json:"modified"`
+	AddedBytes   int64 `json:"addedBytes"`
+	RemovedBytes int64 `json:"removedBytes"`
+	// sum of (new size - old size) over modified files
+	ModifiedDeltaBytes int64 `json:"modifiedDeltaBytes"`
+}
+
 // DeleteSnapshotsRequest contains request to delete a number of snapshots and optionally the
 // entire snapshot source.
 type DeleteSnapshotsRequest struct {

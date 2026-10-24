@@ -10,6 +10,7 @@ import (
 	"github.com/kopia/kopia/internal/apiclient"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/repo/blob/throttling"
+	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
@@ -159,6 +160,28 @@ func ListSnapshots(ctx context.Context, c *apiclient.KopiaAPIClient, src snapsho
 
 	if err := c.Get(ctx, u, nil, resp); err != nil {
 		return nil, errors.Wrap(err, "ListSnapshots")
+	}
+
+	return resp, nil
+}
+
+// SnapshotStorageStats returns the data each snapshot of a source added to the repository.
+func SnapshotStorageStats(ctx context.Context, c *apiclient.KopiaAPIClient, src snapshot.SourceInfo) (*SnapshotStorageStatsResponse, error) {
+	resp := &SnapshotStorageStatsResponse{}
+
+	if err := c.Get(ctx, "snapshots/storage-stats"+matchSourceParameters(&src), nil, resp); err != nil {
+		return nil, errors.Wrap(err, "SnapshotStorageStats")
+	}
+
+	return resp, nil
+}
+
+// SnapshotDiff lists what changed between two snapshots (by manifest ID) of one source.
+func SnapshotDiff(ctx context.Context, c *apiclient.KopiaAPIClient, from, to manifest.ID) (*SnapshotDiffResponse, error) {
+	resp := &SnapshotDiffResponse{}
+
+	if err := c.Get(ctx, "snapshots/diff?from="+string(from)+"&to="+string(to), nil, resp); err != nil {
+		return nil, errors.Wrap(err, "SnapshotDiff")
 	}
 
 	return resp, nil
