@@ -193,3 +193,14 @@ func TestMatcherFollowsKopiasRules(t *testing.T) {
 	_, err := exclusion.NewMatcher("")
 	require.Error(t, err)
 }
+
+func TestReconciledIsRemembered(t *testing.T) {
+	s, file := open(t)
+	require.False(t, s.Reconciled())
+	require.NoError(t, s.MarkReconciled())
+	require.True(t, s.Reconciled())
+
+	reopened, err := exclusion.Open(file, time.Now)
+	require.NoError(t, err)
+	require.True(t, reopened.Reconciled())
+}

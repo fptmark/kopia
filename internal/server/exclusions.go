@@ -244,6 +244,11 @@ func (s *Server) applyExclusions(ctx context.Context, rep repo.Repository, sourc
 		}
 	}
 
+	// from now on a policy that differs from the rules is a problem worth an alert
+	if err := store.MarkReconciled(); err != nil {
+		return changes, errors.Wrap(err, "unable to record that the rules were applied")
+	}
+
 	return changes, nil
 }
 
@@ -311,7 +316,8 @@ func exclusionDriftSummary(d []exclusionDrift) string {
 }
 
 // exclusionCheck is the health check that Kopia's policies still say what the rules say. It reports nothing
-// (ok is false) when the rules are not set up or not imported yet, since there is nothing to compare with.
+// (ok is false) when the rules are not set up or not imported yet, since there is nothing to compare with, and
+// it only fails once the rules have been applied: before that the policies are expected to differ.
 func (s *Server) exclusionCheck(ctx context.Context, rep repo.Repository) (verifyCheck, bool) {
 	if s.exclusions == nil || !s.exclusions.Imported() {
 		return verifyCheck{}, false
@@ -324,6 +330,11 @@ func (s *Server) exclusionCheck(ctx context.Context, rep repo.Repository) (verif
 
 	if len(drift) == 0 {
 		return passed(checkExclusions, fmt.Sprintf("%d rules, all in force", len(s.exclusions.Rules()))), true
+	}
+
+	// the rules have never been applied: the difference is expected and is shown on the Exclusions page
+	if !s.exclusions.Reconciled() {
+		return passed(checkExclusions, "not applied to the policies yet: "+exclusionDriftSummary(drift)+" (Exclusions page, Fix)"), true
 	}
 
 	return failed(checkExclusions, exclusionDriftSummary(drift)+" (Exclusions page, Fix)"), true

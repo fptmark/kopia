@@ -52,6 +52,9 @@ func (r Rule) Global() bool { return r.Source == "" }
 type fileContent struct {
 	Version    int           `json:"version"`
 	ImportedAt *time.Time    `json:"importedAt,omitempty"`
+	// ReconciledAt is when the rules were last written into the policies. Until then the policies are
+	// expected to differ from the rules (nothing has been applied), which is not a problem to alert about.
+	ReconciledAt *time.Time `json:"reconciledAt,omitempty"`
 	Rules      []Rule        `json:"rules"`
 	Removed    []RemovedRule `json:"removed,omitempty"`
 }
@@ -107,6 +110,32 @@ func (s *Store) Imported() bool {
 	defer s.mu.RUnlock()
 
 	return s.content.ImportedAt != nil
+}
+
+// Reconciled reports whether the rules have ever been written into the policies.
+func (s *Store) Reconciled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.content.ReconciledAt != nil
+}
+
+// MarkReconciled records that the rules were written into the policies now.
+func (s *Store) MarkReconciled() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := s.now()
+	old := s.content.ReconciledAt
+	s.content.ReconciledAt = &now
+
+	if err := s.save(); err != nil {
+		s.content.ReconciledAt = old
+
+		return err
+	}
+
+	return nil
 }
 
 // ValidatePattern checks a pattern and returns it trimmed.
