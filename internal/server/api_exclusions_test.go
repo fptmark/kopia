@@ -322,3 +322,53 @@ func TestExclusionsNetRulesAndPreview(t *testing.T) {
 
 	require.Error(t, cli.Post(ctx, "exclusions/preview", map[string]any{"source": "/none", "patterns": []string{"a"}}, &preview))
 }
+
+func TestExclusionsCoveredPaths(t *testing.T) {
+	ctx, cli, _ := exclusionsEnv(t)
+
+	var list exclusionsResp
+	require.NoError(t, cli.Get(ctx, "exclusions", nil, &list))
+
+	covered := func(source string, paths ...string) map[string]string {
+		var resp struct {
+			Covered []struct {
+				Path    string `json:"path"`
+				Pattern string `json:"pattern"`
+			} `json:"covered"`
+		}
+
+		require.NoError(t, cli.Post(ctx, "exclusions/covered", map[string]any{"source": source, "paths": paths}, &resp))
+
+		got := map[string]string{}
+		for _, c := range resp.Covered {
+			got[c.Path] = c.Pattern
+		}
+
+		return got
+	}
+
+	paths := []string{
+		"/home/keep.txt",
+		"/home/milo.db-wal",
+		"/home/node_modules",
+		"/home/Projects/a/node_modules/m.js",
+		"/home/Library/Caches/c",
+		"/elsewhere/node_modules/x.js",
+	}
+
+	require.Equal(t, map[string]string{
+		"/home/milo.db-wal":                  "/milo.db-wal",
+		"/home/node_modules":                 "node_modules/",
+		"/home/Projects/a/node_modules/m.js": "node_modules/",
+	}, covered("/home", paths...))
+
+	// a rule that belongs to /apps does not cover /home
+	require.NoError(t, cli.Post(ctx, "exclusions", map[string]any{
+		"rules": []map[string]string{{"source": "/apps", "pattern": "Library/Caches"}},
+	}, &addResp{}))
+
+	require.Equal(t, map[string]string{"/apps/Library/Caches/c": "Library/Caches"}, covered("/apps", "/apps/Library/Caches/c", "/apps/keep.txt"))
+	require.NotContains(t, covered("/home", paths...), "/home/Library/Caches/c")
+
+	require.Error(t, cli.Post(ctx, "exclusions/covered", map[string]any{"paths": []string{"/x"}}, &struct{}{}))
+}

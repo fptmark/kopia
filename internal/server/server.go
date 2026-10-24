@@ -165,6 +165,7 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/exclusions", s.handleUI(handleExclusionsAdd)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/exclusions/net", s.handleUI(handleExclusionsNet)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/exclusions/reconcile", s.handleUI(handleExclusionsReconcile)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/exclusions/covered", s.handleUI(handleExclusionsCovered)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/exclusions/preview", s.handleUI(handleExclusionsPreview)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/exclusions/{id}", s.handleUI(handleExclusionsRemove)).Methods(http.MethodDelete)
 	m.HandleFunc("/api/v1/ignored-errors", s.handleUIPossiblyNotConnected(handleIgnoredErrorsList)).Methods(http.MethodGet)

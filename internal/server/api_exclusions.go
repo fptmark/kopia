@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -19,6 +20,7 @@ const (
 	maxExclusionRulesPerRequest = 500
 	exclusionPreviewTimeout     = 90 * time.Second
 	exclusionPreviewTop         = 10
+	maxExclusionCoveredPaths    = 2000
 )
 
 func exclusionServer(rc requestContext) (*Server, *apiError) {
@@ -509,4 +511,103 @@ func (w *previewWalker) walk(ctx context.Context, dir fs.Directory, rel string) 
 	}
 
 	return nil
+}
+
+type exclusionCoveredRequest struct {
+	Source string   `json:"source"`
+	Paths  []string `json:"paths"`
+}
+
+type exclusionCoveredEntry struct {
+	Path    string `json:"path"`
+	Pattern string `json:"pattern"`
+}
+
+type exclusionCoveredResponse struct {
+	Covered []exclusionCoveredEntry `json:"covered"`
+}
+
+// handleExclusionsCovered says which of the given absolute paths a source's rules already leave out, and
+// by which pattern, so a list of failed files can show that nothing is left to do for them.
+func handleExclusionsCovered(ctx context.Context, rc requestContext) (any, *apiError) {
+	srv, apiErr := exclusionServer(rc)
+	if apiErr != nil {
+		return nil, apiErr
+	}
+
+	var req exclusionCoveredRequest
+	if err := json.Unmarshal(rc.body, &req); err != nil {
+		return nil, requestError(serverapi.ErrorMalformedRequest, "malformed request body")
+	}
+
+	src := exclusion.NormalizeSource(req.Source)
+	if src == "" || len(req.Paths) > maxExclusionCoveredPaths {
+		return nil, requestError(serverapi.ErrorMalformedRequest, "a source and up to 2000 paths are required")
+	}
+
+	if err := srv.ensureExclusionsImported(ctx, rc.rep); err != nil {
+		return nil, internalServerError(err)
+	}
+
+	type compiled struct {
+		pattern string
+		m       *exclusion.Matcher
+	}
+
+	var matchers []compiled
+
+	for _, p := range srv.exclusions.NetPatterns(src) {
+		if m, err := exclusion.NewMatcher(p); err == nil {
+			matchers = append(matchers, compiled{p, m})
+		}
+	}
+
+	prefix := strings.TrimSuffix(src, "/") + "/"
+	out := &exclusionCoveredResponse{Covered: []exclusionCoveredEntry{}}
+
+	for _, path := range req.Paths {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(path, prefix), "/"), "/")
+
+		if pattern, ok := firstCovering(parts, func(rel string, isDir bool) (string, bool) {
+			for _, c := range matchers {
+				if c.m.Match(rel, isDir) {
+					return c.pattern, true
+				}
+			}
+
+			return "", false
+		}); ok {
+			out.Covered = append(out.Covered, exclusionCoveredEntry{Path: path, Pattern: pattern})
+		}
+	}
+
+	return out, nil
+}
+
+// firstCovering walks down the path from the source folder and returns the first match. A folder that is
+// left out takes everything below it; the failed entry itself may be a file or a folder.
+func firstCovering(parts []string, match func(rel string, isDir bool) (string, bool)) (string, bool) {
+	for i := range parts {
+		rel := strings.Join(parts[:i+1], "/")
+
+		if i < len(parts)-1 {
+			if p, ok := match(rel, true); ok {
+				return p, true
+			}
+
+			continue
+		}
+
+		for _, isDir := range []bool{false, true} {
+			if p, ok := match(rel, isDir); ok {
+				return p, true
+			}
+		}
+	}
+
+	return "", false
 }
