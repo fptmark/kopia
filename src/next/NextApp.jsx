@@ -10,6 +10,9 @@ import { Exclusions } from "./pages/Exclusions";
 import { Snapshots } from "./pages/Snapshots";
 import { SnapshotHistory } from "./pages/SnapshotHistory";
 import { SnapshotDiff } from "./pages/SnapshotDiff";
+import { Files } from "./pages/Files";
+import { Tasks } from "./pages/Tasks";
+import { Task } from "./pages/Task";
 
 setupApi();
 
@@ -109,6 +112,9 @@ export default function NextApp() {
             <Route path="snapshots/single-source" element={<SnapshotHistory />} />
             <Route path="snapshots/diff" element={<SnapshotDiff />} />
             <Route path="exclusions" element={<Exclusions />} />
+            <Route path="files" element={<Files />} />
+            <Route path="tasks" element={<Tasks />} />
+            <Route path="tasks/:tid" element={<Task />} />
             <Route path="/" element={<Navigate to="/snapshots" replace />} />
             <Route path="*" element={<div className="nx-empty">Not built yet.</div>} />
           </Routes>

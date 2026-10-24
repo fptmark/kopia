@@ -10,3 +10,4 @@ export { TabNav } from "./TabNav";
 export { SearchBox } from "./SearchBox";
 export { DataTable } from "./DataTable";
 export { FailedFilesDialog, FailedBadge, TaskErrorDialog } from "./FailedFiles";
+export { LogView } from "./LogView";

@@ -356,3 +356,18 @@
   justify-content: center;
   padding: 3rem 0;
 }
+
+/* log lines */
+.nx-log {
+  overflow: auto;
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius);
+  background: var(--nx-surface-alt);
+  padding: 0.5rem 0.75rem;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 0.8rem;
+}
+.nx-log-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
