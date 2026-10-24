@@ -72,3 +72,29 @@ func TestVerificationsKeepTheLatestOfEachKindWithTheirFailures(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, none)
 }
+
+func TestNewDataVerificationCountsOnlyRecentOnesOfThatKind(t *testing.T) {
+	s, _ := openStore(t)
+	now := time.Now().UTC()
+
+	rec := func(mode string, ok bool, ago time.Duration) {
+		_, err := s.RecordVerification(taskstore.Verification{
+			SnapshotID: "s", Source: "u@h:/x", Mode: mode, StartedAt: now.Add(-ago), FinishedAt: now.Add(-ago), OK: ok,
+		}, nil)
+		require.NoError(t, err)
+	}
+
+	total, failed, err := s.NewDataVerificationCounts(now.Add(-24 * time.Hour))
+	require.NoError(t, err)
+	require.Zero(t, total+failed)
+
+	rec("new", true, time.Hour)
+	rec("new", false, 2*time.Hour)
+	rec("new", false, 30*time.Hour) // too old
+	rec("full", false, time.Hour)   // another kind
+
+	total, failed, err = s.NewDataVerificationCounts(now.Add(-24 * time.Hour))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.EqualValues(t, 1, failed)
+}

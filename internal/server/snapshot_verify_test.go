@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -231,4 +233,97 @@ func TestSnapshotVerifyTaskRecordsTheResultAndEveryFailure(t *testing.T) {
 	s.snapVerifs.mu.Unlock()
 
 	require.False(t, s.startSnapshotVerify(ctx, env.Repository, m, taskstore.VerifyModeFull, 100))
+}
+
+func writePrefs(t *testing.T, s *Server, json string) {
+	t.Helper()
+
+	f := filepath.Join(t.TempDir(), "ui-preferences.json")
+	require.NoError(t, os.WriteFile(f, []byte(json), 0o600))
+
+	s.options.UIPreferencesFile = f
+}
+
+func TestNewlyWrittenDataIsReadBackAfterASnapshotWhenTheSettingIsOn(t *testing.T) {
+	ctx, env, m := manyFilesEnv(t)
+	s, h, _ := newHistoryServer(t)
+	s.rep = env.Repository
+
+	idle := func() {
+		require.Eventually(t, func() bool { return len(s.snapVerifs.list(nil)) == 0 }, 30*time.Second, 20*time.Millisecond)
+	}
+
+	recorded := func() []taskstore.Verification {
+		got, err := h.LatestVerifications([]string{string(m.ID)})
+		require.NoError(t, err)
+
+		return got
+	}
+
+	// off: nothing happens, whatever the outcome of the snapshot
+	writePrefs(t, s, `{"verifyNewData":false}`)
+	s.verifyNewData(ctx, m, nil)
+	idle()
+	require.Empty(t, recorded())
+
+	// on, but the snapshot failed or was not saved: nothing to read back
+	writePrefs(t, s, `{"verifyNewData":true}`)
+	s.verifyNewData(ctx, m, errTest)
+
+	unsaved := *m
+	unsaved.ID = ""
+	s.verifyNewData(ctx, &unsaved, nil)
+	idle()
+	require.Empty(t, recorded())
+
+	// on: the data the snapshot added is read back and the result kept
+	s.verifyNewData(ctx, m, nil)
+	idle()
+
+	got := recorded()
+	require.Len(t, got, 1)
+	require.Equal(t, taskstore.VerifyModeNew, got[0].Mode)
+	require.True(t, got[0].OK)
+	require.Positive(t, got[0].Files)
+}
+
+func TestNewDataHealthCheckFailsForADayAfterABadReadBack(t *testing.T) {
+	s, h, _ := newHistoryServer(t)
+	v := &verifier{srv: s}
+
+	_, ok := v.newDataCheck()
+	require.False(t, ok, "no setting and no results: no row")
+
+	writePrefs(t, s, `{"verifyNewData":true}`)
+
+	c, ok := v.newDataCheck()
+	require.True(t, ok)
+	require.True(t, c.OK)
+	require.Contains(t, c.Detail, "no snapshot")
+
+	rec := func(good bool) {
+		_, err := h.RecordVerification(taskstore.Verification{
+			SnapshotID: "s", Source: "u@h:/x", Mode: taskstore.VerifyModeNew, StartedAt: time.Now(), FinishedAt: time.Now(), OK: good,
+		}, nil)
+		require.NoError(t, err)
+	}
+
+	rec(true)
+
+	c, _ = v.newDataCheck()
+	require.True(t, c.OK)
+	require.Contains(t, c.Detail, "1 snapshots")
+
+	rec(false)
+
+	c, _ = v.newDataCheck()
+	require.False(t, c.OK)
+	require.Contains(t, c.Detail, "1 of 2")
+
+	// results from before the setting was turned off still count, so a failure is not hidden by switching it off
+	writePrefs(t, s, `{"verifyNewData":false}`)
+
+	c, ok = v.newDataCheck()
+	require.True(t, ok)
+	require.False(t, c.OK)
 }

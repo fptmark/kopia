@@ -1076,6 +1076,7 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 	}
 
 	s.recordSnapshotResult(ctx, taskID, src, &result.Manifest)
+	s.verifyNewData(ctx, &result.Manifest, err)
 
 	var failedCount, totalFiles int64
 

@@ -64,11 +64,14 @@ const (
 	verifyFailedFilesJump = 10
 
 	verifyRemindEvery = 12 * time.Hour
+
+	// a read-back of the data a snapshot added that failed keeps the health check failing for this long.
+	verifyNewDataWindow = 24 * time.Hour
 )
 
 // verifyCheckOrder is the order checks are listed in; unknown names go last.
 var verifyCheckOrder = []string{ //nolint:gochecknoglobals
-	checkReadable, checkRecent, checkFailedFilesName, checkExclusions, checkSample, checkRestore,
+	checkReadable, checkRecent, checkFailedFilesName, checkExclusions, checkNewData, checkSample, checkRestore,
 }
 
 const (
@@ -76,6 +79,7 @@ const (
 	checkRecent          = "Snapshots are recent"
 	checkFailedFilesName = "Snapshots skip no unexpected files"
 	checkExclusions      = "Exclusion rules match the policies"
+	checkNewData         = "Data added by recent snapshots reads back"
 	checkSample          = "Sample of stored data verifies"
 	checkRestore         = "A random file restores identically"
 )
@@ -687,6 +691,10 @@ func (v *verifier) quick(ctx context.Context) ([]verifyCheck, []*snapshot.Manife
 		checks = append(checks, c)
 	}
 
+	if c, ok := v.newDataCheck(); ok {
+		checks = append(checks, c)
+	}
+
 	return checks, ms
 }
 
@@ -776,6 +784,33 @@ func (v *verifier) deepChecks(ctx context.Context, ctrl uitask.Controller) []ver
 	ctrl.ReportProgressInfo("restoring a random file")
 
 	return append(checks, v.readBackCheck(ctx, latest))
+}
+
+// newDataCheck reports the read-backs of the data each snapshot added: failing when any in the last day failed.
+// It is left out when the setting is off and nothing has been checked.
+func (v *verifier) newDataCheck() (verifyCheck, bool) {
+	h := v.srv.options.TaskHistory
+	if h == nil {
+		return verifyCheck{}, false
+	}
+
+	prefs, _ := getUIPreferencesOrEmpty(v.srv)
+
+	total, bad, err := h.NewDataVerificationCounts(clock.Now().Add(-verifyNewDataWindow))
+	if err != nil {
+		return failed(checkNewData, "unable to read the results: "+err.Error()), true
+	}
+
+	switch {
+	case !prefs.VerifyNewData && total == 0:
+		return verifyCheck{}, false
+	case bad > 0:
+		return failed(checkNewData, fmt.Sprintf("%d of %d read-backs in the last 24 hours found data that does not read back (History page, Verified column)", bad, total)), true
+	case total == 0:
+		return passed(checkNewData, "no snapshot has finished in the last 24 hours"), true
+	default:
+		return passed(checkNewData, fmt.Sprintf("%d snapshots in the last 24 hours, all the data they added reads back", total)), true
+	}
 }
 
 // sampleCheck reads a sample back and records what it found, with every failing file.

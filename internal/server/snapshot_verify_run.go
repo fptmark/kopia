@@ -237,3 +237,28 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 
 	return nil
 }
+
+// verifyNewData reads back the data a snapshot just added, when the setting asks for it and the snapshot was saved.
+func (s *Server) verifyNewData(ctx context.Context, m *snapshot.Manifest, snapshotErr error) {
+	if snapshotErr != nil || m.ID == "" || m.IncompleteReason != "" || m.RootEntry == nil {
+		return
+	}
+
+	prefs, err := getUIPreferencesOrEmpty(s)
+	if err != nil || !prefs.VerifyNewData {
+		return
+	}
+
+	s.serverMutex.RLock()
+	rep := s.rep
+	s.serverMutex.RUnlock()
+
+	if rep == nil {
+		return
+	}
+
+	// the manifest is shared with the notification code after this returns
+	cp := *m
+
+	s.startSnapshotVerify(ctx, rep, &cp, taskstore.VerifyModeNew, 100)
+}

@@ -382,6 +382,7 @@ type UIPreferences struct {
 	Locale                 string `json:"locale"`                 // Specifies the locale used by the UI for formatting numbers and dates
 	KeepAwake              string `json:"keepAwake"`              // Prevent macOS sleep while snapshots run: "" or "never", "idle" (any power source), "ac" (only on AC power)
 	VerifierIMessageTo     string `json:"verifierIMessageTo"`     // Phone number or Apple ID that receives an iMessage when the backup health check fails ("" sends none)
+	VerifyNewData          bool   `json:"verifyNewData"`          // If `true`, read back the data each snapshot added to the repository right after it finishes
 }
 
 // VerifyFailure is a file that did not read back.
