@@ -82,8 +82,8 @@ export function SnapshotHistory() {
     [state.data],
   );
   const ids = useMemo(() => snapshots.map((s) => s.id), [snapshots]);
-  // checked every few seconds so a verification that is running shows its progress and its result
-  const verif = useLoad(() => loadVerifications(ids), [ids.join(",")], { enabled: ids.length > 0, refreshMs: 5000 });
+  // checked every two seconds so a verification that is running shows its progress and its result
+  const verif = useLoad(() => loadVerifications(ids), [ids.join(",")], { enabled: ids.length > 0, refreshMs: 2000 });
   const verified = useMemo(() => groupVerifications(verif.data), [verif.data]);
   const statById = useMemo(() => Object.fromEntries((stats.data?.snapshots ?? []).map((s) => [s.id, s])), [stats.data]);
   const stored = (stats.data?.snapshots ?? []).reduce((n, s) => n + s.newBytes, 0);

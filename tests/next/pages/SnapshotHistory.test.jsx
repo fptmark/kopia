@@ -248,7 +248,9 @@ describe("SnapshotHistory", () => {
           verification({ id: 8, snapshotId: "s3", mode: "new" }),
           verification({ id: 9, snapshotId: "s2", ok: false, errorCount: 12 }),
         ],
-        running: [{ snapshotId: "s1", mode: "sample", percent: 10, state: "running", files: 4000 }],
+        running: [
+          { snapshotId: "s1", mode: "sample", percent: 10, state: "running", files: 4000, total: 10000, errors: 2 },
+        ],
       });
       renderPage();
       await waitFor(() => expect(screen.getAllByTestId("verified-cell")).toHaveLength(3));
@@ -256,7 +258,27 @@ describe("SnapshotHistory", () => {
       expect(cells[0]).toHaveTextContent("Verified");
       expect(cells[0]).toHaveTextContent("Added data ok");
       expect(cells[1]).toHaveTextContent("12 failed");
-      expect(cells[2]).toHaveTextContent("Verifying (10%, 4,000 checked)");
+      expect(cells[2]).toHaveTextContent("40% · 10% sample · 4,000 of 10,000");
+      expect(cells[2]).toHaveTextContent("2 failed");
+      expect(within(cells[2]).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
+    });
+
+    it("shows a moving bar before the total is known and plain text while queued", async () => {
+      serve();
+      answer({
+        verifications: [],
+        running: [
+          { snapshotId: "s3", mode: "new", percent: 100, state: "running", files: 0, total: 0, errors: 0 },
+          { snapshotId: "s2", mode: "full", percent: 100, state: "queued", files: 0, total: 0, errors: 0 },
+        ],
+      });
+      renderPage();
+      await waitFor(() => expect(screen.getAllByTestId("verify-running")).toHaveLength(2));
+      const [starting, queued] = screen.getAllByTestId("verify-running");
+      expect(starting).toHaveTextContent("Starting · added data");
+      expect(within(starting).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow", "0");
+      expect(queued).toHaveTextContent("Queued (every file)");
+      expect(within(queued).queryByRole("progressbar")).toBeNull();
     });
 
     it("lists the files that failed when the failed badge is clicked", async () => {

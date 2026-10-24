@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import Form from "react-bootstrap/Form";
+import ProgressBar from "react-bootstrap/ProgressBar";
 import Modal from "react-bootstrap/Modal";
 import { Link } from "react-router";
 import { useLoad } from "../hooks";
@@ -29,6 +30,45 @@ function VerifiedBadge({ v, onShowFailures, label }) {
   );
 }
 
+const whatIsRead = (r) =>
+  r.mode === "new" ? "added data" : r.mode === "sample" ? r.percent + "% sample" : "every file";
+
+/** A verification that is queued or running: a bar of files checked out of the files to check, and what it is doing. */
+function VerifyProgress({ r }) {
+  const n = (x) => x.toLocaleString("en-US");
+  if (r.state === "queued") {
+    return (
+      <span className="nx-muted small" data-testid="verify-running">
+        Queued ({whatIsRead(r)})
+      </span>
+    );
+  }
+  const known = r.total > 0;
+  const percent = known ? Math.min(100, Math.floor((r.files * 100) / r.total)) : null;
+  return (
+    <span className="d-inline-flex flex-column gap-1" style={{ minWidth: "12rem" }} data-testid="verify-running">
+      <ProgressBar
+        now={percent ?? 100}
+        animated={percent === null}
+        striped={percent === null}
+        style={{ height: "0.5rem" }}
+        aria-label="Verification progress"
+        {...(percent === null ? {} : { "aria-valuenow": percent })}
+      />
+      <span className="nx-muted small">
+        {percent === null ? "Starting" : percent + "%"} {"·"} {whatIsRead(r)}
+        {known ? ` · ${n(r.files)} of ${n(r.total)}` : r.files ? ` · ${n(r.files)} checked` : ""}
+        {r.errors > 0 && (
+          <span className="text-danger">
+            {" "}
+            {"·"} {n(r.errors)} failed
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
 /**
  * What is known about one snapshot's health: a badge for the latest full or sample read-back, one for the
  * data it added, and progress while one is queued or running. info is {read, added, running} from groupVerifications.
@@ -40,11 +80,7 @@ export function VerifiedCell({ info, onShowFailures }) {
   return (
     <span className="d-inline-flex flex-wrap gap-1 align-items-center" data-testid="verified-cell">
       {info.running.map((r) => (
-        <span key={r.mode} className="nx-muted small" data-testid="verify-running">
-          {r.state === "queued" ? "Queued" : "Verifying"} (
-          {r.mode === "new" ? "added data" : r.mode === "sample" ? r.percent + "%" : "all"}
-          {r.state === "running" && r.files ? ", " + r.files.toLocaleString("en-US") + " checked" : ""})
-        </span>
+        <VerifyProgress key={r.mode} r={r} />
       ))}
       {info.read && (
         <VerifiedBadge
