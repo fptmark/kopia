@@ -11,3 +11,5 @@ export { SearchBox } from "./SearchBox";
 export { DataTable } from "./DataTable";
 export { FailedFilesDialog, FailedBadge, TaskErrorDialog } from "./FailedFiles";
 export { LogView } from "./LogView";
+export { Breadcrumbs } from "./Breadcrumbs";
+export { CliCommand } from "./CliCommand";

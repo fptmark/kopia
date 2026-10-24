@@ -11,6 +11,11 @@ import { Snapshots } from "./pages/Snapshots";
 import { SnapshotHistory } from "./pages/SnapshotHistory";
 import { SnapshotDiff } from "./pages/SnapshotDiff";
 import { Files } from "./pages/Files";
+import { Policies } from "./pages/Policies";
+import { Policy } from "./pages/Policy";
+import { SnapshotCreate } from "./pages/SnapshotCreate";
+import { SnapshotDirectory } from "./pages/SnapshotDirectory";
+import { SnapshotRestore } from "./pages/SnapshotRestore";
 import { Tasks } from "./pages/Tasks";
 import { Task } from "./pages/Task";
 
@@ -113,6 +118,11 @@ export default function NextApp() {
             <Route path="snapshots/diff" element={<SnapshotDiff />} />
             <Route path="exclusions" element={<Exclusions />} />
             <Route path="files" element={<Files />} />
+            <Route path="policies" element={<Policies />} />
+            <Route path="policies/edit" element={<Policy />} />
+            <Route path="snapshots/new" element={<SnapshotCreate />} />
+            <Route path="snapshots/dir/:oid" element={<SnapshotDirectory />} />
+            <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="tasks/:tid" element={<Task />} />
             <Route path="/" element={<Navigate to="/snapshots" replace />} />

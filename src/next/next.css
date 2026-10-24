@@ -371,3 +371,37 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* policy editor rows: the setting, what this policy says, what is in effect */
+.nx-policy {
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius);
+  background: var(--nx-surface);
+  margin-bottom: var(--nx-gap);
+}
+.nx-policy-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.2fr) minmax(14rem, 1.2fr) minmax(12rem, 1fr);
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--nx-border);
+  align-items: start;
+}
+.nx-policy-row:last-child {
+  border-bottom: 0;
+}
+.nx-policy-head {
+  background: var(--nx-surface-alt);
+  color: var(--nx-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .nx-policy-row {
+    grid-template-columns: 1fr;
+  }
+  .nx-policy-head {
+    display: none;
+  }
+}
