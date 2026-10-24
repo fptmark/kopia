@@ -14,6 +14,7 @@ import { SnapshotDiff } from "./pages/SnapshotDiff";
 import { About } from "./pages/About";
 import { Files } from "./pages/Files";
 import { Preferences } from "./pages/Preferences";
+import { Repository } from "./pages/Repository";
 import { Policies } from "./pages/Policies";
 import { Policy } from "./pages/Policy";
 import { SnapshotCreate } from "./pages/SnapshotCreate";
@@ -52,20 +53,23 @@ function Shell({ children }) {
       .catch(() => {});
   }, []);
 
+  const refreshTasks = useCallback(() => {
+    api
+      .get("/api/v1/tasks-summary")
+      .then((r) => setRunning(r.data["RUNNING"] || 0))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     refreshRepo();
+    refreshTasks();
     const repoTimer = window.setInterval(refreshRepo, 5000);
-    const taskTimer = window.setInterval(() => {
-      api
-        .get("/api/v1/tasks-summary")
-        .then((r) => setRunning(r.data["RUNNING"] || 0))
-        .catch(() => {});
-    }, 5000);
+    const taskTimer = window.setInterval(refreshTasks, 5000);
     return () => {
       window.clearInterval(repoTimer);
       window.clearInterval(taskTimer);
     };
-  }, [refreshRepo]);
+  }, [refreshRepo, refreshTasks]);
 
   const ctx = useMemo(
     () => ({
@@ -126,6 +130,7 @@ export default function NextApp() {
             <Route path="files" element={<Files />} />
             <Route path="preferences" element={<Preferences />} />
             <Route path="about" element={<About />} />
+            <Route path="repo" element={<Repository />} />
             <Route path="policies" element={<Policies />} />
             <Route path="policies/edit" element={<Policy />} />
             <Route path="snapshots/new" element={<SnapshotCreate />} />

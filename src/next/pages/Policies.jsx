@@ -90,7 +90,7 @@ export function Policies() {
           return (
             <>
               <Toolbar>
-                <Toolbar.Group label="Show">
+                <Toolbar.Group label="Show" grow>
                   <Form.Select size="sm" aria-label="Show" value={view} onChange={(e) => setView(e.target.value)}>
                     {VIEWS.map(([v, l]) => (
                       <option key={v} value={v}>
