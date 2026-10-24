@@ -9,11 +9,18 @@ import Spinner from "react-bootstrap/Spinner";
 import { Link, useNavigate, useLocation } from "react-router";
 import KopiaTable from "../components/KopiaTable";
 import { CLIEquivalent } from "../components/CLIEquivalent";
-import { compare, objectLink, parseQuery, rfc3339TimestampForDisplay } from "../utils/formatutils";
+import {
+  compactCount,
+  compare,
+  objectLink,
+  parseQuery,
+  rfc3339TimestampForDisplay,
+  sizeDisplayName,
+} from "../utils/formatutils";
 import { errorAlert, redirect, sizeWithFailures } from "../utils/uiutil";
 import { sourceQueryStringParams } from "../utils/policyutil";
 import { GoBackButton } from "../components/GoBackButton";
-import { faSync, faThumbtack } from "@fortawesome/free-solid-svg-icons";
+import { faExclamationTriangle, faSync, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import Modal from "react-bootstrap/Modal";
 import { faFileAlt } from "@fortawesome/free-regular-svg-icons";
@@ -49,6 +56,8 @@ class SnapshotHistoryInternal extends Component {
       isRefreshing: false,
       error: null,
       selectedSnapshotManifestIDs: {},
+      storageStats: null,
+      storageStatsLoading: false,
     };
 
     this.fetchSnapshots = this.fetchSnapshots.bind(this);
@@ -58,6 +67,7 @@ class SnapshotHistoryInternal extends Component {
     this.selectAll = this.selectAll.bind(this);
     this.deselectAll = this.deselectAll.bind(this);
     this.showDeleteConfirm = this.showDeleteConfirm.bind(this);
+    this.compareSelected = this.compareSelected.bind(this);
     this.deleteSelectedSnapshots = this.deleteSelectedSnapshots.bind(this);
     this.cancelDelete = this.cancelDelete.bind(this);
     this.deleteSnapshotSource = this.deleteSnapshotSource.bind(this);
@@ -117,6 +127,17 @@ class SnapshotHistoryInternal extends Component {
 
   componentDidMount() {
     this.fetchSnapshots();
+  }
+
+  // opens the diff page with the older of the two selected snapshots first
+  compareSelected() {
+    const picked = this.state.snapshots.filter((sn) => this.state.selectedSnapshotManifestIDs[sn.id]);
+    if (picked.length !== 2) {
+      return;
+    }
+
+    picked.sort((a, b) => compare(a.startTime, b.startTime));
+    this.props.navigate("/snapshots/diff?from=" + picked[0].id + "&to=" + picked[1].id);
   }
 
   showDeleteConfirm() {
@@ -216,6 +237,7 @@ class SnapshotHistoryInternal extends Component {
           isLoading: false,
           isRefreshing: false,
         });
+        this.fetchStorageStats(q);
       })
       .catch((error) =>
         this.setState({
@@ -224,6 +246,26 @@ class SnapshotHistoryInternal extends Component {
           isRefreshing: false,
         }),
       );
+  }
+
+  // Asks for what each snapshot added to the repository. It walks every snapshot, so it is
+  // requested after the list is shown and the table fills in when it arrives.
+  fetchStorageStats(q) {
+    this.setState({ storageStatsLoading: true });
+
+    axios
+      .get("/api/v1/snapshots/storage-stats?" + sourceQueryStringParams(q))
+      .then((result) => {
+        const byID = {};
+        let total = 0;
+        for (const s of result.data.snapshots ?? []) {
+          byID[s.id] = s;
+          total += s.newBytes ?? 0;
+        }
+
+        this.setState({ storageStats: byID, storedTotal: total, storageStatsLoading: false });
+      })
+      .catch(() => this.setState({ storageStats: null, storageStatsLoading: false }));
   }
 
   toggleShowHidden(x) {
@@ -342,6 +384,53 @@ class SnapshotHistoryInternal extends Component {
       });
   }
 
+  // Warns when a snapshot is much bigger or smaller than the one before it (rows are newest first).
+  sizeJump(index, snapshots, bytesStringBase2) {
+    const cur = snapshots[index]?.summary?.size;
+    const prev = snapshots[index + 1]?.summary?.size;
+    if (cur === undefined || prev === undefined || prev === 0) {
+      return null;
+    }
+
+    const diff = cur - prev;
+    if (Math.abs(diff) < 100e6 || Math.abs(diff) / prev < 0.25) {
+      return null;
+    }
+
+    const text = (diff > 0 ? "+" : "-") + sizeDisplayName(Math.abs(diff), bytesStringBase2);
+
+    return (
+      <span
+        className="text-warning"
+        data-testid="size-jump"
+        title={"Logical size changed by " + text + " compared with the previous snapshot."}
+      >
+        &nbsp;
+        <FontAwesomeIcon icon={faExclamationTriangle} /> {text}
+      </span>
+    );
+  }
+
+  summaryLine(snapshots, bytesStringBase2) {
+    if (snapshots.length === 0) {
+      return null;
+    }
+
+    const newest = snapshots[0];
+    const oldest = snapshots[snapshots.length - 1];
+    const stored = this.state.storageStats
+      ? "; stored size of all snapshots " + sizeDisplayName(this.state.storedTotal, bytesStringBase2)
+      : "";
+
+    return (
+      <div className="vpadded" data-testid="history-summary">
+        Newest snapshot {sizeDisplayName(newest.summary?.size ?? 0, bytesStringBase2)} logical,{" "}
+        {compactCount(newest.summary?.files ?? 0)} files; history from {rfc3339TimestampForDisplay(oldest.startTime)}
+        {stored}
+      </div>
+    );
+  }
+
   render() {
     let { snapshots, unfilteredCount, uniqueCount, isLoading, error } = this.state;
     const { bytesStringBase2 } = this.context;
@@ -432,20 +521,58 @@ class SnapshotHistoryInternal extends Component {
         ),
       },
       {
-        header: "Size",
+        id: "size",
+        header: () => (
+          <span title="Total size of the files in the snapshot, before deduplication and compression.">
+            Logical size
+          </span>
+        ),
         accessorFn: (x) => x.summary?.size ?? 0,
-        width: 100,
-        cell: (x) => sizeWithFailures(x.cell.getValue(), x.row.original.summary, bytesStringBase2),
+        width: 160,
+        cell: (x) => (
+          <>
+            {sizeWithFailures(x.cell.getValue(), x.row.original.summary, bytesStringBase2)}
+            {this.sizeJump(x.row.index, snapshots, bytesStringBase2)}
+          </>
+        ),
+      },
+      {
+        id: "newData",
+        header: () => (
+          <span title="Data this snapshot added to the repository (compressed). Depends on snapshot order.">
+            New data
+          </span>
+        ),
+        accessorFn: (x) => this.state.storageStats?.[x.id]?.newBytes ?? -1,
+        width: 110,
+        cell: (x) => {
+          if (this.state.storageStatsLoading) {
+            return <Spinner animation="border" size="sm" variant="secondary" />;
+          }
+
+          const st = this.state.storageStats?.[x.row.original.id];
+          if (!st) {
+            return "\u2014";
+          }
+
+          return (
+            <span title={compactCount(st.newFiles) + " new files, " + compactCount(st.newDirs) + " new dirs"}>
+              {sizeDisplayName(st.newBytes, bytesStringBase2)}
+            </span>
+          );
+        },
       },
       {
         header: "Files",
         accessorFn: (x) => x.summary?.files ?? 0,
-        width: 100,
+        width: 90,
+        cell: (x) => <span title={String(x.cell.getValue())}>{compactCount(x.cell.getValue())}</span>,
       },
       {
         header: "Dirs",
         accessorFn: (x) => x.summary?.dirs ?? 0,
-        width: 100,
+        width: 90,
+        cell: (x) => <span title={String(x.cell.getValue())}>{compactCount(x.cell.getValue())}</span>,
       },
     ];
 
@@ -467,15 +594,25 @@ class SnapshotHistoryInternal extends Component {
                   Deselect All
                 </Button>
               ))}
+            &nbsp; &nbsp;
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={selectedElements.length !== 2}
+              title="Select two snapshots to see what changed between them"
+              onClick={this.compareSelected}
+            >
+              Compare
+            </Button>
             &nbsp;
-            {selectedElements.length > 0 && (
-              <>
-                &nbsp;
-                <Button size="sm" variant="danger" onClick={this.showDeleteConfirm}>
-                  Delete Selected ({selectedElements.length})
-                </Button>
-              </>
-            )}
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={selectedElements.length === 0}
+              onClick={this.showDeleteConfirm}
+            >
+              Delete Selected{selectedElements.length > 0 ? ` (${selectedElements.length})` : ""}
+            </Button>
             {snapshots.length === 0 && (
               <>
                 &nbsp;
@@ -515,6 +652,9 @@ class SnapshotHistoryInternal extends Component {
               </b>
             </div>
           </Col>
+        </Row>
+        <Row>
+          <Col>{this.summaryLine(snapshots, bytesStringBase2)}</Col>
         </Row>
         {unfilteredCount !== uniqueCount && (
           <Row>

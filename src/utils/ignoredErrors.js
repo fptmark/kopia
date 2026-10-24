@@ -72,3 +72,28 @@ export function excludeFromBackup(source, path) {
 
   return addIgnorePattern(source, pattern).then(() => pattern);
 }
+
+/** The last part of a path. */
+export function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop();
+}
+
+/** The pattern that excludes every folder with this name, at any depth: unanchored, with a trailing slash. */
+export function excludeFolderNamePattern(name) {
+  return name.replace(/([\\*?[\]])/g, "\\$1") + "/";
+}
+
+/**
+ * Adds exclusion patterns to the source's own policy in one save, so the changes cannot overwrite each other.
+ * Returns the patterns.
+ */
+export function excludePatternsFromBackup(source, patterns) {
+  return editIgnorePatterns(source, (ignore) => [...ignore, ...patterns.filter((p) => !ignore.includes(p))]).then(
+    () => patterns,
+  );
+}
+
+/** Adds an exclusion for each path (relative to the source) to the source's own policy in one save. */
+export function excludeManyFromBackup(source, paths) {
+  return excludePatternsFromBackup(source, paths.map(excludePattern));
+}

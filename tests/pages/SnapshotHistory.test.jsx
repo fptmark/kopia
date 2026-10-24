@@ -22,12 +22,13 @@ vi.mock("react-router", async () => {
 });
 
 // Helper function to render component with required providers
-const renderWithProviders = (component) => {
+const renderWithProviders = (component, extraPrefs = {}) => {
   const mockUIPreferences = {
     theme: "light",
     showIdenticalSnapshots: false,
     setShowIdenticalSnapshots: vi.fn(),
     bytesStringBase2: vi.fn((size) => `${size} bytes`), // Mock function for size formatting
+    ...extraPrefs,
   };
 
   return render(
@@ -93,6 +94,117 @@ describe("SnapshotHistory", () => {
     expect(screen.getByText("Select All")).toBeInTheDocument();
   });
 
+  describe("sizes and storage cost", () => {
+    const snap = (id, startTime, size, files) => ({
+      id,
+      startTime,
+      rootID: "root" + id,
+      summary: { size, files, dirs: 10 },
+      retention: [],
+      pins: [],
+    });
+
+    const mockAPI = (storage) => {
+      axios.get.mockImplementation((url) => {
+        if (url.startsWith("/api/v1/snapshots/storage-stats")) {
+          return storage instanceof Error ? Promise.reject(storage) : Promise.resolve({ data: { snapshots: storage } });
+        }
+
+        return Promise.resolve({
+          data: {
+            snapshots: [
+              snap("s3", "2023-01-03T12:00:00Z", 1_300_000_000_000, 1311967),
+              snap("s2", "2023-01-02T12:00:00Z", 205_000_000_000, 674000),
+              snap("s1", "2023-01-01T12:00:00Z", 204_000_000_000, 673000),
+            ],
+            unfilteredCount: 3,
+            uniqueCount: 3,
+          },
+        });
+      });
+    };
+
+    it("shows what each snapshot added and the stored total", async () => {
+      mockAPI([
+        { id: "s1", newBytes: 150_000_000_000, newFiles: 673000, newDirs: 100 },
+        { id: "s2", newBytes: 5_000_000, newFiles: 10, newDirs: 1 },
+        { id: "s3", newBytes: 7_000_000, newFiles: 20, newDirs: 2 },
+      ]);
+      renderWithProviders(<SnapshotHistory />, { pageSize: 20 });
+
+      await waitFor(() => {
+        expect(screen.getByTitle("20 new files, 2 new dirs")).toBeInTheDocument();
+      });
+
+      expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("/api/v1/snapshots/storage-stats?"));
+      expect(screen.getByTitle("10 new files, 1 new dirs")).toBeInTheDocument();
+      expect(screen.getByTestId("history-summary")).toHaveTextContent("stored size of all snapshots");
+    });
+
+    it("keeps Delete visible but disabled until a snapshot is selected, and Compare needs two", async () => {
+      mockAPI([]);
+      renderWithProviders(<SnapshotHistory />, { pageSize: 20 });
+
+      await waitFor(() => {
+        expect(screen.getAllByRole("checkbox").length).toBeGreaterThanOrEqual(3);
+      });
+
+      const del = screen.getByRole("button", { name: /Delete Selected/ });
+      const compare = screen.getByRole("button", { name: "Compare" });
+      expect(del).toBeDisabled();
+      expect(compare).toBeDisabled();
+
+      // rows are re-created on every change, so look the boxes up again each time
+      const boxes = () => screen.getAllByRole("checkbox").filter((b) => b.classList.contains("form-check-input"));
+      fireEvent.click(boxes()[0]);
+      expect(screen.getByRole("button", { name: /Delete Selected \(1\)/ })).toBeEnabled();
+      expect(compare).toBeDisabled();
+
+      // rows are newest first: s3, s2, s1
+      fireEvent.click(boxes()[2]);
+      expect(compare).toBeEnabled();
+
+      fireEvent.click(compare);
+      expect(mockNavigate).toHaveBeenCalledWith("/snapshots/diff?from=s1&to=s3");
+    });
+
+    it("shortens file counts", async () => {
+      mockAPI([]);
+      renderWithProviders(<SnapshotHistory />, { pageSize: 20 });
+
+      await waitFor(() => {
+        expect(screen.getByTitle("1311967")).toHaveTextContent("1.3M");
+      });
+    });
+
+    it("marks a large jump in logical size against the previous snapshot", async () => {
+      mockAPI([]);
+      renderWithProviders(<SnapshotHistory />, { pageSize: 20 });
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId("size-jump")).toHaveLength(1);
+      });
+
+      expect(screen.getByTestId("size-jump")).toHaveAttribute(
+        "title",
+        expect.stringContaining("Logical size changed by +"),
+      );
+    });
+
+    it("still lists snapshots when the storage stats fail", async () => {
+      mockAPI(new Error("boom"));
+      renderWithProviders(<SnapshotHistory />, { pageSize: 20 });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Displaying.*3.*snapshots/)).toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(screen.getAllByText("\u2014").length).toBe(3);
+      });
+      expect(screen.getByTestId("history-summary")).not.toHaveTextContent("stored size");
+    });
+  });
+
   it("should handle refresh button click", async () => {
     const mockResponse = {
       data: {
@@ -113,9 +225,9 @@ describe("SnapshotHistory", () => {
       fireEvent.click(refreshButton);
     });
 
-    // Wait for the API to be called again
+    // Wait for the API to be called again (each load fetches the list, then the storage stats)
     await waitFor(() => {
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -187,7 +299,8 @@ describe("SnapshotHistory", () => {
     expect(screen.getByText("Start time")).toBeInTheDocument();
     expect(screen.getByText("Root")).toBeInTheDocument();
     expect(screen.getByText("Retention")).toBeInTheDocument();
-    expect(screen.getByText("Size")).toBeInTheDocument();
+    expect(screen.getByText("Logical size")).toBeInTheDocument();
+    expect(screen.getByText("New data")).toBeInTheDocument();
     expect(screen.getByText("Files")).toBeInTheDocument();
     expect(screen.getByText("Dirs")).toBeInTheDocument();
   });
@@ -411,7 +524,8 @@ describe("SnapshotHistory", () => {
         expect(screen.getByText("Start time")).toBeInTheDocument();
         expect(screen.getByText("Root")).toBeInTheDocument();
         expect(screen.getByText("Retention")).toBeInTheDocument();
-        expect(screen.getByText("Size")).toBeInTheDocument();
+        expect(screen.getByText("Logical size")).toBeInTheDocument();
+        expect(screen.getByText("New data")).toBeInTheDocument();
         expect(screen.getByText("Files")).toBeInTheDocument();
         expect(screen.getByText("Dirs")).toBeInTheDocument();
       });

@@ -1,4 +1,4 @@
-import { faSync, faUserFriends } from "@fortawesome/free-solid-svg-icons";
+import { faChevronRight, faSync, faUserFriends } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import axios from "axios";
 import moment from "moment";
@@ -328,8 +328,12 @@ export class Snapshots extends Component {
         },
         width: "",
         cell: (x) => (
-          <Link to={"/snapshots/single-source?" + sourceQueryStringParams(x.cell.getValue())}>
-            {x.cell.getValue().path}
+          <Link
+            to={"/snapshots/single-source?" + sourceQueryStringParams(x.cell.getValue())}
+            title="Show the snapshots of this path"
+          >
+            {x.cell.getValue().path}&nbsp;
+            <FontAwesomeIcon icon={faChevronRight} size="xs" />
           </Link>
         ),
       },
@@ -341,8 +345,12 @@ export class Snapshots extends Component {
       },
       {
         id: "lastSnapshotSize",
-        header: "Size",
-        width: 120,
+        header: () => (
+          <span title="Total size of the files in the latest snapshot, before deduplication and compression.">
+            Logical size
+          </span>
+        ),
+        width: 140,
         accessorFn: (x) => x.lastSnapshot?.stats?.totalSize ?? 0,
         cell: (x) =>
           sizeWithFailures(x.cell.getValue(), x.row.original.lastSnapshot?.rootEntry?.summ ?? null, bytesStringBase2),

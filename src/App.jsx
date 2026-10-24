@@ -16,6 +16,7 @@ import { Snapshots } from "./pages/Snapshots";
 import { SnapshotCreate } from "./pages/SnapshotCreate";
 import { SnapshotDirectory } from "./pages/SnapshotDirectory";
 import { SnapshotHistory } from "./pages/SnapshotHistory";
+import { SnapshotDiff } from "./pages/SnapshotDiff";
 import { SnapshotRestore } from "./pages/SnapshotRestore";
 import { Files } from "./pages/Files";
 import { AppContext } from "./contexts/AppContext";
@@ -214,6 +215,7 @@ export default class App extends Component {
                 <Route path="restore" element={<Navigate to="/files" replace />} />
                 <Route path="snapshots/search" element={<Navigate to="/files" replace />} />
                 <Route path="snapshots/single-source/" element={<SnapshotHistory />} />
+                <Route path="snapshots/diff" element={<SnapshotDiff />} />
                 <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
                 <Route path="snapshots/dir/:oid" element={<SnapshotDirectory />} />
                 <Route path="policies/edit/" element={<Policy />} />

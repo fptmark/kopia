@@ -481,3 +481,18 @@ describe("formatDuration", () => {
     expect(formatDuration(from, to, true)).toBe("1m 30s");
   });
 });
+
+describe("compactCount", () => {
+  it("shortens counts with K, M and B", async () => {
+    const { compactCount } = await import("../../src/utils/formatutils");
+    expect(compactCount(0)).toBe("0");
+    expect(compactCount(999)).toBe("999");
+    expect(compactCount(1000)).toBe("1K");
+    expect(compactCount(1500)).toBe("1.5K");
+    expect(compactCount(12345)).toBe("12.3K");
+    expect(compactCount(1311967)).toBe("1.3M");
+    expect(compactCount(999960)).toBe("1M");
+    expect(compactCount(2100000000)).toBe("2.1B");
+    expect(compactCount(undefined)).toBe("");
+  });
+});
