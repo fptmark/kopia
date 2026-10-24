@@ -805,7 +805,30 @@ func (s *Server) isKnownUIRoute(path string) bool {
 		strings.HasPrefix(path, "/files") ||
 		strings.HasPrefix(path, "/about") ||
 		strings.HasPrefix(path, "/repo") ||
-		path == "/next" || strings.HasPrefix(path, "/next/")
+		strings.HasPrefix(path, "/exclusions") ||
+		strings.HasPrefix(path, "/spec")
+}
+
+// legacyUIPrefix is where the rebuilt UI was served while the old one was still in use; addresses under it
+// are sent to the same page without the prefix.
+const legacyUIPrefix = "/next"
+
+func legacyUIRedirect(r *http.Request) (string, bool) {
+	p := r.URL.Path
+	if p != legacyUIPrefix && !strings.HasPrefix(p, legacyUIPrefix+"/") {
+		return "", false
+	}
+
+	target := strings.TrimPrefix(p, legacyUIPrefix)
+	if target == "" {
+		target = "/"
+	}
+
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+
+	return target, true
 }
 
 func (s *Server) patchIndexBytes(sessionID string, b []byte) []byte {
@@ -852,6 +875,12 @@ func (s *Server) ServeStaticFiles(m *mux.Router, fs http.FileSystem) {
 	indexBytes := maybeReadIndexBytes(fs)
 
 	m.PathPrefix("/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if target, ok := legacyUIRedirect(r); ok {
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+
+			return
+		}
+
 		if s.isKnownUIRoute(r.URL.Path) {
 			r2 := new(http.Request)
 			*r2 = *r
