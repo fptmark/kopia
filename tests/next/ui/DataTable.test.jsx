@@ -53,6 +53,23 @@ describe("DataTable", () => {
     expect(screen.getByText("No sort").closest("th")).not.toHaveAttribute("aria-sort");
   });
 
+  it("puts rows without a value last, whichever way it sorts", () => {
+    const data = [
+      { id: "a", name: "a", n: 5 },
+      { id: "b", name: "b", n: undefined },
+      { id: "c", name: "c", n: 1 },
+      { id: "d", name: "d", n: undefined },
+      { id: "e", name: "e", n: 9 },
+    ];
+    render(<DataTable data={data} columns={columns} getRowId={(r) => r.id} pageSize={10} />);
+    fireEvent.click(screen.getByText("Number"));
+    expect(names().slice(0, 3)).toEqual(["c", "a", "e"]);
+    expect(names().slice(3).sort()).toEqual(["b", "d"]);
+    fireEvent.click(screen.getByText("Number"));
+    expect(names().slice(0, 3)).toEqual(["e", "a", "c"]);
+    expect(names().slice(3).sort()).toEqual(["b", "d"]);
+  });
+
   it("starts sorted when asked, and goes back to the first page when the sort changes", () => {
     render(
       <DataTable

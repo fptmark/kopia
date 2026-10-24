@@ -13,7 +13,8 @@ const PAGE_SIZES = [10, 25, 50, 100];
  *
  * columns: [{ id, header, accessor?, cell?, sortable?, align?: "end", width?, sortFn? }]
  *   accessor(row) gives the value that is sorted and passed to cell(row, value); without it the column
- *   is not sortable. cell defaults to showing the value.
+ *   is not sortable. A row whose accessor gives undefined (a cell showing "—") sorts after the others
+ *   in both directions. cell defaults to showing the value.
  * selection: { selected: {id: true}, onChange(selected), isSelectable?(row) }
  * initialSort: { id, desc }
  */
@@ -46,6 +47,7 @@ export function DataTable({
         enableSorting: c.sortable !== false && !!c.accessor,
         sortingFn: c.sortFn ?? "auto",
         sortDescFirst: false,
+        sortUndefined: "last",
         meta: c,
       })),
     [columns],

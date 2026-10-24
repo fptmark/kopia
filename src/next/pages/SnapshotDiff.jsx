@@ -122,14 +122,14 @@ export function SnapshotDiff() {
       id: "before",
       header: "Before",
       align: "end",
-      accessor: (e) => (e.change === "added" ? -1 : e.oldSize),
+      accessor: (e) => (e.change === "added" ? undefined : e.oldSize),
       cell: (e) => (e.change === "added" ? <span className="nx-muted">{"—"}</span> : <SizeText bytes={e.oldSize} />),
     },
     {
       id: "after",
       header: "After",
       align: "end",
-      accessor: (e) => (e.change === "removed" ? -1 : e.newSize),
+      accessor: (e) => (e.change === "removed" ? undefined : e.newSize),
       cell: (e) => (e.change === "removed" ? <span className="nx-muted">{"—"}</span> : <SizeText bytes={e.newSize} />),
     },
     {
