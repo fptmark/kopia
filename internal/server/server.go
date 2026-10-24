@@ -22,6 +22,7 @@ import (
 
 	"github.com/kopia/kopia/internal/auth"
 	"github.com/kopia/kopia/internal/clock"
+	"github.com/kopia/kopia/internal/exclusion"
 	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/mount"
 	"github.com/kopia/kopia/internal/notifyhub"
@@ -106,6 +107,8 @@ type Server struct {
 	notifyHub *notifyhub.Hub
 	// ignored holds the rules for errors that are not reported (nil when there is no preferences file).
 	ignored *ignoreerr.Store
+	// exclusions holds the exclusion rules (nil when there is no preferences file).
+	exclusions *exclusion.Store
 	// +checklocks:serverMutex
 	sourceManagers map[snapshot.SourceInfo]*sourceManager
 	// +checklocks:serverMutex
@@ -158,6 +161,12 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/verify/status", s.handleUIPossiblyNotConnected(handleVerifyStatus)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/verify/run", s.handleUI(handleVerifyRun)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/verify/test-notification", s.handleUI(handleVerifyTestNotification)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/exclusions", s.handleUI(handleExclusionsList)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/exclusions", s.handleUI(handleExclusionsAdd)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/exclusions/net", s.handleUI(handleExclusionsNet)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/exclusions/reconcile", s.handleUI(handleExclusionsReconcile)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/exclusions/preview", s.handleUI(handleExclusionsPreview)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/exclusions/{id}", s.handleUI(handleExclusionsRemove)).Methods(http.MethodDelete)
 	m.HandleFunc("/api/v1/ignored-errors", s.handleUIPossiblyNotConnected(handleIgnoredErrorsList)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/ignored-errors", s.handleUIPossiblyNotConnected(handleIgnoredErrorsAdd)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/ignored-errors/{id}", s.handleUIPossiblyNotConnected(handleIgnoredErrorsRemove)).Methods(http.MethodDelete)
@@ -788,7 +797,8 @@ func (s *Server) isKnownUIRoute(path string) bool {
 		strings.HasPrefix(path, "/restore") ||
 		strings.HasPrefix(path, "/files") ||
 		strings.HasPrefix(path, "/about") ||
-		strings.HasPrefix(path, "/repo")
+		strings.HasPrefix(path, "/repo") ||
+		path == "/next" || strings.HasPrefix(path, "/next/")
 }
 
 func (s *Server) patchIndexBytes(sessionID string, b []byte) []byte {
@@ -1219,6 +1229,7 @@ func New(ctx context.Context, options *Options) (*Server, error) {
 	s.parallelSnapshotsChanged = sync.NewCond(&s.parallelSnapshotsMutex)
 
 	s.setupIgnoredErrors(ctx)
+	s.setupExclusions(ctx)
 	s.setupNotifications(ctx)
 
 	if s.notifyHub != nil {

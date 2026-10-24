@@ -14,11 +14,12 @@ func TestEveryUIPageIsAKnownRoute(t *testing.T) {
 	for _, p := range []string{
 		"/snapshots", "/snapshots/new", "/snapshots/single-source/", "/snapshots/dir/abc", "/snapshots/dir/abc/restore",
 		"/restore", "/files", "/policies", "/policies/edit/", "/tasks", "/tasks/1a", "/repo", "/preferences", "/about",
+		"/next", "/next/", "/next/snapshots", "/next/exclusions",
 	} {
 		require.True(t, s.isKnownUIRoute(p), p)
 	}
 
-	for _, p := range []string{"/nope", "/api/v1/sources", "/restor"} {
+	for _, p := range []string{"/nope", "/api/v1/sources", "/restor", "/nextdoor"} {
 		require.False(t, s.isKnownUIRoute(p), p)
 	}
 }

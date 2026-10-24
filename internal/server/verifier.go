@@ -67,13 +67,14 @@ const (
 
 // verifyCheckOrder is the order checks are listed in; unknown names go last.
 var verifyCheckOrder = []string{ //nolint:gochecknoglobals
-	checkReadable, checkRecent, checkFailedFilesName, checkSample, checkRestore,
+	checkReadable, checkRecent, checkFailedFilesName, checkExclusions, checkSample, checkRestore,
 }
 
 const (
 	checkReadable        = "Snapshots can be read"
 	checkRecent          = "Snapshots are recent"
 	checkFailedFilesName = "Snapshots skip no unexpected files"
+	checkExclusions      = "Exclusion rules match the policies"
 	checkSample          = "Sample of stored data verifies"
 	checkRestore         = "A random file restores identically"
 )
@@ -688,7 +689,13 @@ func (v *verifier) quick(ctx context.Context) ([]verifyCheck, []*snapshot.Manife
 		checks = append(checks, passed(checkRecent, "not checked yet: waits until "+graceUntil.Local().Format("3:04 PM")+" for the first hourly snapshot after a start or wake"))
 	}
 
-	return append(checks, quickChecks(now, ms, checkAge, v.limitFor, v.srv.ignoredErrors())...), ms
+	checks = append(checks, quickChecks(now, ms, checkAge, v.limitFor, v.srv.ignoredErrors())...)
+
+	if c, ok := v.srv.exclusionCheck(ctx, v.rep); ok {
+		checks = append(checks, c)
+	}
+
+	return checks, ms
 }
 
 // runQuick runs the cheap checks. A task is only recorded when the outcome changes.

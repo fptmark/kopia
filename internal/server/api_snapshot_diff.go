@@ -8,6 +8,7 @@ import (
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/serverapi"
+	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
@@ -45,12 +46,12 @@ func handleSnapshotDiff(ctx context.Context, rc requestContext) (any, *apiError)
 		return nil, requestError(serverapi.ErrorMalformedRequest, "snapshots are from different sources")
 	}
 
-	root1, err := snapshotfs.SnapshotRoot(rc.rep, m1)
+	dir1, err := snapshotRootDir(rc.rep, m1)
 	if err != nil {
 		return nil, internalServerError(err)
 	}
 
-	root2, err := snapshotfs.SnapshotRoot(rc.rep, m2)
+	dir2, err := snapshotRootDir(rc.rep, m2)
 	if err != nil {
 		return nil, internalServerError(err)
 	}
@@ -62,18 +63,26 @@ func handleSnapshotDiff(ctx context.Context, rc requestContext) (any, *apiError)
 		Entries: []*serverapi.SnapshotDiffEntry{},
 	}}
 
-	dir1, ok1 := root1.(fs.Directory)
-	dir2, ok2 := root2.(fs.Directory)
-
-	if !ok1 || !ok2 {
-		return nil, internalServerError(errors.New("snapshot root is not a directory"))
-	}
-
 	if err := d.compareEntries(ctx, dir1, dir2, ""); err != nil {
 		return nil, internalServerError(err)
 	}
 
 	return d.resp, nil
+}
+
+// snapshotRootDir returns the root of a snapshot as a directory.
+func snapshotRootDir(rep repo.Repository, m *snapshot.Manifest) (fs.Directory, error) {
+	root, err := snapshotfs.SnapshotRoot(rep, m)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to open the snapshot")
+	}
+
+	dir, ok := root.(fs.Directory)
+	if !ok {
+		return nil, errors.New("snapshot root is not a directory")
+	}
+
+	return dir, nil
 }
 
 func objectIDOf(e fs.Entry) string {
