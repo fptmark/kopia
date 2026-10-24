@@ -168,8 +168,37 @@ CREATE TABLE notification_repeat (
 );
 `
 
+// schemaV5 keeps the result of each read-back verification of a snapshot, with every file that failed.
+const schemaV5 = `
+CREATE TABLE snapshot_verifications (
+	seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+	snapshot_id  TEXT    NOT NULL,
+	source       TEXT    NOT NULL,
+	mode         TEXT    NOT NULL, -- full, sample or new
+	percent      REAL    NOT NULL, -- share of the files read back in full
+	started_at   INTEGER NOT NULL, -- unix nanoseconds, UTC
+	finished_at  INTEGER NOT NULL,
+	ok           INTEGER NOT NULL,
+	files        INTEGER NOT NULL,
+	bytes        INTEGER NOT NULL,
+	read_files   INTEGER NOT NULL,
+	read_bytes   INTEGER NOT NULL,
+	error_count  INTEGER NOT NULL,
+	error        TEXT    NOT NULL DEFAULT '',
+	task_seq     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX snapshot_verifications_by_snapshot ON snapshot_verifications (snapshot_id, seq);
+
+CREATE TABLE verification_failures (
+	verification_seq INTEGER NOT NULL REFERENCES snapshot_verifications (seq) ON DELETE CASCADE,
+	path             TEXT    NOT NULL,
+	error            TEXT    NOT NULL
+);
+CREATE INDEX verification_failures_by_verification ON verification_failures (verification_seq);
+`
+
 // migrations are applied in order; the database version is the number applied.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4} //nolint:gochecknoglobals
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5} //nolint:gochecknoglobals
 
 func (s *Store) migrate() error {
 	var v int

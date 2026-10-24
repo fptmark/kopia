@@ -102,6 +102,9 @@ type Server struct {
 	// +checklocks:serverMutex
 	verify *verifier
 
+	// snapVerifs tracks the read-back verifications of single snapshots that are queued or running.
+	snapVerifs snapVerifyRegistry
+
 	// notifier receives events for the notification destinations; notifyHub is the real one (nil in tests).
 	notifier  eventSink
 	notifyHub *notifyhub.Hub
@@ -143,6 +146,9 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/snapshots", s.handleUI(handleListSnapshots)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/snapshots/storage-stats", s.handleUI(handleSnapshotStorageStats)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/snapshots/diff", s.handleUI(handleSnapshotDiff)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/snapshots/verify", s.handleUI(handleSnapshotsVerify)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/snapshots/verifications", s.handleUI(handleSnapshotVerifications)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/snapshots/verifications/{id}/failures", s.handleUI(handleVerificationFailures)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/snapshots/delete", s.handleUI(handleDeleteSnapshots)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/snapshots/edit", s.handleUI(handleEditSnapshots)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/policy", s.handleUI(handlePolicyGet)).Methods(http.MethodGet)

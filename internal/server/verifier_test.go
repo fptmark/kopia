@@ -220,9 +220,10 @@ func TestReadBackDetectsContentThatDiffersFromTheSnapshot(t *testing.T) {
 func TestSampleVerifyPassesOnAHealthyRepository(t *testing.T) {
 	e := newVerifyTestEnv(t)
 
-	files, _, err := sampleVerify(e.ctx, e.env.Repository, map[snapshot.SourceInfo]*snapshot.Manifest{e.m.Source: e.m}, 100)
+	res, err := sampleVerify(e.ctx, e.env.Repository, map[snapshot.SourceInfo]*snapshot.Manifest{e.m.Source: e.m}, 100)
 	require.NoError(t, err)
-	require.EqualValues(t, 3, files)
+	require.Zero(t, res.Errors)
+	require.EqualValues(t, 3, res.ReadFiles)
 }
 
 func TestSampleVerifyDetectsMissingDataInStorage(t *testing.T) {
@@ -241,8 +242,11 @@ func TestSampleVerifyDetectsMissingDataInStorage(t *testing.T) {
 		require.NoError(t, e.env.RootStorage().DeleteBlob(e.ctx, id))
 	}
 
-	_, _, err := sampleVerify(e.ctx, e.env.Repository, map[snapshot.SourceInfo]*snapshot.Manifest{e.m.Source: e.m}, 1)
-	require.Error(t, err)
+	res, err := sampleVerify(e.ctx, e.env.Repository, map[snapshot.SourceInfo]*snapshot.Manifest{e.m.Source: e.m}, 1)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, res.Errors, "every file is named, not just the first few")
+	require.Len(t, res.Failures, 3)
+	require.Contains(t, res.Failures[0].Path, "/data/")
 }
 
 type recordingNotifier struct{ got []string }

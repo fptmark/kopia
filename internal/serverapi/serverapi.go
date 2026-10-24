@@ -384,12 +384,23 @@ type UIPreferences struct {
 	VerifierIMessageTo     string `json:"verifierIMessageTo"`     // Phone number or Apple ID that receives an iMessage when the backup health check fails ("" sends none)
 }
 
+// VerifyFailure is a file that did not read back.
+type VerifyFailure struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
 // VerifyCheck is the outcome of one backup health check.
 type VerifyCheck struct {
 	Name      string    `json:"name"`
 	OK        bool      `json:"ok"`
 	Detail    string    `json:"detail"`
 	CheckedAt time.Time `json:"checkedAt"` // when this check last ran
+	// FailureCount is how many files failed; Failures lists the first of them, and VerificationID names
+	// the stored record with all of them (GET /api/v1/snapshots/verifications/{id}/failures).
+	FailureCount   int             `json:"failureCount,omitempty"`
+	Failures       []VerifyFailure `json:"failures,omitempty"`
+	VerificationID int64           `json:"verificationId,omitempty"`
 }
 
 // VerifyStatus is the current result of the backup health checks.
