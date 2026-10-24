@@ -89,9 +89,10 @@ func packIDs(ctx context.Context, t *testing.T, env *repotesting.Environment) []
 func TestVerifyTreesPassesOnAHealthySnapshot(t *testing.T) {
 	ctx, env, m := manyFilesEnv(t)
 
-	res := verifyTrees(ctx, env.Repository, rootOf(t, env, m), snapVerifyOptions{Percent: 100, BlobMap: blobMapOf(ctx, t, env)})
+	res := verifyTrees(ctx, env.Repository, rootOf(t, env, m), snapVerifyOptions{Percent: 100, BlobMap: blobMapOf(ctx, t, env), ExpectedFiles: manyFiles})
 
 	require.Zero(t, res.Errors, "%v", res.Failures)
+	require.EqualValues(t, manyFiles, res.Total, "the total progress is measured against")
 	require.EqualValues(t, manyFiles, res.Files)
 	require.EqualValues(t, manyFiles, res.ReadFiles)
 	require.Positive(t, res.ReadBytes)
@@ -171,6 +172,7 @@ func TestVerifyNewContentsChecksOnlyWhatTheWindowWrote(t *testing.T) {
 	require.Zero(t, all.Errors, "%v", all.Failures)
 	require.Positive(t, all.Files)
 	require.Equal(t, all.Files, all.ReadFiles)
+	require.Equal(t, all.Files, all.Total, "every content that was listed was checked")
 
 	// a window long before the snapshot wrote nothing
 	none, err := verifyNewContents(ctx, dr, now.Add(-72*time.Hour), now.Add(-48*time.Hour), nil)

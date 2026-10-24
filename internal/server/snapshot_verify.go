@@ -31,6 +31,8 @@ const (
 
 // snapVerifyStats counts the work of a verification so far.
 type snapVerifyStats struct {
+	// Total is how many files (or pieces of stored data) there are to check, when that is known up front.
+	Total     int64
 	Files     int64
 	Bytes     int64
 	ReadFiles int64
@@ -53,6 +55,8 @@ type treeRoot struct {
 type snapVerifyOptions struct {
 	// Percent is the share of the files read back in full: 100 reads every one, 1 about a hundredth.
 	Percent float64
+	// ExpectedFiles is the number of files in the trees, for progress; 0 when unknown.
+	ExpectedFiles int64
 	// BlobMap lists the pack blobs in storage, so each content can be checked to be in a pack that is there
 	// and long enough. Nil skips that check.
 	BlobMap  map[blob.ID]blob.Metadata
@@ -66,7 +70,7 @@ type snapVerify struct {
 	opts snapVerifyOptions
 	seen sync.Map
 
-	files, bytes, readFiles, readBytes, errs atomic.Int64
+	files, bytes, readFiles, readBytes, errs, total atomic.Int64
 
 	mu       sync.Mutex
 	failures []taskstore.VerificationFailure
@@ -83,6 +87,8 @@ type verifyJob struct {
 // occur; files that share stored data are checked once.
 func verifyTrees(ctx context.Context, rep repo.Repository, roots []treeRoot, opts snapVerifyOptions) snapVerifyResult {
 	v := &snapVerify{rep: rep, opts: opts}
+	v.total.Store(opts.ExpectedFiles)
+
 	jobs := make(chan verifyJob, verifyQueueLength)
 
 	var wg sync.WaitGroup
@@ -109,7 +115,7 @@ func verifyTrees(ctx context.Context, rep repo.Repository, roots []treeRoot, opt
 
 func (v *snapVerify) stats() snapVerifyStats {
 	return snapVerifyStats{
-		Files: v.files.Load(), Bytes: v.bytes.Load(), ReadFiles: v.readFiles.Load(), ReadBytes: v.readBytes.Load(), Errors: v.errs.Load(),
+		Total: v.total.Load(), Files: v.files.Load(), Bytes: v.bytes.Load(), ReadFiles: v.readFiles.Load(), ReadBytes: v.readBytes.Load(), Errors: v.errs.Load(),
 	}
 }
 
@@ -292,6 +298,7 @@ func verifyNewContents(ctx context.Context, dr repo.DirectRepository, from, to t
 	}
 
 	v := &snapVerify{opts: snapVerifyOptions{Progress: progress}}
+	v.total.Store(int64(len(infos)))
 
 	// one lookup per pack blob
 	packs := map[blob.ID]blob.Metadata{}

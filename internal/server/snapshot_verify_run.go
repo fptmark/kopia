@@ -25,6 +25,7 @@ type runningVerify struct {
 	Percent    float64   `json:"percent"`
 	State      string    `json:"state"` // queued or running
 	StartedAt  time.Time `json:"startedAt"`
+	Total      int64     `json:"total"` // files to check, 0 when not known yet
 	Files      int64     `json:"files"`
 	Bytes      int64     `json:"bytes"`
 	ReadBytes  int64     `json:"readBytes"`
@@ -162,7 +163,7 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 
 	progress := func(st snapVerifyStats) {
 		s.snapVerifs.update(rv, func(r *runningVerify) {
-			r.Files, r.Bytes, r.ReadBytes, r.Errors = st.Files, st.Bytes, st.ReadBytes, st.Errors
+			r.Total, r.Files, r.Bytes, r.ReadBytes, r.Errors = st.Total, st.Files, st.Bytes, st.ReadBytes, st.Errors
 		})
 		ctrl.ReportCounters(map[string]uitask.CounterValue{
 			"Files checked": uitask.SimpleCounter(st.Files),
@@ -189,6 +190,11 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 		}
 	} else {
 		opts := snapVerifyOptions{Percent: rv.Percent, Progress: progress}
+
+		if m.RootEntry != nil && m.RootEntry.DirSummary != nil {
+			opts.ExpectedFiles = m.RootEntry.DirSummary.TotalFileCount
+			s.snapVerifs.update(rv, func(r *runningVerify) { r.Total = opts.ExpectedFiles })
+		}
 
 		if dr, ok := rep.(repo.DirectRepository); ok {
 			ctrl.ReportProgressInfo("listing the pack blobs in storage")
