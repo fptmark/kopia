@@ -105,6 +105,38 @@ describe("Preferences page", () => {
     await waitFor(() => expect(screen.getByText("Check started.")).toBeInTheDocument());
   });
 
+  it("names the files a failed data check could not read, and loads all of them on request", async () => {
+    const check = {
+      name: "Sample of stored data verifies",
+      ok: false,
+      detail: "7 of 900 files failed to read back; first: /Applications/A.app/x: bad",
+      failureCount: 7,
+      verificationId: 42,
+      failures: [
+        { path: "/Applications/A.app/x", error: "bad" },
+        { path: "/Users/me/.npm/y", error: "invalid length" },
+      ],
+    };
+    axios.get.mockImplementation((url) =>
+      Promise.resolve({
+        data: url.startsWith("/api/v1/snapshots/verifications/42/failures")
+          ? {
+              failures: Array.from({ length: 7 }, (_, i) => ({ path: "/p/f" + i, error: "bad" })),
+            }
+          : { state: "failing", since: "2026-10-24T10:00:00Z", checks: [check] },
+      }),
+    );
+    renderPrefs("?tab=health");
+    await waitFor(() => expect(screen.getByTestId("check-failures")).toBeInTheDocument());
+    const list = screen.getByTestId("check-failures");
+    expect(list).toHaveTextContent("7 files failed");
+    expect(list).toHaveTextContent("/Users/me/.npm/y");
+    expect(screen.getByText("7 of 900 files failed to read back")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Show all 7"));
+    await waitFor(() => expect(screen.getByTestId("check-failures")).toHaveTextContent("/p/f6"));
+  });
+
   it("lists ignored errors and removes one", async () => {
     axios.get.mockResolvedValue({
       data: {

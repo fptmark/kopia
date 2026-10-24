@@ -60,6 +60,9 @@ const renderPage = () =>
 
 const box = (id) => screen.getByLabelText("Select row " + id);
 
+// the page asks for verification results with a POST that changes nothing
+const changes = () => axios.post.mock.calls.filter((c) => c[0] !== "/api/v1/snapshots/verifications");
+
 describe("SnapshotHistory", () => {
   beforeEach(() => {
     axios.get.mockReset();
@@ -147,7 +150,7 @@ describe("SnapshotHistory", () => {
     fireEvent.click(box("s1"));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(within(screen.getByRole("dialog")).getByText(/selected snapshot/)).toBeInTheDocument();
-    expect(axios.post).not.toHaveBeenCalled();
+    expect(changes()).toHaveLength(0);
 
     fireEvent.click(screen.getByTestId("confirm"));
     await waitFor(() =>
@@ -168,7 +171,7 @@ describe("SnapshotHistory", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(screen.getByLabelText("Also remove this folder and its policy."));
     fireEvent.click(screen.getByTestId("confirm"));
-    await waitFor(() => expect(axios.post.mock.calls[0][1].deleteSourceAndPolicy).toBe(true));
+    await waitFor(() => expect(changes()[0]?.[1].deleteSourceAndPolicy).toBe(true));
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/snapshots"));
   });
 
@@ -213,5 +216,109 @@ describe("SnapshotHistory", () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId("delete-source")).toBeInTheDocument());
     expect(screen.getByText("This folder has no snapshots.")).toBeInTheDocument();
+  });
+  describe("verification", () => {
+    const answer = (data) =>
+      axios.post.mockImplementation((url) =>
+        Promise.resolve({ data: url === "/api/v1/snapshots/verifications" ? data : { started: ["s1"], skipped: [] } }),
+      );
+
+    const verification = (over) => ({
+      id: 7,
+      snapshotId: "s3",
+      source: "me@mac:/Users/me",
+      mode: "full",
+      percent: 100,
+      finishedAt: "2026-10-24T09:00:00Z",
+      ok: true,
+      files: 1200,
+      bytes: 1e9,
+      readFiles: 1200,
+      readBytes: 1e9,
+      errorCount: 0,
+      taskSeq: 205,
+      ...over,
+    });
+
+    it("shows what is known about each snapshot, and what is running", async () => {
+      serve();
+      answer({
+        verifications: [
+          verification(),
+          verification({ id: 8, snapshotId: "s3", mode: "new" }),
+          verification({ id: 9, snapshotId: "s2", ok: false, errorCount: 12 }),
+        ],
+        running: [{ snapshotId: "s1", mode: "sample", percent: 10, state: "running", files: 4000 }],
+      });
+      renderPage();
+      await waitFor(() => expect(screen.getAllByTestId("verified-cell")).toHaveLength(3));
+      const cells = screen.getAllByTestId("verified-cell");
+      expect(cells[0]).toHaveTextContent("Verified");
+      expect(cells[0]).toHaveTextContent("Added data ok");
+      expect(cells[1]).toHaveTextContent("12 failed");
+      expect(cells[2]).toHaveTextContent("Verifying (10%, 4,000 checked)");
+    });
+
+    it("lists the files that failed when the failed badge is clicked", async () => {
+      serve();
+      answer({ verifications: [verification({ ok: false, errorCount: 2 })], running: [] });
+      axios.get.mockImplementation((url) => {
+        if (url.startsWith("/api/v1/snapshots/verifications/7/failures")) {
+          return Promise.resolve({
+            data: {
+              verification: {},
+              failures: [
+                { path: "/Users/me/a.bin", error: "invalid length 2, expected 1" },
+                { path: "/Users/me/b.bin", error: "missing from storage" },
+              ],
+            },
+          });
+        }
+        return Promise.resolve({
+          data: url.startsWith("/api/v1/snapshots/storage-stats") ? { snapshots: [] } : history(THREE),
+        });
+      });
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId("verify-failed")).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId("verify-failed"));
+      await waitFor(() => expect(screen.getByTestId("verify-failures")).toHaveTextContent("/Users/me/b.bin"));
+      expect(screen.getByRole("dialog")).toHaveTextContent("2 files failed to read back");
+      expect(screen.getByTestId("verify-failures")).toHaveTextContent("invalid length 2, expected 1");
+    });
+
+    it("starts a verification of the selected snapshots with the chosen mode", async () => {
+      serve();
+      answer({ verifications: [], running: [] });
+      renderPage();
+      await waitFor(() => expect(screen.getByText("Compare")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Verify" })).toBeDisabled();
+
+      fireEvent.click(box("s3"));
+      fireEvent.click(box("s2"));
+      fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+      fireEvent.click(screen.getByLabelText("A sample of the files"));
+      fireEvent.change(screen.getByLabelText("Percent of files"), { target: { value: "25" } });
+      fireEvent.click(screen.getByTestId("confirm"));
+
+      await waitFor(() =>
+        expect(changes()).toContainEqual([
+          "/api/v1/snapshots/verify",
+          { snapshotIds: ["s3", "s2"], mode: "sample", percent: 25 },
+        ]),
+      );
+      await waitFor(() => expect(screen.getByText(/Verifying 1 snapshot/)).toBeInTheDocument());
+    });
+
+    it("does not start a sample of 0 or 100 percent", async () => {
+      serve();
+      answer({ verifications: [], running: [] });
+      renderPage();
+      await waitFor(() => expect(screen.getByText("Compare")).toBeInTheDocument());
+      fireEvent.click(box("s3"));
+      fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+      fireEvent.click(screen.getByLabelText("A sample of the files"));
+      fireEvent.change(screen.getByLabelText("Percent of files"), { target: { value: "100" } });
+      expect(screen.getByTestId("confirm")).toBeDisabled();
+    });
   });
 });

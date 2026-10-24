@@ -5,7 +5,44 @@ import { errorMessage } from "../api";
 import { formatDateTime } from "../format";
 import { loadHealth, runHealthCheck } from "../health";
 import { useLoad } from "../hooks";
-import { DataTable, DateTimeText, Loaded, StatusBadge } from "../ui";
+import { loadVerificationFailures } from "../verification";
+import { DataTable, DateTimeText, Loaded, PathText, StatusBadge } from "../ui";
+
+/** The files a failed check could not read back: the first ones it kept, and all of them on request. */
+function CheckFailures({ check }) {
+  const [all, setAll] = useState(null);
+  const [error, setError] = useState("");
+  const list = all ?? check.failures ?? [];
+  const more = check.failureCount - list.length;
+
+  const showAll = () =>
+    loadVerificationFailures(check.verificationId)
+      .then((r) => setAll(r.failures))
+      .catch((e) => setError(errorMessage(e)));
+
+  return (
+    <details className="mt-1" data-testid="check-failures">
+      <summary>
+        {check.failureCount.toLocaleString("en-US")} {check.failureCount === 1 ? "file" : "files"} failed
+      </summary>
+      <ul className="small mb-1 mt-1">
+        {list.map((f) => (
+          <li key={f.path + f.error}>
+            <PathText>{f.path}</PathText>
+            <div className="nx-muted">{f.error}</div>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && check.verificationId > 0 && (
+        <Button size="sm" variant="secondary" onClick={showAll}>
+          Show all {check.failureCount.toLocaleString("en-US")}
+        </Button>
+      )}
+      {more > 0 && !check.verificationId && <div className="nx-muted small">Showing the first {list.length}.</div>}
+      {error && <div className="text-danger small">{error}</div>}
+    </details>
+  );
+}
 
 /** The health checks with their latest result, and a button to run the full check now. */
 export function Health() {
@@ -67,7 +104,16 @@ export function Health() {
                   cell: (c) => <StatusBadge kind={c.ok ? "ok" : "error"}>{c.ok ? "passed" : "failed"}</StatusBadge>,
                 },
                 { id: "name", header: "Check", cell: (c) => c.name },
-                { id: "detail", header: "Result", cell: (c) => c.detail },
+                {
+                  id: "detail",
+                  header: "Result",
+                  cell: (c) => (
+                    <>
+                      {c.failureCount > 0 && !c.ok ? c.detail.split("; first:")[0] : c.detail}
+                      {c.failureCount > 0 && <CheckFailures check={c} />}
+                    </>
+                  ),
+                },
                 { id: "at", header: "Last checked", cell: (c) => <DateTimeText value={c.checkedAt} /> },
               ]}
             />

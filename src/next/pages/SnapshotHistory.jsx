@@ -31,7 +31,8 @@ import {
   StatusBadge,
   Toolbar,
 } from "../ui";
-import { FailedBadge, FailedFilesDialog } from "../ui";
+import { FailedBadge, FailedFilesDialog, VerifiedCell, VerifyDialog, VerifyFailuresDialog } from "../ui";
+import { groupVerifications, loadVerifications, verifySnapshots } from "../verification";
 
 function Retention({ snap, onPin }) {
   return (
@@ -70,6 +71,8 @@ export function SnapshotHistory() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [failures, setFailures] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyFailed, setVerifyFailed] = useState(null);
 
   const state = useLoad(() => loadHistory(source, showAll), [source, showAll]);
   const stats = useLoad(() => loadStorageStats(source), [source, state.data]);
@@ -78,6 +81,10 @@ export function SnapshotHistory() {
     () => [...(state.data?.snapshots ?? [])].sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
     [state.data],
   );
+  const ids = useMemo(() => snapshots.map((s) => s.id), [snapshots]);
+  // checked every few seconds so a verification that is running shows its progress and its result
+  const verif = useLoad(() => loadVerifications(ids), [ids.join(",")], { enabled: ids.length > 0, refreshMs: 5000 });
+  const verified = useMemo(() => groupVerifications(verif.data), [verif.data]);
   const statById = useMemo(() => Object.fromEntries((stats.data?.snapshots ?? []).map((s) => [s.id, s])), [stats.data]);
   const stored = (stats.data?.snapshots ?? []).reduce((n, s) => n + s.newBytes, 0);
   const chosen = snapshots.filter((s) => selected[s.id]);
@@ -121,6 +128,28 @@ export function SnapshotHistory() {
         state.reload();
       })
       .catch((e) => report("error", "Not saved: " + errorMessage(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const startVerify = (mode, percent) => {
+    setBusy(true);
+    verifySnapshots(
+      chosen.map((s) => s.id),
+      mode,
+      percent,
+    )
+      .then((r) => {
+        const n = r.started.length;
+        report(
+          "success",
+          n
+            ? `Verifying ${n} ${n === 1 ? "snapshot" : "snapshots"}, one at a time. Progress shows in the Verified column and on the Tasks page.`
+            : "Those verifications are already queued or running.",
+        );
+        setVerifying(false);
+        verif.reload();
+      })
+      .catch((e) => report("error", "Not started: " + errorMessage(e)))
       .finally(() => setBusy(false));
   };
 
@@ -210,6 +239,15 @@ export function SnapshotHistory() {
           <span className="nx-muted">{"—"}</span>
         );
       },
+    },
+    {
+      id: "verified",
+      header: () => (
+        <span title="Whether the stored data of this snapshot was read back from the NAS and matched. Select snapshots and press Verify.">
+          Verified
+        </span>
+      ),
+      cell: (s) => <VerifiedCell info={verified[s.id]} onShowFailures={setVerifyFailed} />,
     },
     {
       id: "files",
@@ -326,6 +364,15 @@ export function SnapshotHistory() {
                 </Button>
                 <Button
                   size="sm"
+                  variant="primary"
+                  disabled={chosen.length === 0}
+                  onClick={() => setVerifying(true)}
+                  title="Read the selected snapshots back from the repository and check them"
+                >
+                  Verify
+                </Button>
+                <Button
+                  size="sm"
                   variant="danger"
                   disabled={chosen.length === 0}
                   onClick={() => {
@@ -362,6 +409,11 @@ export function SnapshotHistory() {
           </>
         )}
       </Loaded>
+
+      {verifying && (
+        <VerifyDialog count={chosen.length} busy={busy} onStart={startVerify} onCancel={() => setVerifying(false)} />
+      )}
+      {verifyFailed && <VerifyFailuresDialog verification={verifyFailed} onClose={() => setVerifyFailed(null)} />}
 
       <ConfirmDialog
         show={confirmDelete}
