@@ -64,9 +64,10 @@ function VerifyProgress({ r }) {
         {...(percent === null ? {} : { "aria-valuenow": percent })}
       />
       <span className="nx-muted small">
-        {r.phase === "listing" ? "Listing stored data " + elapsedText(r) : "Verifying"}
-        {r.mode === "sample" ? " " + r.percent + "%" : r.mode === "new" ? " added data" : ""}
-        {idleMinutes(r) > 0 && (
+        {r.phase === "listing"
+          ? "Listing stored data · " + elapsedText(r)
+          : "Verifying" + (r.mode === "sample" ? " " + r.percent + "%" : r.mode === "new" ? " added data" : "")}
+        {idleMinutes(r) >= (r.phase === "listing" ? 5 : 1) && (
           <span className="text-warning-emphasis">
             {" "}
             {"·"} no progress for {idleText(r)}, waiting on the NAS
