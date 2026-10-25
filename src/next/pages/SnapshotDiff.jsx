@@ -110,6 +110,8 @@ export function SnapshotDiff() {
       });
   };
 
+  const sizeDelta = (e) => (e.change === "removed" ? 0 : e.newSize ?? 0) - (e.change === "added" ? 0 : e.oldSize ?? 0);
+
   const columns = [
     { id: "change", header: "Change", accessor: (e) => e.change, cell: (e) => <StatusBadge kind={e.change} /> },
     {
@@ -131,6 +133,25 @@ export function SnapshotDiff() {
       align: "end",
       accessor: (e) => (e.change === "removed" ? undefined : e.newSize),
       cell: (e) => (e.change === "removed" ? <span className="nx-muted">{"—"}</span> : <SizeText bytes={e.newSize} />),
+    },
+    {
+      id: "delta",
+      header: "Size change",
+      align: "end",
+      accessor: sizeDelta,
+      cell: (e) => {
+        const d = sizeDelta(e);
+        return d === 0 ? (
+          <span className="nx-muted">{"—"}</span>
+        ) : (
+          <span
+            className={"nx-num " + (d > 0 ? "text-danger" : "text-success")}
+            title={Number(d).toLocaleString("en-US") + " bytes"}
+          >
+            {formatSizeChange(d, !!prefs.bytesStringBase2)}
+          </span>
+        );
+      },
     },
     {
       id: "files",
