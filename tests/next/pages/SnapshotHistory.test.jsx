@@ -275,7 +275,7 @@ describe("SnapshotHistory", () => {
       renderPage();
       await waitFor(() => expect(screen.getAllByTestId("verify-running")).toHaveLength(2));
       const [starting, queued] = screen.getAllByTestId("verify-running");
-      expect(starting).toHaveTextContent("Starting · added data");
+      expect(starting).toHaveTextContent("Verifying added data");
       expect(within(starting).getByRole("progressbar")).not.toHaveAttribute("aria-valuenow", "0");
       expect(queued).toHaveTextContent("Queued (every file)");
       expect(within(queued).queryByRole("progressbar")).toBeNull();
