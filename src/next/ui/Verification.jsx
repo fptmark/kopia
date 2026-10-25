@@ -35,6 +35,10 @@ const whatIsRead = (r) =>
 
 const idleSeconds = (r) => (r.progressAt ? Math.floor((Date.now() - new Date(r.progressAt).getTime()) / 1000) : 0);
 const idleMinutes = (r) => (idleSeconds(r) >= 60 ? Math.floor(idleSeconds(r) / 60) || 1 : 0);
+const elapsedText = (r) => {
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(r.progressAt).getTime()) / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+};
 const idleText = (r) => idleMinutes(r) + " min";
 
 /** A verification that is queued or running: a bar of files checked out of the files to check, and what it is doing. */
@@ -60,7 +64,7 @@ function VerifyProgress({ r }) {
         {...(percent === null ? {} : { "aria-valuenow": percent })}
       />
       <span className="nx-muted small">
-        {r.phase === "listing" ? "Listing stored data" : "Verifying"}
+        {r.phase === "listing" ? "Listing stored data " + elapsedText(r) : "Verifying"}
         {r.mode === "sample" ? " " + r.percent + "%" : r.mode === "new" ? " added data" : ""}
         {idleMinutes(r) > 0 && (
           <span className="text-warning-emphasis">
