@@ -166,6 +166,9 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 
 	ctrl.OnCancel(cancel)
 
+	// a sleeping Mac drops the NAS connection and the read-back stalls for the whole nap
+	defer s.keepAwake(ctx)()
+
 	started := clock.Now()
 
 	progress := func(st snapVerifyStats) {

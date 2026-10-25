@@ -727,6 +727,9 @@ func (v *verifier) runDeep(ctx context.Context, why string) {
 	v.runMu.Lock()
 	defer v.runMu.Unlock()
 
+	// a sleeping Mac drops the NAS connection and the check stalls for the whole nap
+	defer v.srv.keepAwake(ctx)()
+
 	var checks []verifyCheck
 
 	taskID := ""
