@@ -30,6 +30,8 @@ type runningVerify struct {
 	Bytes      int64     `json:"bytes"`
 	ReadBytes  int64     `json:"readBytes"`
 	Errors     int64     `json:"errors"`
+	Phase      string    `json:"phase"`      // listing (the blobs in storage) or reading
+	ProgressAt time.Time `json:"progressAt"` // when the counters last moved, or the phase last changed
 }
 
 func (r *runningVerify) key() string {
@@ -130,7 +132,12 @@ func (s *Server) startSnapshotVerify(ctx context.Context, rep repo.Repository, m
 
 		defer func() { <-gate }()
 
-		s.snapVerifs.update(rv, func(r *runningVerify) { r.State = "running"; r.StartedAt = clock.Now() })
+		s.snapVerifs.update(rv, func(r *runningVerify) {
+			r.State = "running"
+			r.StartedAt = clock.Now()
+			r.Phase = "reading"
+			r.ProgressAt = r.StartedAt
+		})
 
 		desc := fmt.Sprintf("Verify snapshot of %v from %v (%v)", m.Source.Path, m.StartTime.ToTime().Local().Format("2006-01-02 15:04"), describeVerifyMode(mode, percent))
 
@@ -163,6 +170,10 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 
 	progress := func(st snapVerifyStats) {
 		s.snapVerifs.update(rv, func(r *runningVerify) {
+			if st.Files != r.Files || st.ReadBytes != r.ReadBytes || st.Errors != r.Errors {
+				r.ProgressAt = clock.Now()
+			}
+
 			r.Total, r.Files, r.Bytes, r.ReadBytes, r.Errors = st.Total, st.Files, st.Bytes, st.ReadBytes, st.Errors
 		})
 		ctrl.ReportCounters(map[string]uitask.CounterValue{
@@ -198,6 +209,7 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 
 		if dr, ok := rep.(repo.DirectRepository); ok {
 			ctrl.ReportProgressInfo("listing the pack blobs in storage")
+			s.snapVerifs.update(rv, func(r *runningVerify) { r.Phase, r.ProgressAt = "listing", clock.Now() })
 
 			blobs, err := blob.ReadBlobMap(ctx, dr.BlobReader())
 			if err != nil {
@@ -213,6 +225,7 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 		}
 
 		ctrl.ReportProgressInfo("reading the snapshot back")
+		s.snapVerifs.update(rv, func(r *runningVerify) { r.Phase, r.ProgressAt = "reading", clock.Now() })
 
 		res = verifyTrees(ctx, rep, []treeRoot{{Path: m.Source.Path, Entry: root}}, opts)
 	}
