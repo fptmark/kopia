@@ -55,9 +55,11 @@ function VerifyProgress({ r }) {
         aria-label="Verification progress"
         {...(percent === null ? {} : { "aria-valuenow": percent })}
       />
-      <span className="nx-muted small">
+      <span
+        className="nx-muted small"
+        title={known ? `${n(r.files)} of ${n(r.total)} files checked` : r.files ? `${n(r.files)} files checked` : undefined}
+      >
         {percent === null ? "Starting" : percent + "%"} {"·"} {whatIsRead(r)}
-        {known ? ` · ${n(r.files)} of ${n(r.total)}` : r.files ? ` · ${n(r.files)} checked` : ""}
         {r.errors > 0 && (
           <span className="text-danger">
             {" "}

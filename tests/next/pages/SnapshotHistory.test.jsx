@@ -258,7 +258,7 @@ describe("SnapshotHistory", () => {
       expect(cells[0]).toHaveTextContent("Verified");
       expect(cells[0]).toHaveTextContent("Added data ok");
       expect(cells[1]).toHaveTextContent("12 failed");
-      expect(cells[2]).toHaveTextContent("40% · 10% sample · 4,000 of 10,000");
+      expect(cells[2]).toHaveTextContent("40% · 10% sample");
       expect(cells[2]).toHaveTextContent("2 failed");
       expect(within(cells[2]).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
     });
