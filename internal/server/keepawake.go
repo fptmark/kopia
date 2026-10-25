@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// keepAwake prevents the machine from sleeping while a snapshot runs, according to
+// keepAwake prevents the machine from sleeping while a snapshot, verify or health check runs, according to
 // the KeepAwake UI preference, and returns a function that releases the hold.
 // It is a no-op on platforms that do not support it.
 func (s *Server) keepAwake(ctx context.Context) func() {
@@ -14,5 +14,11 @@ func (s *Server) keepAwake(ctx context.Context) func() {
 		return func() {}
 	}
 
-	return preventSleep(ctx, p.KeepAwake)
+	// an operation that is interrupted by sleep stalls on a dead NAS connection, so always hold at least idle sleep
+	mode := p.KeepAwake
+	if mode != "ac" {
+		mode = "idle"
+	}
+
+	return preventSleep(ctx, mode)
 }
