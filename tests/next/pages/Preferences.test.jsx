@@ -74,8 +74,8 @@ describe("Preferences page", () => {
   it("goes to the tab named in the address, and switches tabs", () => {
     const p = setters();
     renderPrefs("?tab=scheduling", { ...p });
-    expect(screen.getByLabelText("Keep the Mac awake during snapshots")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Keep the Mac awake during snapshots"), { target: { value: "ac" } });
+    expect(screen.getByLabelText("Keep the Mac awake during snapshots and checks")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Keep the Mac awake during snapshots and checks"), { target: { value: "ac" } });
     expect(p.setKeepAwake).toHaveBeenCalledWith("ac");
 
     fireEvent.click(screen.getByTestId("tab-appearance"));

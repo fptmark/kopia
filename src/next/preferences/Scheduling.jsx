@@ -10,14 +10,13 @@ export function Scheduling() {
     <div className="row">
       <div className="col-lg-8">
         <Field
-          label="Keep the Mac awake during snapshots"
-          help="Uses macOS caffeinate for the length of each snapshot, scheduled or manual. Closing the lid still sleeps the Mac. Applies to snapshots started after the change."
+          label="Keep the Mac awake during snapshots and checks"
+          help="Uses macOS caffeinate while a snapshot, verify or health check runs, so a sleeping Mac does not drop the NAS connection. Closing the lid on battery still sleeps the Mac."
         >
           {(id) => (
-            <Form.Select id={id} value={keepAwake || "never"} onChange={(e) => setKeepAwake(e.target.value)}>
-              <option value="never">Never (the system may sleep and interrupt a snapshot)</option>
-              <option value="idle">Yes, on any power source (prevents idle sleep)</option>
-              <option value="ac">Yes, only on AC power (prevents idle and system sleep)</option>
+            <Form.Select id={id} value={keepAwake === "ac" ? "ac" : "idle"} onChange={(e) => setKeepAwake(e.target.value)}>
+              <option value="idle">Prevent idle sleep (any power source)</option>
+              <option value="ac">Also prevent lid-close sleep on AC power</option>
             </Form.Select>
           )}
         </Field>
