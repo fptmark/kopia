@@ -33,6 +33,10 @@ function VerifiedBadge({ v, onShowFailures, label }) {
 const whatIsRead = (r) =>
   r.mode === "new" ? "added data" : r.mode === "sample" ? r.percent + "% sample" : "every file";
 
+const idleSeconds = (r) => (r.progressAt ? Math.floor((Date.now() - new Date(r.progressAt).getTime()) / 1000) : 0);
+const idleMinutes = (r) => (idleSeconds(r) >= 60 ? Math.floor(idleSeconds(r) / 60) || 1 : 0);
+const idleText = (r) => idleMinutes(r) + " min";
+
 /** A verification that is queued or running: a bar of files checked out of the files to check, and what it is doing. */
 function VerifyProgress({ r }) {
   const n = (x) => x.toLocaleString("en-US");
@@ -56,7 +60,14 @@ function VerifyProgress({ r }) {
         {...(percent === null ? {} : { "aria-valuenow": percent })}
       />
       <span className="nx-muted small">
-        Verifying{r.mode === "sample" ? " " + r.percent + "%" : r.mode === "new" ? " added data" : ""}
+        {r.phase === "listing" ? "Listing stored data" : "Verifying"}
+        {r.mode === "sample" ? " " + r.percent + "%" : r.mode === "new" ? " added data" : ""}
+        {idleMinutes(r) > 0 && (
+          <span className="text-warning-emphasis">
+            {" "}
+            {"·"} no progress for {idleText(r)}, waiting on the NAS
+          </span>
+        )}
         {r.errors > 0 && (
           <span className="text-danger">
             {" "}
