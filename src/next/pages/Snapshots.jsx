@@ -45,7 +45,7 @@ function SourceActions({ row, onStart, onCancel, base2 }) {
       );
     case "UPLOADING":
       return (
-        <span className="d-inline-flex align-items-center gap-2" data-testid="snapshot-uploading">
+        <span className="nx-inline" data-testid="snapshot-uploading">
           <Spinner animation="border" size="sm" variant="primary" />
           <span className="nx-num" title={row.upload?.directory}>
             {uploadProgress(row.upload, base2)}
@@ -58,7 +58,7 @@ function SourceActions({ row, onStart, onCancel, base2 }) {
       );
     default:
       return (
-        <span className="d-inline-flex gap-2">
+        <span className="nx-inline">
           <Button as={Link} size="sm" variant="secondary" to={policyEditorURL(row.source)} data-testid="edit-policy">
             Policy
           </Button>
@@ -158,7 +158,7 @@ export function Snapshots() {
                 const t = r.lastSnapshot?.startTime;
                 const paused = r.status === "PAUSED";
                 return (
-                  <span className="d-inline-flex align-items-center gap-2">
+                  <span className="nx-inline">
                     {t ? <DateTimeText value={t} ago /> : <span className="nx-muted">none yet</span>}
                     {paused && <StatusBadge kind="warning">paused</StatusBadge>}
                     {!paused && isOverdue(t, r.schedule?.intervalSeconds) && (

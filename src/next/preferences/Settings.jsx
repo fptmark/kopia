@@ -127,7 +127,7 @@ export function Settings() {
           data-testid="verify-new-data"
         />
         {verifyNewData && (
-          <div className="ms-4" data-testid="verify-each">
+          <div data-testid="verify-each">
             <VerifyModePicker
               name="verify-each"
               mode={verifyEachMode || "new"}

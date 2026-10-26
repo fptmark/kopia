@@ -34,7 +34,7 @@ function StatusCell({ task, onDetails, onCancel }) {
   const skipped = task.failedFiles > 0;
 
   return (
-    <span className="d-inline-flex align-items-center gap-2">
+    <span className="nx-inline">
       <StatusBadge kind={s.kind}>{s.text}</StatusBadge>
       {(hasError || skipped) && (
         <Button

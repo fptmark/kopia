@@ -36,7 +36,7 @@ import { groupVerifications, loadVerifications, verifySnapshots } from "../verif
 
 function Retention({ snap, onPin }) {
   return (
-    <span className="d-inline-flex gap-1 align-items-center">
+    <span className="nx-inline">
       {(snap.retention || []).map((l) => (
         <StatusBadge key={l} kind="neutral">
           {l}
@@ -46,7 +46,7 @@ function Retention({ snap, onPin }) {
         <button
           key={p}
           type="button"
-          className="btn btn-sm p-0 border-0"
+          className="btn btn-sm nx-icon-btn"
           title="Edit pin"
           onClick={() => onPin(snap, p)}
         >
@@ -200,7 +200,7 @@ export function SnapshotHistory() {
         const i = snapshots.indexOf(s);
         const jump = sizeJump(s.summary?.size, snapshots[i + 1]?.summary?.size);
         return (
-          <span className="d-inline-flex align-items-center gap-2 justify-content-end">
+          <span className="nx-inline">
             {jump !== null && (
               <span
                 className={jump > 0 ? "text-warning" : "nx-muted"}

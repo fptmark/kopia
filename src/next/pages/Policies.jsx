@@ -99,7 +99,7 @@ export function Policies() {
                 </Toolbar.Group>
                 <Toolbar.Group label="Folder" grow>
                   <Form
-                    className="d-flex gap-2 flex-grow-1"
+                    className="nx-row"
                     onSubmit={(e) => edit(e, sources.localUsername, sources.localHost)}
                   >
                     <Form.Control
@@ -139,7 +139,7 @@ export function Policies() {
                     id: "defined",
                     header: "Sets",
                     cell: (p) => (
-                      <span className="d-inline-flex flex-wrap gap-1">
+                      <span className="nx-inline">
                         {definedSections(p.policy).map((s) => (
                           <StatusBadge key={s} kind="neutral">
                             {s}

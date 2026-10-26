@@ -192,7 +192,7 @@ export function DataTable({
             {"–"}
             {last} of {total.toLocaleString("en-US")}
           </span>
-          <label className="d-flex align-items-center gap-2 mb-0">
+          <label className="nx-row">
             Rows per page
             <Form.Select
               size="sm"

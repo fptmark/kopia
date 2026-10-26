@@ -159,7 +159,7 @@ function Row({ field, policy, onChange, resolved, target, algorithms }) {
     <div className="nx-policy-row" data-testid={"policy-" + field.path}>
       <div>
         <div className="fw-semibold">{field.label}</div>
-        <div className="nx-help mt-0">{field.help}</div>
+        <div className="nx-help">{field.help}</div>
         {readonly && field.link && <Link to={field.link}>Open {field.link.slice(1)}</Link>}
       </div>
       <div>
@@ -187,7 +187,7 @@ function Row({ field, policy, onChange, resolved, target, algorithms }) {
         ) : (
           <span className="nx-muted">not set</span>
         )}
-        {def && text && <div className="nx-help mt-0">from {definedBy(def, target)}</div>}
+        {def && text && <div className="nx-help">from {definedBy(def, target)}</div>}
       </div>
     </div>
   );
@@ -233,14 +233,14 @@ function Upcoming({ resolved }) {
     <div className="nx-policy-row" data-testid="upcoming">
       <div>
         <div className="fw-semibold">Next snapshots</div>
-        <div className="nx-help mt-0">From the schedule above.</div>
+        <div className="nx-help">From the schedule above.</div>
       </div>
       <div />
       <div>
         {resolved.schedulingError ? (
           <StatusBadge kind="error">{resolved.schedulingError}</StatusBadge>
         ) : resolved.upcomingSnapshotTimes?.length ? (
-          <ul className="mb-0 ps-3" data-testid="upcoming-snapshot-times">
+          <ul data-testid="upcoming-snapshot-times">
             {resolved.upcomingSnapshotTimes.map((t) => (
               <li key={t}>{formatDateTime(t)}</li>
             ))}

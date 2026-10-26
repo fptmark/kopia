@@ -175,7 +175,7 @@ export function SnapshotCreate() {
             </InputGroup>
           )}
         </Field>
-        <div className="d-flex gap-2">
+        <div className="nx-row">
           <Button variant="secondary" disabled={!ready} onClick={doEstimate} data-testid="estimate-now">
             Estimate
           </Button>
@@ -187,7 +187,7 @@ export function SnapshotCreate() {
       {estimate && estimate.path === source?.path && <Estimate taskId={estimate.id} />}
       {ready && policyState.loaded && (
         <>
-          <h2 className="fs-5 mb-2">Policy for this folder</h2>
+          <h2 className="fs-5">Policy for this folder</h2>
           <PolicyFields target={target} policyState={policyState} />
         </>
       )}

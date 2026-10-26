@@ -23,11 +23,11 @@ function CheckFailures({ check }) {
       .catch((e) => setError(errorMessage(e)));
 
   return (
-    <details className="mt-1" data-testid="check-failures">
+    <details data-testid="check-failures">
       <summary>
         {check.failureCount.toLocaleString("en-US")} {check.failureCount === 1 ? "file" : "files"} failed
       </summary>
-      <ul className="small mb-1 mt-1">
+      <ul className="small">
         {list.map((f) => (
           <li key={f.path + f.error}>
             <PathText>{f.path}</PathText>
@@ -65,8 +65,8 @@ export function BackupHealth() {
         const s = status.state;
         return (
           <div className="nx-stack" data-testid="backup-health">
-            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
-              <div className="d-flex flex-wrap align-items-center gap-2">
+            <div className="nx-row">
+              <div className="nx-row">
                 {s === "ok" && <StatusBadge kind="ok">Healthy</StatusBadge>}
                 {s === "failing" && <StatusBadge kind="error">Problem</StatusBadge>}
                 {(!s || s === "unknown") && <StatusBadge kind="neutral">Not checked yet</StatusBadge>}
@@ -86,7 +86,7 @@ export function BackupHealth() {
                   )}
                 </span>
               </div>
-              <div className="d-flex align-items-center gap-2">
+              <div className="nx-row">
                 {message && <span className="nx-muted small">{message}</span>}
                 <Button variant="primary" onClick={run}>
                   Run full check now

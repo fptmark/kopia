@@ -243,7 +243,6 @@ export function SnapshotDiff() {
                       inline
                       type="checkbox"
                       id={"show-" + k}
-                      className="mb-0"
                       label={k}
                       checked={shown[k]}
                       onChange={() => setShown((cur) => ({ ...cur, [k]: !cur[k] }))}
@@ -322,7 +321,7 @@ export function SnapshotDiff() {
                   )?
                 </p>
                 {Object.keys(folderNames).length > 0 && (
-                  <div className="mb-2" data-testid="by-name-options">
+                  <div data-testid="by-name-options">
                     {Object.entries(folderNames).map(([name, count]) => (
                       <Form.Check
                         key={name}
@@ -352,7 +351,7 @@ export function SnapshotDiff() {
                     that are not in the list, and any created later.
                   </p>
                 )}
-                <p className="small mb-0">
+                <p className="small">
                   These become rules for <PathText>{d.source.path}</PathText>. The next snapshot skips them. Copies
                   already in earlier snapshots stay until retention removes them.
                 </p>

@@ -195,7 +195,7 @@ export function Files() {
       cell: (r) => {
         const l = resultLinks(r);
         return (
-          <span className="d-inline-flex gap-2">
+          <span className="nx-inline">
             {l.viewIsPage ? (
               <Button as={Link} size="sm" variant="secondary" to={l.view} data-testid="view-result">
                 Browse
@@ -238,8 +238,8 @@ export function Files() {
                   />
                 )}
               </Field>
-              <div className="d-flex flex-wrap gap-3 align-items-end">
-                <Field label="Snapshots from" className="mb-0">
+              <div className="nx-row">
+                <Field label="Snapshots from" >
                   {(id) => (
                     <Form.Select
                       id={id}
@@ -257,7 +257,7 @@ export function Files() {
                 </Field>
                 {rangeValue === "custom" && (
                   <>
-                    <Field label="From" className="mb-0">
+                    <Field label="From" >
                       {(id) => (
                         <Form.Control
                           id={id}
@@ -269,7 +269,7 @@ export function Files() {
                         />
                       )}
                     </Field>
-                    <Field label="To" className="mb-0">
+                    <Field label="To" >
                       {(id) => (
                         <Form.Control
                           id={id}
@@ -289,9 +289,8 @@ export function Files() {
                   label="Also match folder names"
                   checked={includeDirs}
                   onChange={(e) => setIncludeDirs(e.target.checked)}
-                  className="mb-1"
                 />
-                <span className="ms-auto">
+                <span className="nx-end">
                   {running ? (
                     <Button
                       variant="secondary"
@@ -312,9 +311,9 @@ export function Files() {
                   )}
                 </span>
               </div>
-              <details className="mt-3 small nx-muted" data-testid="search-tips">
+              <details className="small nx-muted" data-testid="search-tips">
                 <summary>Search tips</summary>
-                <ul className="mt-2 mb-0">
+                <ul>
                   <li>
                     <code>*</code> matches any characters and <code>?</code> one character: <code>report*</code>,{" "}
                     <code>*.xls</code>.
@@ -346,7 +345,6 @@ export function Files() {
               <Spinner animation="border" size="sm" /> Searching: snapshot {p.snapshotsDone} of {p.snapshotsTotal},{" "}
               {p.directories.toLocaleString("en-US")} folders read, {results.length.toLocaleString("en-US")} found
               <ProgressBar
-                className="mt-1"
                 now={p.snapshotsTotal ? (100 * p.snapshotsDone) / p.snapshotsTotal : 0}
                 style={{ height: 6 }}
               />

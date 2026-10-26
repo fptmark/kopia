@@ -37,7 +37,7 @@ function FailuresPicker({ d, onChange }) {
       <Dropdown.Toggle size="sm" variant="secondary" className="w-100 text-start" aria-label={`Failures for ${d.name}`}>
         {failuresLabel(d)}
       </Dropdown.Toggle>
-      <Dropdown.Menu className="p-2" style={{ minWidth: "19rem" }}>
+      <Dropdown.Menu style={{ minWidth: "19rem" }}>
         {FAILURES.map((f) => (
           <Form.Check
             key={f.id}
@@ -48,7 +48,7 @@ function FailuresPicker({ d, onChange }) {
             onChange={() => toggle(f.id)}
           />
         ))}
-        <div className="d-flex gap-2 mt-2">
+        <div className="nx-row">
           <Button size="sm" variant="secondary" onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}>
             All
           </Button>
@@ -250,7 +250,7 @@ export function Notifications() {
                         {d.type === "email" && fromChoices.length > 1 && (
                           <Form.Select
                             size="sm"
-                            className="mt-1"
+                            
                             aria-label={`Send from for ${d.name}`}
                             value={d.from || ""}
                             onChange={(e) => replace({ ...d, from: e.target.value })}
@@ -297,7 +297,7 @@ export function Notifications() {
                     header: "",
                     align: "end",
                     cell: (d) => (
-                      <span className="d-inline-flex gap-1">
+                      <span className="nx-inline">
                         <Button size="sm" variant="secondary" onClick={() => test(d)} aria-label={`Test ${d.name}`}>
                           Test
                         </Button>
@@ -316,7 +316,7 @@ export function Notifications() {
               />
             </Panel>
 
-            <div className="nx-muted small d-flex align-items-center gap-1 flex-wrap">
+            <div className="nx-row nx-muted small">
               Repeated failures are sent once every
               <DurationInput
                 ariaLabel="Repeat period"

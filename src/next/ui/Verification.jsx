@@ -41,7 +41,7 @@ function VerifiedBadge({ v, onShowFailures, label, when }) {
     >
       <button
         type="button"
-        className="btn btn-sm p-0 border-0"
+        className="btn btn-sm nx-icon-btn"
         onClick={() => onShowFailures(v)}
         data-testid="verify-failed"
       >
@@ -75,7 +75,7 @@ function VerifyProgress({ r }) {
   const known = r.total > 0;
   const percent = known ? Math.min(100, Math.floor((r.files * 100) / r.total)) : null;
   return (
-    <span className="d-inline-flex align-items-center gap-2" data-testid="verify-running">
+    <span className="nx-inline" data-testid="verify-running">
       <ProgressBar
         now={percent ?? 100}
         animated={percent === null}
@@ -117,7 +117,7 @@ export function VerifiedCell({ info, onShowFailures }) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
-    <span className="d-inline-flex gap-2 align-items-center" data-testid="verified-cell">
+    <span className="nx-inline" data-testid="verified-cell">
       {info.running.map((r) => (
         <VerifyProgress key={r.mode} r={r} />
       ))}
@@ -154,7 +154,7 @@ const MODES = [
 /** The choice of what to read back: the data a snapshot added, a sample, or every file. */
 export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode" }) {
   return MODES.map((m) => (
-    <div key={m.id} className="mb-2">
+    <div key={m.id} >
       <Form.Check
         type="radio"
         id={name + "-" + m.id}
@@ -163,9 +163,9 @@ export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode"
         checked={mode === m.id}
         onChange={() => onChange(m.id, percent)}
       />
-      <div className="nx-help ms-4">{m.help}</div>
+      <div className="nx-help">{m.help}</div>
       {m.id === "sample" && mode === "sample" && (
-        <div className="ms-4 mt-1 d-flex align-items-center gap-2">
+        <div className="nx-row">
           <Form.Control
             size="sm"
             type="number"
@@ -238,16 +238,16 @@ export function VerifyFailuresDialog({ verification, onClose }) {
         <Loaded state={state}>
           {(d) => (
             <>
-              <ul className="small mb-0">
+              <ul className="small">
                 {d.failures.map((f) => (
-                  <li key={f.path + f.error} className="mb-1">
+                  <li key={f.path + f.error} >
                     <PathText>{f.path}</PathText>
                     <div className="nx-muted">{f.error}</div>
                   </li>
                 ))}
               </ul>
               {d.failures.length < verification.errorCount && (
-                <p className="nx-muted small mt-2">
+                <p className="nx-muted small">
                   Showing the first {d.failures.length.toLocaleString("en-US")} of{" "}
                   {verification.errorCount.toLocaleString("en-US")}.
                 </p>

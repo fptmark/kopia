@@ -557,3 +557,48 @@
   font-size: 0.85rem;
   color: var(--nx-muted);
 }
+
+/* inline groups: the only way pages lay out a row of controls or text */
+.nx-row,
+.nx-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.nx-row {
+  flex-wrap: wrap;
+}
+.nx-inline {
+  display: inline-flex;
+}
+.nx-row > .nx-end,
+.nx-inline > .nx-end,
+.nx-end {
+  margin-left: auto;
+}
+
+/* vertical rhythm inside any container: one step between siblings, nothing else */
+.nx-panel-body > * + *,
+.nx-notice > * + *,
+.nx-row-stack > * + * {
+  margin-top: 0.75rem;
+}
+.nx p,
+.nx ul,
+.nx pre,
+.nx details {
+  margin: 0;
+}
+.nx-panel-body > * + *,
+.nx details > * + * {
+  margin-top: 0.75rem;
+}
+.nx ul {
+  padding-left: 1.25rem;
+}
+
+/* a button that is only an icon or a link-looking label */
+.nx .btn.nx-icon-btn {
+  padding: 0;
+  border: 0;
+}

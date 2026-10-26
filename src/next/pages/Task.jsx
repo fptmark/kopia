@@ -37,10 +37,10 @@ function Summary({ task }) {
       return (
         <Notice kind="error" data-testid="task-error" title="Error:">
           {shortTaskError(task.errorMessage)}
-          {taskErrorHint(task.errorMessage) && <div className="mt-1">{taskErrorHint(task.errorMessage)}</div>}
-          <details className="mt-2">
+          {taskErrorHint(task.errorMessage) && <div>{taskErrorHint(task.errorMessage)}</div>}
+          <details>
             <summary>Full message</summary>
-            <pre className="mb-0 text-break" style={{ whiteSpace: "pre-wrap" }}>
+            <pre className="text-break" style={{ whiteSpace: "pre-wrap" }}>
               {task.errorMessage}
             </pre>
           </details>

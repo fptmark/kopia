@@ -64,10 +64,10 @@ function IgnoreDialog({ source, target, onClose, onDone }) {
       onConfirm={save}
       data-testid="ignore-dialog"
     >
-      <div className="mb-2">
+      <div>
         <PathText>{target.path || source}</PathText>
       </div>
-      <Form.Group className="mb-3">
+      <Form.Group >
         {choices.map((c) => (
           <Form.Check
             key={c.id}
@@ -80,8 +80,8 @@ function IgnoreDialog({ source, target, onClose, onDone }) {
           />
         ))}
       </Form.Group>
-      <Form.Group className="d-flex align-items-center gap-2 mb-3">
-        <Form.Label className="mb-0">Ignore for</Form.Label>
+      <Form.Group className="nx-row">
+        <Form.Label >Ignore for</Form.Label>
         <Form.Select
           size="sm"
           style={{ width: "auto" }}
@@ -134,7 +134,7 @@ function ExcludeDialog({ source, target, onClose, onDone }) {
       <p>
         Stop backing up <PathText>{target.path}</PathText>?
       </p>
-      <p className="mb-0 small">
+      <p className="small">
         This adds <PathText>{pattern}</PathText> as a rule for <PathText>{source}</PathText>. The next snapshot skips
         it. Copies already in earlier snapshots stay until retention removes them.
       </p>
@@ -149,19 +149,19 @@ function Group({ group, onIgnore, onExclude, covered }) {
   const patterns = [...new Set(group.items.map((i) => covered[i.path]).filter(Boolean))];
 
   return (
-    <div className="mb-3" data-testid="failure-group">
-      <div className="d-flex flex-wrap align-items-baseline gap-2">
+    <div data-testid="failure-group">
+      <div className="nx-row">
         <span className="text-danger">{group.reason}</span>
         <button
           type="button"
-          className="btn btn-sm p-0 border-0 text-start"
+          className="btn btn-sm nx-icon-btn text-start"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
           {open ? "▾" : "▸"} <PathText>{group.label}</PathText> <span className="nx-muted">({group.count})</span>
         </button>
         {onIgnore && (
-          <span className="ms-auto d-flex gap-2">
+          <span className="nx-row nx-end">
             {allCovered && (
               <span className="nx-muted align-self-center" data-testid="group-excluded">
                 Excluded{patterns.length === 1 ? " by " + patterns[0] : ""}
@@ -187,13 +187,13 @@ function Group({ group, onIgnore, onExclude, covered }) {
         )}
       </div>
       {open && (
-        <ul className="small mt-2 mb-0">
+        <ul className="small">
           {group.items.map((i) => (
-            <li key={i.path} className="mb-1">
-              <div className="d-flex flex-wrap align-items-baseline gap-2">
+            <li key={i.path} >
+              <div className="nx-row">
                 <PathText>{i.path}</PathText>
                 {onIgnore && (
-                  <span className="ms-auto d-flex gap-2">
+                  <span className="nx-row nx-end">
                     {covered[i.path] && (
                       <span className="nx-muted align-self-center" data-testid="file-excluded">
                         Excluded by {covered[i.path]}
@@ -343,7 +343,7 @@ export function FailedBadge({ summ, onOpen }) {
   return (
     <button
       type="button"
-      className="btn btn-sm p-0 border-0 ms-2"
+      className="btn btn-sm nx-icon-btn"
       title={lines.join("\n")}
       data-testid="show-snapshot-errors"
       onClick={() => onOpen(summ)}
@@ -366,10 +366,10 @@ export function TaskErrorDialog({ info, onClose }) {
       <Modal.Body data-testid="task-error-dialog">
         <Notice kind="error" title="Failed:">
           {shortTaskError(info.message)}
-          {hint && <div className="mt-1">{hint}</div>}
+          {hint && <div>{hint}</div>}
         </Notice>
-        <div className="nx-muted small mb-1">Full message</div>
-        <pre className="mb-3 text-break" style={{ whiteSpace: "pre-wrap" }}>
+        <div className="nx-muted small">Full message</div>
+        <pre className="text-break" style={{ whiteSpace: "pre-wrap" }}>
           {info.message}
         </pre>
         {info.taskId && (

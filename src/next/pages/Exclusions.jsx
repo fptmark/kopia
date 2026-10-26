@@ -184,10 +184,10 @@ function AddRule({ source, sources, onAdded, label }) {
         </Toolbar>
       </Form>
       {trimmed && (
-        <div className="nx-help mb-2" data-testid="pattern-hint">
+        <div className="nx-help" data-testid="pattern-hint">
           <PatternKind pattern={trimmed} />
           {!source && isPathStyle(trimmed) && (
-            <span className="ms-2">
+            <span>
               <StatusBadge kind="warning">path style</StatusBadge> only does anything in sources that have this path
             </span>
           )}
@@ -547,7 +547,7 @@ export function Exclusions() {
                     </li>
                   ))}
                 </ul>
-                <p className="mb-0">The next snapshot of those sources follows the new lists.</p>
+                <p>The next snapshot of those sources follows the new lists.</p>
               </ConfirmDialog>
             </>
           );

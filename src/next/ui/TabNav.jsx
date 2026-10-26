@@ -10,7 +10,7 @@ export function TabNav({ tabs, active, onChange, ...rest }) {
           <Nav.Link eventKey={t.id} data-testid={"tab-" + t.id} data-label={t.label}>
             {t.label}
             {t.badge !== undefined && t.badge !== null && t.badge !== "" && (
-              <span className="nx-badge neutral ms-2">{t.badge}</span>
+              <span className="nx-badge neutral">{t.badge}</span>
             )}
           </Nav.Link>
         </Nav.Item>

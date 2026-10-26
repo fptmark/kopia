@@ -19,7 +19,7 @@ export function Field({ label, help, error, children, className = "" }) {
       {input}
       {help && <div className="nx-help">{help}</div>}
       {error && (
-        <div className="text-danger small mt-1" role="alert">
+        <div className="text-danger small" role="alert">
           {error}
         </div>
       )}

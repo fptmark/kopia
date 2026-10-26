@@ -79,7 +79,7 @@ function StorageUsage() {
   }, []);
 
   return (
-    <div className="d-flex flex-wrap align-items-center gap-3" data-testid="storage-usage">
+    <div className="nx-row" data-testid="storage-usage">
       {running ? (
         <span>
           <Spinner animation="border" size="sm" /> Calculating, {clock(elapsed)} elapsed. Every file on the storage is
@@ -119,7 +119,7 @@ function Initializing({ taskId }) {
 
   return (
     <Panel title="Connecting to the repository" actions={<Spinner animation="border" size="sm" />}>
-      <div className="d-flex gap-2 mb-3">
+      <div className="nx-row">
         <Button variant="secondary" onClick={() => setShow(!show)}>
           {show ? "Hide log" : "Show log"}
         </Button>

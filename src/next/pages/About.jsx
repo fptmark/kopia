@@ -41,7 +41,7 @@ export function About() {
     {
       k: "Added in this build",
       v: (
-        <ul className="mb-0 ps-3">
+        <ul>
           {CUSTOM_FEATURES.map((f) => (
             <li key={f}>{f}</li>
           ))}
