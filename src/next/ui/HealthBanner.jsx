@@ -66,7 +66,7 @@ export function HealthBanner() {
       <Button variant="danger" size="sm" className="mx-2" disabled={busy || running} onClick={open}>
         {running ? "Verifying…" : "Verify"}
       </Button>
-      <Link to="/repository">Details</Link>
+      <Link to="/repo">Details</Link>
       {error && <span className="ms-2">{error}</span>}
       {asking && (
         <VerifyDialog

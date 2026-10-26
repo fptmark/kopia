@@ -254,6 +254,8 @@ describe("SnapshotHistory", () => {
       await waitFor(() => expect(screen.getAllByTestId("verified-cell")).toHaveLength(3));
       const cells = screen.getAllByTestId("verified-cell");
       expect(cells[0]).toHaveTextContent("Added data ok"); // the latest of the two, not both
+      expect(within(cells[0]).getByTitle(/Saturday, October 24, 2026 at .*Read back/)).toBeInTheDocument();
+      expect(cells[0]).not.toHaveTextContent("Oct 24"); // the date is only in the tooltip
       expect(cells[0]).not.toHaveTextContent("Verified");
       expect(cells[1]).toHaveTextContent("12 failed");
       expect(cells[2]).toHaveTextContent("Verifying 10%");

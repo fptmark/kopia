@@ -300,7 +300,7 @@ describe("HealthBanner", () => {
       );
     const { unmount } = renderBanner();
     await waitFor(() => expect(screen.getByTestId("verify-banner")).toHaveTextContent("Backup failure on"));
-    expect(screen.getByText("Details")).toHaveAttribute("href", "/repository");
+    expect(screen.getByText("Details")).toHaveAttribute("href", "/repo");
 
     fireEvent.click(screen.getByText("Verify"));
     await waitFor(() => expect(screen.getByTestId("verify-dialog")).toBeInTheDocument());
