@@ -89,7 +89,7 @@ describe("NextApp", () => {
   it("has a tab for each page, with the repository's name", async () => {
     await renderAt("/snapshots");
     await waitFor(() => expect(screen.getByText("Repository in SFTP")).toBeInTheDocument());
-    for (const t of ["Volumes", "Files", "Exclusions", "Policies", "Tasks", "Repository", "Preferences", "About"]) {
+    for (const t of ["Sources", "Files", "Exclusions", "Policies", "Tasks", "Repository", "Preferences", "About"]) {
       expect(screen.getByRole("link", { name: new RegExp("^" + t) })).toBeInTheDocument();
     }
     expect(screen.getByTestId("tab-snapshots")).toHaveClass("active");

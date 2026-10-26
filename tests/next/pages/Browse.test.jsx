@@ -72,7 +72,7 @@ describe("SnapshotDirectory", () => {
     });
     await waitFor(() => expect(screen.getByTestId("snapshot-facts")).toHaveTextContent("Files Added: 3"));
     const facts = screen.getByTestId("snapshot-facts");
-    expect(facts).toHaveTextContent("Volume: /Users/me");
+    expect(facts).toHaveTextContent("Source: /Users/me");
     expect(facts).toHaveTextContent(/Date: \w+day, October 26, 2026 at/);
     expect(facts).toHaveTextContent("Modified: 12");
     expect(facts).toHaveTextContent("Deleted: 1");
@@ -113,7 +113,7 @@ describe("SnapshotDirectory", () => {
       },
     });
     await waitFor(() => expect(screen.getByRole("link", { name: "/Users/me" })).toBeInTheDocument());
-    expect(screen.getByRole("link", { name: "Volumes" })).toHaveAttribute("href", "/snapshots");
+    expect(screen.getByRole("link", { name: "Sources" })).toHaveAttribute("href", "/snapshots");
     expect(screen.getByRole("link", { name: "History" }).getAttribute("href")).toMatch(/^\/snapshots\/single-source\?/);
     expect(screen.getByRole("link", { name: "/Users/me" })).toHaveAttribute("href", "/snapshots/dir/kbase");
     expect(screen.getByText("Docs")).toBeInTheDocument();

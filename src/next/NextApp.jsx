@@ -26,7 +26,7 @@ import { Task } from "./pages/Task";
 setupApi();
 
 const TABS = [
-  { to: "/snapshots", label: "Volumes", needsRepo: true },
+  { to: "/snapshots", label: "Sources", needsRepo: true },
   { to: "/files", label: "Files", needsRepo: true },
   { to: "/exclusions", label: "Exclusions", needsRepo: true },
   { to: "/policies", label: "Policies", needsRepo: true },

@@ -36,7 +36,7 @@ function SnapshotFacts({ snapshot }) {
   return (
     <div className="nx-facts" data-testid="snapshot-facts">
       <span>
-        <span className="nx-muted">Volume:</span> <span className="nx-path">{snapshot.source?.path}</span>
+        <span className="nx-muted">Source:</span> <span className="nx-path">{snapshot.source?.path}</span>
       </span>
       <span>
         <span className="nx-muted">Date:</span> <DateTimeText long value={snapshot.startTime} />
