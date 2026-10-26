@@ -150,7 +150,7 @@ export function SnapshotDirectory() {
       <Toolbar>
         <Toolbar.Group>
           <Button
-            as={Link}
+            as={FromLink}
             variant="primary"
             to={"/snapshots/dir/" + oid + "/restore"}
             state={{ ...location.state, items: ticked.map((x) => ({ obj: x.obj, name: x.name })) }}

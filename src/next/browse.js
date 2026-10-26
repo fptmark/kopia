@@ -30,14 +30,16 @@ const SNAPSHOTS = { label: "Sources", to: "/snapshots" };
  * last one; it is a link too unless current is set.
  */
 export function browseTrail(state, oid, { current = false } = {}) {
-  const trail = [SNAPSHOTS];
-  if (state?.snapshot?.source) {
-    trail.push({ label: state.snapshot.source.path, to: historyUrl(state.snapshot.source) });
-  }
-
   const chain = [];
   for (let s = state; s; s = s.prevState) {
     chain.unshift(s);
+  }
+
+  // opened from another page (a FromLink): that page's trail is where this one starts
+  const root = chain[0]?.from;
+  const trail = root ? [...root] : [SNAPSHOTS];
+  if (!root && state?.snapshot?.source) {
+    trail.push({ label: state.snapshot.source.path, to: historyUrl(state.snapshot.source) });
   }
 
   chain.forEach((s, i) => {

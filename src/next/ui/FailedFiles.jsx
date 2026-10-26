@@ -3,6 +3,7 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import Modal from "react-bootstrap/Modal";
 import { Link } from "react-router";
+import { FromLink } from "./FromLink";
 import { api, errorMessage } from "../api";
 import { addExclusions, coveredPaths } from "../exclusions";
 import { addIgnoredError, EXPIRY_CHOICES, KIND_LABELS } from "../../utils/ignoredErrors";
@@ -373,9 +374,9 @@ export function TaskErrorDialog({ info, onClose }) {
           {info.message}
         </pre>
         {info.taskId && (
-          <Link to={"/tasks/" + info.taskId} onClick={onClose}>
+          <FromLink to={"/tasks/" + info.taskId} onClick={onClose}>
             Open the task and its log
-          </Link>
+          </FromLink>
         )}
       </Modal.Body>
     </Modal>

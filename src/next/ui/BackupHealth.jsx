@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import Button from "react-bootstrap/Button";
-import { Link } from "react-router";
+import { FromLink } from "./FromLink";
 import { errorMessage } from "../api";
 import { formatDateTime } from "../format";
 import { loadHealth, runHealthCheck } from "../health";
@@ -79,7 +79,7 @@ export function BackupHealth() {
                       {status.lastDeepTaskId && (
                         <>
                           {" "}
-                          (<Link to={"/tasks/" + status.lastDeepTaskId}>log</Link>)
+                          (<FromLink to={"/tasks/" + status.lastDeepTaskId}>log</FromLink>)
                         </>
                       )}
                     </>

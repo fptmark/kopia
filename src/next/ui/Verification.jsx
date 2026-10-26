@@ -4,7 +4,7 @@ import ProgressBar from "react-bootstrap/ProgressBar";
 import Modal from "react-bootstrap/Modal";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
-import { Link } from "react-router";
+import { FromLink } from "./FromLink";
 import { formatLongDateTime } from "../format";
 import { useLoad } from "../hooks";
 import { describeCovered, loadVerificationFailures } from "../verification";
@@ -229,9 +229,9 @@ export function VerifyFailuresDialog({ verification, onClose }) {
           {verification.taskSeq > 0 && (
             <>
               {" "}
-              <Link to={"/tasks/" + verification.taskSeq.toString(16)} onClick={onClose}>
+              <FromLink to={"/tasks/" + verification.taskSeq.toString(16)} onClick={onClose}>
                 Task log
-              </Link>
+              </FromLink>
             </>
           )}
         </p>

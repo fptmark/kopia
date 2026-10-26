@@ -3,7 +3,6 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Spinner from "react-bootstrap/Spinner";
-import { Link } from "react-router";
 import { errorMessage } from "../api";
 import { formatDate, formatDateTime } from "../format";
 import {
@@ -18,7 +17,7 @@ import {
   startSearch,
 } from "../search";
 import { useLoad } from "../hooks";
-import { CountText, DataTable, EmptyState, Field, Notice, Page, Panel, PathText, SizeText } from "../ui";
+import { CountText, DataTable, EmptyState, Field, FromLink, Notice, Page, Panel, PathText, SizeText } from "../ui";
 
 const SEARCH_ID_KEY = "nextSearchId";
 const SEARCH_FORM_KEY = "nextSearchForm";
@@ -197,7 +196,14 @@ export function Files() {
         return (
           <span className="nx-inline">
             {l.viewIsPage ? (
-              <Button as={Link} size="sm" variant="secondary" to={l.view} data-testid="view-result">
+              <Button
+                as={FromLink}
+                size="sm"
+                variant="secondary"
+                to={l.view}
+                state={{ label: r.name }}
+                data-testid="view-result"
+              >
                 Browse
               </Button>
             ) : (
@@ -212,7 +218,14 @@ export function Files() {
                 View
               </Button>
             )}
-            <Button as={Link} size="sm" variant="primary" to={l.restore} data-testid="restore-result">
+            <Button
+              as={FromLink}
+              size="sm"
+              variant="primary"
+              to={l.restore}
+              state={{ label: r.name }}
+              data-testid="restore-result"
+            >
               Restore
             </Button>
           </span>

@@ -5,7 +5,7 @@ import { Link, useLocation, useParams } from "react-router";
 import { errorMessage } from "../api";
 import { plural } from "../format";
 import { browseTrail, RESTORE_DEFAULTS, restoreRequest, startRestore } from "../browse";
-import { Field, FormSection, Notice, Page, Panel, SwitchField } from "../ui";
+import { Field, FormSection, FromLink, Notice, Page, Panel, SwitchField } from "../ui";
 
 const SWITCHES = [
   ["incremental", "Skip previously restored files and symlinks"],
@@ -58,7 +58,7 @@ export function SnapshotRestore() {
       <Page title="Restore started" trail={trail}>
         <Notice kind="success">
           {started.length === 1 ? (
-            <Link to={"/tasks/" + started[0]}>Open the task</Link>
+            <FromLink to={"/tasks/" + started[0]}>Open the task</FromLink>
           ) : (
             <>
               {started.length} restores are running. <Link to="/tasks">Open Tasks</Link>

@@ -31,3 +31,22 @@ describe("links inside the app", () => {
     expect(bad).toEqual([]);
   });
 });
+
+// A page that opens another page with breadcrumbs must hand its trail on (FromLink), or the breadcrumbs of the
+// page it opens would not say how you got there. The task list and the policy list are where those pages start.
+describe("links that go deeper", () => {
+  it("use FromLink, not a plain Link, to open a task or a policy", () => {
+    const bad = [];
+    for (const f of files(SRC)) {
+      const name = path.basename(f);
+      if (["Tasks.jsx", "Policies.jsx", "FromLink.jsx"].includes(name)) {
+        continue;
+      }
+      const text = fs.readFileSync(f, "utf8");
+      for (const m of text.matchAll(/<Link[^>]*\sto=\{?["'`]\/(?:tasks\/|policies\/edit)/g)) {
+        bad.push(`${path.relative(SRC, f)}: ${m[0]}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+});

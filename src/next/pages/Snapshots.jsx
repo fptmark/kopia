@@ -51,7 +51,7 @@ function SourceActions({ row, onStart, onCancel, base2 }) {
           <span className="nx-num" title={row.upload?.directory}>
             {uploadProgress(row.upload, base2)}
           </span>
-          {row.currentTask && <Link to={"/tasks/" + row.currentTask}>Details</Link>}
+          {row.currentTask && <FromLink to={"/tasks/" + row.currentTask}>Details</FromLink>}
           <Button size="sm" variant="secondary" onClick={() => onCancel(row.source)}>
             Cancel
           </Button>
