@@ -82,7 +82,7 @@ describe("SnapshotHistory", () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId("history-summary")).toHaveTextContent("Snapshots3"));
 
-    expect(screen.getByTestId("history-summary")).toHaveTextContent("Newest230 GB");
+    expect(screen.getByTestId("history-summary")).toHaveTextContent("Latest230 GB");
     await waitFor(() => expect(screen.getByTestId("history-summary")).toHaveTextContent("150 GB"));
     expect(screen.getByTitle("before the cleanup")).toBeInTheDocument(); // the note is a tooltip: one line per snapshot
     expect(screen.getAllByText("1.3M").length).toBe(3);

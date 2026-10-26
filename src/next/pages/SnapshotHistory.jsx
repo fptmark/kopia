@@ -328,14 +328,14 @@ export function SnapshotHistory() {
                     d.unfilteredCount !== d.uniqueCount ? `${d.unfilteredCount} counting identical ones` : undefined
                   }
                 />
-                <Stat label="Newest" value={<SizeText bytes={snapshots[0]?.summary?.size} />} note="logical size" />
+                <Stat label="Latest" value={<SizeText bytes={snapshots[0]?.summary?.size} />} note="logical size" />
                 <Stat
-                  label="Stored for all of them"
+                  label="Size on Disk"
                   value={stats.data ? <SizeText bytes={stored} /> : "…"}
                   note="after deduplication and compression"
                 />
                 <Stat
-                  label="Since"
+                  label="Oldest"
                   value={snapshots.length ? formatDate(snapshots[snapshots.length - 1].startTime) : "—"}
                 />
               </Stats>
