@@ -287,6 +287,16 @@ func TestNewlyWrittenDataIsReadBackAfterASnapshotWhenTheSettingIsOn(t *testing.T
 	require.Equal(t, taskstore.VerifyModeNew, got[0].Mode)
 	require.True(t, got[0].OK)
 	require.Positive(t, got[0].Files)
+
+	// on, in sample mode: the share the setting names is read back instead
+	writePrefs(t, s, `{"verifyNewData":true,"verifyEachMode":"sample","verifyEachPercent":50}`)
+	s.verifyNewData(ctx, m, nil)
+	idle()
+
+	got = recorded() // the added-data result stays beside the sample one
+	require.Len(t, got, 2)
+	require.Equal(t, taskstore.VerifyModeSample, got[1].Mode)
+	require.InDelta(t, 50, got[1].Percent, 0.01)
 }
 
 func TestNewDataHealthCheckFailsForADayAfterABadReadBack(t *testing.T) {

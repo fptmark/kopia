@@ -73,7 +73,7 @@ func TestVerificationsKeepTheLatestOfEachKindWithTheirFailures(t *testing.T) {
 	require.Empty(t, none)
 }
 
-func TestNewDataVerificationCountsOnlyRecentOnesOfThatKind(t *testing.T) {
+func TestNewDataVerificationCountsOnlyRecentOnes(t *testing.T) {
 	s, _ := openStore(t)
 	now := time.Now().UTC()
 
@@ -91,10 +91,10 @@ func TestNewDataVerificationCountsOnlyRecentOnesOfThatKind(t *testing.T) {
 	rec("new", true, time.Hour)
 	rec("new", false, 2*time.Hour)
 	rec("new", false, 30*time.Hour) // too old
-	rec("full", false, time.Hour)   // another kind
+	rec("full", false, time.Hour)   // any mode counts
 
 	total, failed, err = s.NewDataVerificationCounts(now.Add(-24 * time.Hour))
 	require.NoError(t, err)
-	require.EqualValues(t, 2, total)
-	require.EqualValues(t, 1, failed)
+	require.EqualValues(t, 3, total)
+	require.EqualValues(t, 2, failed)
 }

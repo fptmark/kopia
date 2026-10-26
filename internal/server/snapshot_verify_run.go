@@ -260,7 +260,7 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 	return nil
 }
 
-// verifyNewData reads back the data a snapshot just added, when the setting asks for it and the snapshot was saved.
+// verifyNewData verifies a snapshot just saved, in the mode the setting names, when the setting asks for it and the snapshot was saved.
 func (s *Server) verifyNewData(ctx context.Context, m *snapshot.Manifest, snapshotErr error) {
 	if snapshotErr != nil || m.ID == "" || m.IncompleteReason != "" || m.RootEntry == nil {
 		return
@@ -282,5 +282,17 @@ func (s *Server) verifyNewData(ctx context.Context, m *snapshot.Manifest, snapsh
 	// the manifest is shared with the notification code after this returns
 	cp := *m
 
-	s.startSnapshotVerify(ctx, rep, &cp, taskstore.VerifyModeNew, 100)
+	mode, percent := taskstore.VerifyModeNew, 100.0
+
+	switch prefs.VerifyEachMode {
+	case taskstore.VerifyModeFull:
+		mode = taskstore.VerifyModeFull
+	case taskstore.VerifyModeSample:
+		mode, percent = taskstore.VerifyModeSample, prefs.VerifyEachPercent
+		if percent <= 0 || percent >= 100 {
+			percent = 10
+		}
+	}
+
+	s.startSnapshotVerify(ctx, rep, &cp, mode, percent)
 }

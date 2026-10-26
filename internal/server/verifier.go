@@ -376,33 +376,66 @@ func readBack(ctx context.Context, rnd *rand.Rand, snap, live fs.Directory) (rel
 	return "", 0, errors.Errorf("no unchanged file found to compare after %d tries", verifyReadBackTries)
 }
 
-// sampleVerify reads back a percentage of the files of each newest snapshot and checks that every
+// sourceVerify is the sample read-back of one source's newest snapshot.
+type sourceVerify struct {
+	Manifest *snapshot.Manifest
+	Started  time.Time
+	Finished time.Time
+	Result   snapVerifyResult
+}
+
+// sampleVerifyEach reads back a percentage of the files of each newest snapshot and checks that every
 // object they refer to exists, including that its pack blob is present in storage and long enough.
-// Every failing file is counted and kept; nothing stops the run early.
-func sampleVerify(ctx context.Context, rep repo.Repository, roots map[snapshot.SourceInfo]*snapshot.Manifest, percent float64) (snapVerifyResult, error) {
+// Every failing file is counted and kept; nothing stops the run early. Each source is read on its own,
+// like a manual Verify of that snapshot.
+func sampleVerifyEach(ctx context.Context, rep repo.Repository, roots map[snapshot.SourceInfo]*snapshot.Manifest, percent float64) ([]sourceVerify, error) {
 	opts := snapVerifyOptions{Percent: percent}
 
 	if dr, ok := rep.(repo.DirectRepository); ok {
 		blobMap, err := blob.ReadBlobMap(ctx, dr.BlobReader())
 		if err != nil {
-			return snapVerifyResult{}, errors.Wrap(err, "unable to list the blobs in storage")
+			return nil, errors.Wrap(err, "unable to list the blobs in storage")
 		}
 
 		opts.BlobMap = blobMap
 	}
 
-	var trees []treeRoot
+	var out []sourceVerify
 
 	for _, src := range sortedSources(roots) {
 		root, err := snapshotfs.SnapshotRoot(rep, roots[src])
 		if err != nil {
-			return snapVerifyResult{}, errors.Wrapf(err, "unable to open the snapshot of %v", src.Path)
+			return nil, errors.Wrapf(err, "unable to open the snapshot of %v", src.Path)
 		}
 
-		trees = append(trees, treeRoot{Path: src.Path, Entry: root})
+		started := clock.Now()
+		res := verifyTrees(ctx, rep, []treeRoot{{Path: src.Path, Entry: root}}, opts)
+		out = append(out, sourceVerify{Manifest: roots[src], Started: started, Finished: clock.Now(), Result: res})
 	}
 
-	return verifyTrees(ctx, rep, trees, opts), nil
+	return out, nil
+}
+
+// sampleVerify is sampleVerifyEach with the sources added up.
+func sampleVerify(ctx context.Context, rep repo.Repository, roots map[snapshot.SourceInfo]*snapshot.Manifest, percent float64) (snapVerifyResult, error) {
+	each, err := sampleVerifyEach(ctx, rep, roots, percent)
+	if err != nil {
+		return snapVerifyResult{}, err
+	}
+
+	var total snapVerifyResult
+
+	for _, e := range each {
+		r := e.Result
+		total.Files += r.Files
+		total.Bytes += r.Bytes
+		total.ReadFiles += r.ReadFiles
+		total.ReadBytes += r.ReadBytes
+		total.Errors += r.Errors
+		total.Failures = append(total.Failures, r.Failures...)
+	}
+
+	return total, nil
 }
 
 // verifier runs the health checks of one connected repository.
@@ -816,41 +849,58 @@ func (v *verifier) newDataCheck() (verifyCheck, bool) {
 	}
 }
 
-// sampleCheck reads a sample back and records what it found, with every failing file.
+// sampleCheck reads a sample of each source's newest snapshot back and records one verification per
+// snapshot, exactly as a manual Verify does, so the Verified column shows it.
 func (v *verifier) sampleCheck(ctx context.Context, ctrl uitask.Controller, latest map[snapshot.SourceInfo]*snapshot.Manifest) verifyCheck {
-	started := clock.Now()
-
-	res, err := sampleVerify(ctx, v.rep, latest, verifySamplePercent)
+	each, err := sampleVerifyEach(ctx, v.rep, latest, verifySamplePercent)
 	if err != nil {
 		return failed(checkSample, err.Error())
 	}
 
-	if res.Errors == 0 {
-		return passed(checkSample, fmt.Sprintf("%v%% sample: read %d files (%v), all objects present in storage", verifySamplePercent, res.ReadFiles, units.BytesString(res.ReadBytes)))
-	}
+	var (
+		total    snapVerifyResult
+		failures []taskstore.VerificationFailure
+		lastID   int64
+	)
 
-	check := failed(checkSample, fmt.Sprintf("%d of %d files failed to read back; first: %v: %v", res.Errors, res.Files, res.Failures[0].Path, res.Failures[0].Error))
-	check.FailureCount = int(res.Errors)
+	taskSeq, _ := uitask.ParseTaskID(ctrl.CurrentTaskID())
 
-	for _, f := range res.Failures[:min(len(res.Failures), verifyCheckFailuresListed)] {
-		check.Failures = append(check.Failures, serverapi.VerifyFailure{Path: f.Path, Error: f.Error})
-	}
+	for _, e := range each {
+		r := e.Result
+		total.Files += r.Files
+		total.ReadFiles += r.ReadFiles
+		total.ReadBytes += r.ReadBytes
+		total.Errors += r.Errors
+		failures = append(failures, r.Failures...)
 
-	if h := v.srv.options.TaskHistory; h != nil {
+		h := v.srv.options.TaskHistory
+		if h == nil {
+			continue
+		}
+
 		rec := taskstore.Verification{
-			Source: "all sources", Mode: taskstore.VerifyModeSample, Percent: verifySamplePercent, StartedAt: started, FinishedAt: clock.Now(),
-			Files: res.Files, Bytes: res.Bytes, ReadFiles: res.ReadFiles, ReadBytes: res.ReadBytes, ErrorCount: res.Errors,
+			SnapshotID: string(e.Manifest.ID), Source: e.Manifest.Source.String(), Mode: taskstore.VerifyModeSample, Percent: verifySamplePercent,
+			StartedAt: e.Started, FinishedAt: e.Finished, OK: r.Errors == 0, TaskSeq: taskSeq,
+			Files: r.Files, Bytes: r.Bytes, ReadFiles: r.ReadFiles, ReadBytes: r.ReadBytes, ErrorCount: r.Errors,
 		}
 
-		if seq, ok := uitask.ParseTaskID(ctrl.CurrentTaskID()); ok {
-			rec.TaskSeq = seq
-		}
-
-		if id, err := h.RecordVerification(rec, res.Failures); err == nil {
-			check.VerificationID = id
-		} else {
+		if id, err := h.RecordVerification(rec, r.Failures); err != nil {
 			userLog(ctx).Errorf("unable to record the sample verification: %v", err)
+		} else if r.Errors > 0 {
+			lastID = id
 		}
+	}
+
+	if total.Errors == 0 {
+		return passed(checkSample, fmt.Sprintf("%v%% sample: read %d files (%v), all objects present in storage", verifySamplePercent, total.ReadFiles, units.BytesString(total.ReadBytes)))
+	}
+
+	check := failed(checkSample, fmt.Sprintf("%d of %d files failed to read back; first: %v: %v", total.Errors, total.Files, failures[0].Path, failures[0].Error))
+	check.FailureCount = int(total.Errors)
+	check.VerificationID = lastID
+
+	for _, f := range failures[:min(len(failures), verifyCheckFailuresListed)] {
+		check.Failures = append(check.Failures, serverapi.VerifyFailure{Path: f.Path, Error: f.Error})
 	}
 
 	return check
@@ -969,6 +1019,7 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 	}
 
 	since := v.status.Since
+	deepTask := v.status.LastDeepTaskID
 	saved := persistedVerifier{Checks: checks, State: v.status.State, Since: v.status.Since, LastSignature: v.lastSignature, LastNotified: v.lastNotified}
 
 	v.mu.Unlock()
@@ -999,8 +1050,27 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 			//nolint:errcheck
 			_ = v.srv.taskmgr.Run(ctx, "Verify", "Backup health check (problem found)", func(ctx context.Context, _ uitask.Controller) error {
 				for _, c := range checks {
-					if !c.OK {
-						userLog(ctx).Errorf("FAIL  %v: %v", c.Name, c.Detail)
+					if c.OK {
+						continue
+					}
+
+					userLog(ctx).Errorf("FAIL  %v: %v", c.Name, c.Detail)
+
+					// a full check's result stays in force until the next full check, so say when it ran
+					if age := now.Sub(c.CheckedAt); age > 2*verifyQuickInterval {
+						userLog(ctx).Errorf("      this result is from the check at %v (%v ago), not from this run", c.CheckedAt.Local().Format("Jan 2, 3:04 PM"), age.Round(time.Minute))
+					}
+
+					if c.VerificationID != 0 {
+						userLog(ctx).Errorf("      verification #%d has all %d failing files", c.VerificationID, c.FailureCount)
+					}
+
+					for _, f := range c.Failures {
+						userLog(ctx).Errorf("      %v: %v", f.Path, f.Error)
+					}
+
+					if len(c.Failures) == 0 && c.FailureCount == 0 && deepTask != "" {
+						userLog(ctx).Errorf("      no file list was kept; see the full check task %v", deepTask)
 					}
 				}
 

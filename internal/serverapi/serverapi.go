@@ -373,16 +373,18 @@ type CLIInfo struct {
 
 // UIPreferences represents JSON object storing UI preferences.
 type UIPreferences struct {
-	BytesStringBase2       bool   `json:"bytesStringBase2"`       // If `true`, display storage values in base-2 (default is base-10)
-	DefaultSnapshotViewAll bool   `json:"defaultSnapshotViewAll"` // If `true` default to showing all snapshots (default is local snapshots)
-	Theme                  string `json:"theme"`                  // Specifies the theme used by the UI
-	FontSize               string `json:"fontSize"`               // Specifies the font size used by the UI
-	PageSize               int    `json:"pageSize"`               // A page size; the actual possible values will only be provided by the frontend
-	Language               string `json:"language"`               // Specifies the language used by the UI
-	Locale                 string `json:"locale"`                 // Specifies the locale used by the UI for formatting numbers and dates
-	KeepAwake              string `json:"keepAwake"`              // Prevent macOS sleep while snapshots run: "" or "never", "idle" (any power source), "ac" (only on AC power)
-	VerifierIMessageTo     string `json:"verifierIMessageTo"`     // Phone number or Apple ID that receives an iMessage when the backup health check fails ("" sends none)
-	VerifyNewData          bool   `json:"verifyNewData"`          // If `true`, read back the data each snapshot added to the repository right after it finishes
+	BytesStringBase2       bool    `json:"bytesStringBase2"`       // If `true`, display storage values in base-2 (default is base-10)
+	DefaultSnapshotViewAll bool    `json:"defaultSnapshotViewAll"` // If `true` default to showing all snapshots (default is local snapshots)
+	Theme                  string  `json:"theme"`                  // Specifies the theme used by the UI
+	FontSize               string  `json:"fontSize"`               // Specifies the font size used by the UI
+	PageSize               int     `json:"pageSize"`               // A page size; the actual possible values will only be provided by the frontend
+	Language               string  `json:"language"`               // Specifies the language used by the UI
+	Locale                 string  `json:"locale"`                 // Specifies the locale used by the UI for formatting numbers and dates
+	KeepAwake              string  `json:"keepAwake"`              // Prevent macOS sleep while snapshots run: "" or "never", "idle" (any power source), "ac" (only on AC power)
+	VerifierIMessageTo     string  `json:"verifierIMessageTo"`     // Phone number or Apple ID that receives an iMessage when the backup health check fails ("" sends none)
+	VerifyNewData          bool    `json:"verifyNewData"`          // If `true`, verify each snapshot right after it finishes
+	VerifyEachMode         string  `json:"verifyEachMode"`         // What to verify: "new" (the data the snapshot added, the default), "sample" or "full"
+	VerifyEachPercent      float64 `json:"verifyEachPercent"`      // The share of files to read back when VerifyEachMode is "sample"
 }
 
 // VerifyFailure is a file that did not read back.

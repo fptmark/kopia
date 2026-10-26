@@ -202,13 +202,13 @@ func (s *Store) VerificationFailures(id int64, limit int) ([]VerificationFailure
 	return out, errors.Wrap(rows.Err(), "unable to read verification failures")
 }
 
-// NewDataVerificationCounts says how many verifications of the data snapshots added finished since the given
-// time, and how many of those failed.
+// NewDataVerificationCounts says how many verifications finished since the given time, whatever the mode, and how
+// many of those failed.
 func (s *Store) NewDataVerificationCounts(since time.Time) (total, failed int64, err error) {
 	var bad *int64
 
 	err = s.db.QueryRow(
-		`SELECT COUNT(*), SUM(ok = 0) FROM snapshot_verifications WHERE mode = 'new' AND finished_at >= ?`,
+		`SELECT COUNT(*), SUM(ok = 0) FROM snapshot_verifications WHERE finished_at >= ?`,
 		since.UnixNano()).Scan(&total, &bad)
 	if bad != nil {
 		failed = *bad
