@@ -277,20 +277,18 @@ describe("HealthBanner", () => {
       </MemoryRouter>,
     );
 
-  it("shows what failed while a check fails, and nothing otherwise", async () => {
+  it("says when the backup failed, offers a check to clear it, and shows nothing otherwise", async () => {
     axios.get.mockReset().mockResolvedValue({
-      data: {
-        state: "failing",
-        since: "2026-10-23T10:00:00Z",
-        checks: [
-          { name: "Snapshots are recent", ok: false, detail: "4 h old" },
-          { name: "x", ok: true },
-        ],
-      },
+      data: { state: "failing", since: "2026-10-23T10:00:00Z", checks: [{ name: "Snapshots are recent", ok: false }] },
     });
+    axios.post.mockReset().mockResolvedValue({ data: {} });
     const { unmount } = renderBanner();
-    await waitFor(() => expect(screen.getByTestId("verify-banner")).toHaveTextContent("Snapshots are recent: 4 h old"));
-    expect(screen.getByTestId("verify-banner")).not.toHaveTextContent("x:");
+    await waitFor(() => expect(screen.getByTestId("verify-banner")).toHaveTextContent("Backup failure on"));
+    expect(screen.getByText("Details")).toHaveAttribute("href", "/repository");
+
+    fireEvent.click(screen.getByText("Check to clear"));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/verify/run", {}));
+    await waitFor(() => expect(screen.getByText("Checking…")).toBeDisabled());
     unmount();
 
     axios.get.mockResolvedValue({ data: { state: "ok", checks: [] } });
