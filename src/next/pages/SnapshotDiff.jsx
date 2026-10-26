@@ -110,7 +110,8 @@ export function SnapshotDiff() {
       });
   };
 
-  const sizeDelta = (e) => (e.change === "removed" ? 0 : e.newSize ?? 0) - (e.change === "added" ? 0 : e.oldSize ?? 0);
+  const sizeDelta = (e) =>
+    (e.change === "removed" ? 0 : (e.newSize ?? 0)) - (e.change === "added" ? 0 : (e.oldSize ?? 0));
 
   const columns = [
     { id: "change", header: "Change", accessor: (e) => e.change, cell: (e) => <StatusBadge kind={e.change} /> },
@@ -265,28 +266,20 @@ export function SnapshotDiff() {
                     )}
                   </span>
                   {chosen.length > 0 && unticked.length > 0 && (
-                    <a
-                      href="#top"
-                      className="small"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setSelected((cur) => ({ ...cur, ...Object.fromEntries(listed.map((x) => [x.path, true])) }));
-                      }}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        setSelected((cur) => ({ ...cur, ...Object.fromEntries(listed.map((x) => [x.path, true])) }))
+                      }
                     >
                       Select all {listed.length.toLocaleString("en-US")} listed
-                    </a>
+                    </Button>
                   )}
                   {chosen.length > 0 && (
-                    <a
-                      href="#top"
-                      className="small"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setSelected({});
-                      }}
-                    >
+                    <Button size="sm" variant="secondary" onClick={() => setSelected({})}>
                       Clear
-                    </a>
+                    </Button>
                   )}
                   <Button
                     size="sm"

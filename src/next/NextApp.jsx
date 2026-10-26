@@ -1,7 +1,7 @@
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./next.css";
 import React, { use, useCallback, useEffect, useMemo, useState } from "react";
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router";
 import { api, setupApi } from "./api";
 import { NextContext } from "./context";
 import { HealthBanner } from "./ui";
@@ -86,9 +86,9 @@ function Shell({ children }) {
       <div className="nx" data-bs-theme={bsTheme(theme)}>
         <nav className="nx-nav" aria-label="Main">
           <div className="nx-nav-inner">
-            <a className="nx-brand" href="/snapshots">
+            <Link className="nx-brand" to="/snapshots">
               <img src="/kopia-flat.svg" alt="Kopia" />
-            </a>
+            </Link>
             <div>
               {TABS.map((t) => (
                 <NavLink

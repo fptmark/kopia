@@ -111,14 +111,14 @@ describe("SnapshotDiff", () => {
     expect(screen.getByTestId("selection-bar")).toHaveTextContent("1 selected (4 KB)");
   });
 
-  it("ticks the page from the header and lists the rest with a link", async () => {
+  it("ticks the page from the header and lists the rest with a button", async () => {
     serve(response());
     renderPage();
     await waitFor(() => expect(screen.getByText("docs/new.txt")).toBeInTheDocument());
 
     fireEvent.click(screen.getByLabelText("Select all on this page"));
     expect(screen.getByTestId("selection-bar")).toHaveTextContent("2 selected");
-    fireEvent.click(screen.getByRole("link", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(screen.getByTestId("selection-bar")).toHaveTextContent("Nothing selected");
   });
 
