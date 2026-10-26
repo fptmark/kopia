@@ -11,7 +11,7 @@ export const mountDirectory = (oid) => api.post("/api/v1/mounts", { root: oid })
 export const unmountDirectory = (oid) => api.delete("/api/v1/mounts/" + oid);
 export const startRestore = (req) => api.post("/api/v1/restore", req).then((r) => r.data);
 
-const SNAPSHOTS = { label: "Snapshots", to: "/snapshots" };
+const SNAPSHOTS = { label: "Volumes", to: "/snapshots" };
 
 /**
  * The breadcrumbs for a page inside a snapshot: Snapshots, the source's history, then each folder opened on the

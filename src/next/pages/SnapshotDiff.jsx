@@ -167,7 +167,7 @@ export function SnapshotDiff() {
     <Page
       title="Compare snapshots"
       trail={[
-        { label: "Snapshots", to: "/snapshots" },
+        { label: "Volumes", to: "/snapshots" },
         ...(state.data ? [{ label: "History", to: historyUrl(state.data.source) }] : []),
       ]}
       subtitle={

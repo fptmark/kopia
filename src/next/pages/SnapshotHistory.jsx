@@ -298,7 +298,7 @@ export function SnapshotHistory() {
           </span>
         </>
       }
-      trail={[{ label: "Snapshots", to: "/snapshots" }]}
+      trail={[{ label: "Volumes", to: "/snapshots" }]}
     >
       {message && (
         <Notice kind={message.kind} onClose={() => setMessage(null)}>

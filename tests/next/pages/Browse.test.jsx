@@ -113,7 +113,7 @@ describe("SnapshotDirectory", () => {
       },
     });
     await waitFor(() => expect(screen.getByRole("link", { name: "/Users/me" })).toBeInTheDocument());
-    expect(screen.getByRole("link", { name: "Snapshots" })).toHaveAttribute("href", "/snapshots");
+    expect(screen.getByRole("link", { name: "Volumes" })).toHaveAttribute("href", "/snapshots");
     expect(screen.getByRole("link", { name: "History" }).getAttribute("href")).toMatch(/^\/snapshots\/single-source\?/);
     expect(screen.getByRole("link", { name: "/Users/me" })).toHaveAttribute("href", "/snapshots/dir/kbase");
     expect(screen.getByText("Docs")).toBeInTheDocument();

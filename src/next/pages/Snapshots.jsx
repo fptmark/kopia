@@ -97,7 +97,7 @@ export function Snapshots() {
 
   return (
     <Page
-      title="Snapshots"
+      title="Volumes"
       actions={
         <>
           <Button variant="secondary" onClick={sync} disabled={syncing} title="Fetch the latest from the repository">
