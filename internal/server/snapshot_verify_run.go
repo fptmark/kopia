@@ -257,6 +257,10 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 		return errors.Errorf("%d of %d failed to read back", res.Errors, res.Files)
 	}
 
+	if hv := s.currentVerifier(); hv != nil {
+		hv.clearIfVerified(ctx)
+	}
+
 	return nil
 }
 

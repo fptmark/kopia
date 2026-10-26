@@ -116,3 +116,50 @@ func TestScheduledSnapshotKeepsItsIDAndIsVerifiedWhenTheSettingIsOn(t *testing.T
 	require.NotEmpty(t, got)
 	require.Equal(t, taskstore.VerifyModeSample, got[len(got)-1].Mode)
 }
+
+func TestAFailedSampleCheckClearsOnceTheNewestSnapshotsAreVerified(t *testing.T) {
+	ctx, env, m := manyFilesEnv(t)
+	s, h, _ := newHistoryServer(t)
+	s.rep = env.Repository
+	s.notifier = &recordingNotifier{}
+
+	failedAt := time.Now().Add(-time.Hour)
+	v := &verifier{srv: s, rep: env.Repository, known: map[string]verifyCheck{
+		checkSample: {Name: checkSample, OK: false, Detail: "5 errors", CheckedAt: failedAt},
+	}}
+
+	state := func() string {
+		v.mu.Lock()
+		defer v.mu.Unlock()
+
+		return v.status.State
+	}
+
+	record := func(ok bool, ago time.Duration, mode string) {
+		_, err := h.RecordVerification(taskstore.Verification{
+			SnapshotID: string(m.ID), Source: m.Source.String(), Mode: mode, Percent: 100,
+			StartedAt: time.Now().Add(-ago), FinishedAt: time.Now().Add(-ago), OK: ok,
+		}, nil)
+		require.NoError(t, err)
+	}
+
+	// nothing verified since the failure
+	v.clearIfVerified(ctx)
+	require.False(t, v.known[checkSample].OK)
+
+	// verified before the failure only
+	record(true, 2*time.Hour, taskstore.VerifyModeSample)
+	v.clearIfVerified(ctx)
+	require.False(t, v.known[checkSample].OK)
+
+	// a later verification that failed
+	record(false, 30*time.Minute, taskstore.VerifyModeFull)
+	v.clearIfVerified(ctx)
+	require.False(t, v.known[checkSample].OK)
+
+	// a later one that passed
+	record(true, time.Minute, taskstore.VerifyModeFull)
+	v.clearIfVerified(ctx)
+	require.True(t, v.known[checkSample].OK)
+	require.Equal(t, "ok", state())
+}

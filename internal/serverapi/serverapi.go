@@ -383,6 +383,7 @@ type UIPreferences struct {
 	KeepAwake              string  `json:"keepAwake"`              // Prevent macOS sleep while snapshots run: "" or "never", "idle" (any power source), "ac" (only on AC power)
 	VerifierIMessageTo     string  `json:"verifierIMessageTo"`     // Phone number or Apple ID that receives an iMessage when the backup health check fails ("" sends none)
 	VerifyNewData          bool    `json:"verifyNewData"`          // If `true`, verify each snapshot right after it finishes
+	DateFormat             string `json:"dateFormat"`             // How summary pages write dates: "medium" (Oct 26, 2026, 7:00 AM), "numeric" (10/26/2026, 7:00 AM) or "iso" (2026-10-26 07:00)
 	VerifyEachMode         string  `json:"verifyEachMode"`         // What to verify: "new" (the data the snapshot added, the default), "sample" or "full"
 	VerifyEachPercent      float64 `json:"verifyEachPercent"`      // The share of files to read back when VerifyEachMode is "sample"
 }

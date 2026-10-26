@@ -1104,6 +1104,57 @@ func healthCheckCode(name string) notifyhub.HealthCheck {
 	return notifyhub.CheckReadable
 }
 
+// clearIfVerified clears a failed "sample of stored data" check once every source's newest snapshot has been
+// verified, whatever the mode, since the check failed and nothing verified since has failed. Without it only the
+// next full check could clear the failure, and a person who had just verified the snapshots saw it stay.
+func (v *verifier) clearIfVerified(ctx context.Context) {
+	v.mu.Lock()
+	old, known := v.known[checkSample]
+	v.mu.Unlock()
+
+	h := v.srv.options.TaskHistory
+	if !known || old.OK || h == nil || v.rep == nil {
+		return
+	}
+
+	ms, err := v.loadManifests(ctx)
+	if err != nil {
+		return
+	}
+
+	newest := newestFirst(v.localOnly(ms))
+	if len(newest) == 0 {
+		return
+	}
+
+	for _, l := range newest {
+		got, err := h.LatestVerifications([]string{string(l[0].ID)})
+		if err != nil {
+			return
+		}
+
+		good := false
+
+		for _, g := range got {
+			if !g.FinishedAt.After(old.CheckedAt) {
+				continue
+			}
+
+			if !g.OK {
+				return
+			}
+
+			good = true
+		}
+
+		if !good {
+			return
+		}
+	}
+
+	v.finish(ctx, []verifyCheck{passed(checkSample, "cleared: the newest snapshot of every source was verified after this check failed")}, false)
+}
+
 func (v *verifier) getStatus() serverapi.VerifyStatus {
 	v.mu.Lock()
 	defer v.mu.Unlock()
