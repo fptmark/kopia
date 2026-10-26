@@ -39,12 +39,22 @@
   margin: 0.5rem 0;
 }
 .nx-nav a.nx-tab {
-  display: inline-block;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
   padding: 0.85rem 0.15rem;
   margin-right: 0.9rem;
   color: var(--nx-muted);
   text-decoration: none;
   border-bottom: 2px solid transparent;
+}
+/* the bold width is reserved up front so choosing a tab does not move the others */
+.nx-nav a.nx-tab::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 600;
 }
 .nx-nav a.nx-tab:hover {
   color: var(--bs-body-color);
@@ -64,13 +74,27 @@
   margin-left: auto;
 }
 
-/* page */
+/* page: one vertical rhythm, set here and nowhere else */
+.nx-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-gap);
+  padding-top: 1rem;
+}
+.nx-page > form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-gap);
+}
+.nx-page > *,
+.nx-page > form > * {
+  margin: 0;
+}
 .nx-page-header {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.75rem 1rem;
-  margin: 1.25rem 0 1rem;
 }
 .nx-page-title {
   font-size: 1.4rem;
@@ -89,12 +113,59 @@
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* breadcrumbs */
+.nx-crumbs {
+  --bs-breadcrumb-divider: "›";
+  --bs-breadcrumb-divider-color: var(--nx-muted);
+  font-size: 0.85rem;
+  margin-bottom: -0.5rem;
+}
+.nx-crumbs .breadcrumb {
+  --bs-breadcrumb-divider: "›";
+  --bs-breadcrumb-divider-color: var(--nx-muted);
+}
+.nx-crumbs a {
+  color: var(--nx-muted);
+  text-decoration: none;
+}
+.nx-crumbs a:hover {
+  color: var(--bs-body-color);
+  text-decoration: underline;
+}
+.nx-crumbs .active {
+  color: var(--bs-body-color);
+}
+
+/* tabs inside a page: the same look as the top bar */
+.nx-subtabs {
+  border-bottom: 1px solid var(--nx-border);
+  gap: 1.25rem;
+}
+.nx-subtabs .nav-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.15rem;
+  color: var(--nx-muted);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+}
+.nx-subtabs .nav-link:hover {
+  color: var(--bs-body-color);
+}
+.nx-subtabs .nav-link.active {
+  color: var(--bs-body-color);
+  border-bottom-color: var(--bs-primary);
+  background: none;
+}
+
 /* panels and toolbars */
 .nx-panel {
   border: 1px solid var(--nx-border);
   border-radius: var(--nx-radius);
   background: var(--nx-surface);
-  margin-bottom: var(--nx-gap);
 }
 .nx-panel-head {
   display: flex;
@@ -130,7 +201,6 @@
   flex-wrap: wrap;
   align-items: stretch;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
 }
 .nx-toolbar-group {
   display: flex;
@@ -190,7 +260,10 @@
   border-radius: var(--nx-radius);
   background: var(--nx-surface);
   overflow: hidden;
-  margin-bottom: var(--nx-gap);
+}
+.nx-panel-body.flush .nx-table-wrap {
+  border: 0;
+  border-radius: 0;
 }
 .nx-table-scroll {
   overflow-x: auto;
@@ -272,7 +345,10 @@
 .nx-path {
   font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 0.85em;
-  word-break: break-all;
+  overflow-wrap: break-word;
+}
+.nx-date {
+  white-space: nowrap;
 }
 .nx-muted {
   color: var(--nx-muted);
@@ -343,7 +419,10 @@
 }
 
 .nx-notice {
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--nx-gap);
+}
+.nx-page > .nx-notice {
+  margin-bottom: 0;
 }
 .nx-loading {
   display: flex;
@@ -371,7 +450,6 @@
   border: 1px solid var(--nx-border);
   border-radius: var(--nx-radius);
   background: var(--nx-surface);
-  margin-bottom: var(--nx-gap);
 }
 .nx-policy-row {
   display: grid;
@@ -405,5 +483,77 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem 1.5rem;
-  margin-bottom: var(--nx-gap);
+}
+
+/* controls: normal size on a page and in a panel body; small where space is tight */
+.nx .btn.btn-sm {
+  --bs-btn-padding-y: 0.375rem;
+  --bs-btn-padding-x: 0.75rem;
+  --bs-btn-font-size: 1rem;
+  --bs-btn-border-radius: var(--bs-border-radius);
+}
+.nx .nx-toolbar .btn,
+.nx .nx-toolbar .btn.btn-sm,
+.nx .nx-table .btn,
+.nx .nx-table .btn.btn-sm,
+.nx .nx-table-foot .btn,
+.nx .nx-table-foot .btn.btn-sm,
+.nx .nx-panel-head .btn,
+.nx .nx-panel-head .btn.btn-sm,
+.nx .nx-notice .btn,
+.nx .nx-notice .btn.btn-sm,
+.nx .nx-meta .btn,
+.nx .nx-meta .btn.btn-sm,
+.nx .nx-small .btn,
+.nx .nx-small .btn.btn-sm {
+  --bs-btn-padding-y: 0.25rem;
+  --bs-btn-padding-x: 0.5rem;
+  --bs-btn-font-size: 0.875rem;
+  --bs-btn-border-radius: var(--bs-border-radius-sm);
+}
+.nx .nx-toolbar .form-control,
+.nx .nx-toolbar .form-select,
+.nx .nx-table .form-control,
+.nx .nx-table .form-select,
+.nx .nx-table-foot .form-select {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  font-size: 0.875rem;
+}
+.nx .nx-toolbar .form-select,
+.nx .nx-table .form-select,
+.nx .nx-table-foot .form-select {
+  padding-right: 2rem;
+}
+
+/* children of a wrapper that sits inside a page keep the page's spacing */
+.nx-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nx-gap);
+}
+.nx-stack > * {
+  margin: 0;
+}
+
+/* two panels side by side, aligned with everything else on the page */
+.nx-columns {
+  display: grid;
+  grid-template-columns: 7fr 5fr;
+  gap: var(--nx-gap);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .nx-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* a small line of text with a control beside it */
+.nx-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--nx-muted);
 }

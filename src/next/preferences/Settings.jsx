@@ -2,7 +2,7 @@ import React, { use } from "react";
 import Form from "react-bootstrap/Form";
 import { PAGE_SIZES, UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 import { DATE_FORMATS } from "../format";
-import { Field, FormSection, SwitchField, VerifyModePicker } from "../ui";
+import { Field, FormSection, Panel, SwitchField, VerifyModePicker } from "../ui";
 
 /** How the pages look, how the Mac behaves while backing up, and how much checking each snapshot gets. */
 export function Settings() {
@@ -27,7 +27,7 @@ export function Settings() {
   } = use(UIPreferencesContext);
 
   return (
-    <>
+    <Panel>
       <FormSection title="Appearance">
         <div className="row">
           <div className="col-md-6 col-lg-3">
@@ -137,6 +137,6 @@ export function Settings() {
           </div>
         )}
       </FormSection>
-    </>
+    </Panel>
   );
 }

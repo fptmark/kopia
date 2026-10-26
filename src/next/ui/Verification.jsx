@@ -75,12 +75,12 @@ function VerifyProgress({ r }) {
   const known = r.total > 0;
   const percent = known ? Math.min(100, Math.floor((r.files * 100) / r.total)) : null;
   return (
-    <span className="d-inline-flex flex-column gap-1" style={{ minWidth: "12rem" }} data-testid="verify-running">
+    <span className="d-inline-flex align-items-center gap-2" data-testid="verify-running">
       <ProgressBar
         now={percent ?? 100}
         animated={percent === null}
         striped={percent === null}
-        style={{ height: "0.5rem" }}
+        style={{ height: "0.5rem", width: "6rem" }}
         aria-label="Verification progress"
         {...(percent === null ? {} : { "aria-valuenow": percent })}
       />
@@ -117,7 +117,7 @@ export function VerifiedCell({ info, onShowFailures }) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
-    <span className="d-inline-flex flex-wrap gap-1 align-items-center" data-testid="verified-cell">
+    <span className="d-inline-flex gap-2 align-items-center" data-testid="verified-cell">
       {info.running.map((r) => (
         <VerifyProgress key={r.mode} r={r} />
       ))}

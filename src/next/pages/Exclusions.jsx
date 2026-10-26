@@ -145,7 +145,7 @@ function AddRule({ source, sources, onAdded, label }) {
   };
 
   return (
-    <div className="mb-3">
+    <div>
       <Form onSubmit={add}>
         <Toolbar>
           <Toolbar.Group label={label} grow>

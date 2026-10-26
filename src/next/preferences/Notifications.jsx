@@ -184,128 +184,139 @@ export function Notifications() {
     <Loaded state={state}>
       {() =>
         !dests ? null : (
-          <div data-testid="notification-destinations">
-            <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <h2 className="fs-6 mb-0">Where should backup alerts go?</h2>
-              <div className="d-flex align-items-center gap-2">
-                {status.text && (
-                  <span className={"small " + (status.kind === "error" ? "text-danger" : "nx-muted")} role="status">
-                    {status.text}
-                  </span>
-                )}
-                <Dropdown align="end">
-                  <Dropdown.Toggle variant="primary">Add destination</Dropdown.Toggle>
-                  <Dropdown.Menu>
-                    {Object.entries(TYPES).map(([type, t]) => (
-                      <Dropdown.Item key={type} onClick={() => change([...latestRef.current, newDestination(type)])}>
-                        {t.menu}
-                      </Dropdown.Item>
-                    ))}
-                  </Dropdown.Menu>
-                </Dropdown>
-              </div>
-            </div>
-
-            <DataTable
-              label="destinations"
-              data={dests}
-              getRowId={(d) => d.id}
-              footer={false}
-              emptyText="No destinations."
-              columns={[
-                {
-                  id: "name",
-                  header: "Destination",
-                  cell: (d) => (
-                    <Form.Control
-                      size="sm"
-                      className="fw-semibold"
-                      aria-label={`Name of ${d.name}`}
-                      value={d.name}
-                      onChange={(e) => replace({ ...d, name: e.target.value }, false)}
-                      onBlur={() => persist(latestRef.current)}
-                    />
-                  ),
-                },
-                {
-                  id: "address",
-                  header: "Address",
-                  cell: (d) => (
-                    <>
-                      {TYPES[d.type]?.field && (
-                        <Form.Control
-                          size="sm"
-                          aria-label={`Send to for ${d.name}`}
-                          placeholder={TYPES[d.type].field}
-                          value={d.target || ""}
-                          onChange={(e) => replace({ ...d, target: e.target.value }, false)}
-                          onBlur={() => persist(latestRef.current)}
-                        />
-                      )}
-                      {d.type === "email" && fromChoices.length > 1 && (
-                        <Form.Select
-                          size="sm"
-                          className="mt-1"
-                          aria-label={`Send from for ${d.name}`}
-                          value={d.from || ""}
-                          onChange={(e) => replace({ ...d, from: e.target.value })}
-                        >
-                          <option value="">From: Mail&apos;s default account</option>
-                          {fromChoices.map((c) => (
-                            <option key={c.address} value={c.address}>
-                              From: {c.label}
-                            </option>
-                          ))}
-                        </Form.Select>
-                      )}
-                    </>
-                  ),
-                },
-                {
-                  id: "failures",
-                  header: "Failures (sent at once)",
-                  cell: (d) => <FailuresPicker d={d} onChange={(failures) => replace({ ...d, failures })} />,
-                },
-                {
-                  id: "success",
-                  header: "Success",
-                  cell: (d) => (
-                    <Form.Select
-                      size="sm"
-                      aria-label={`Success messages for ${d.name}`}
-                      value={d.success?.freq || "off"}
-                      onChange={(e) =>
-                        replace({ ...d, success: { ...DEFAULT_SUCCESS, ...d.success, freq: e.target.value } })
-                      }
-                    >
-                      {SUCCESS.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </Form.Select>
-                  ),
-                },
-                { id: "when", header: "When", cell: (d) => <WhenCell d={d} onChange={(x) => replace(x)} /> },
-                {
-                  id: "actions",
-                  header: "",
-                  align: "end",
-                  cell: (d) => (
-                    <span className="d-inline-flex gap-1">
-                      <Button size="sm" variant="secondary" onClick={() => test(d)} aria-label={`Test ${d.name}`}>
-                        Test
-                      </Button>
-                      <Button size="sm" variant="danger" onClick={() => setRemoving(d)} aria-label={`Delete ${d.name}`}>
-                        Delete
-                      </Button>
+          <>
+            <Panel
+              title="Destinations"
+              flush
+              data-testid="notification-destinations"
+              actions={
+                <>
+                  {status.text && (
+                    <span className={"small " + (status.kind === "error" ? "text-danger" : "nx-muted")} role="status">
+                      {status.text}
                     </span>
-                  ),
-                },
-              ]}
-            />
+                  )}
+                  <Dropdown align="end">
+                    <Dropdown.Toggle variant="primary" size="sm">
+                      Add destination
+                    </Dropdown.Toggle>
+                    <Dropdown.Menu>
+                      {Object.entries(TYPES).map(([type, t]) => (
+                        <Dropdown.Item key={type} onClick={() => change([...latestRef.current, newDestination(type)])}>
+                          {t.menu}
+                        </Dropdown.Item>
+                      ))}
+                    </Dropdown.Menu>
+                  </Dropdown>
+                </>
+              }
+            >
+              <DataTable
+                label="destinations"
+                data={dests}
+                getRowId={(d) => d.id}
+                footer={false}
+                emptyText="No destinations."
+                columns={[
+                  {
+                    id: "name",
+                    header: "Destination",
+                    cell: (d) => (
+                      <Form.Control
+                        size="sm"
+                        className="fw-semibold"
+                        aria-label={`Name of ${d.name}`}
+                        value={d.name}
+                        onChange={(e) => replace({ ...d, name: e.target.value }, false)}
+                        onBlur={() => persist(latestRef.current)}
+                      />
+                    ),
+                  },
+                  {
+                    id: "address",
+                    header: "Address",
+                    cell: (d) => (
+                      <>
+                        {TYPES[d.type]?.field && (
+                          <Form.Control
+                            size="sm"
+                            aria-label={`Send to for ${d.name}`}
+                            placeholder={TYPES[d.type].field}
+                            value={d.target || ""}
+                            onChange={(e) => replace({ ...d, target: e.target.value }, false)}
+                            onBlur={() => persist(latestRef.current)}
+                          />
+                        )}
+                        {d.type === "email" && fromChoices.length > 1 && (
+                          <Form.Select
+                            size="sm"
+                            className="mt-1"
+                            aria-label={`Send from for ${d.name}`}
+                            value={d.from || ""}
+                            onChange={(e) => replace({ ...d, from: e.target.value })}
+                          >
+                            <option value="">From: Mail&apos;s default account</option>
+                            {fromChoices.map((c) => (
+                              <option key={c.address} value={c.address}>
+                                From: {c.label}
+                              </option>
+                            ))}
+                          </Form.Select>
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    id: "failures",
+                    header: "Failures (sent at once)",
+                    cell: (d) => <FailuresPicker d={d} onChange={(failures) => replace({ ...d, failures })} />,
+                  },
+                  {
+                    id: "success",
+                    header: "Success",
+                    cell: (d) => (
+                      <Form.Select
+                        size="sm"
+                        aria-label={`Success messages for ${d.name}`}
+                        value={d.success?.freq || "off"}
+                        onChange={(e) =>
+                          replace({ ...d, success: { ...DEFAULT_SUCCESS, ...d.success, freq: e.target.value } })
+                        }
+                      >
+                        {SUCCESS.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    ),
+                  },
+                  { id: "when", header: "When", cell: (d) => <WhenCell d={d} onChange={(x) => replace(x)} /> },
+                  {
+                    id: "actions",
+                    header: "",
+                    align: "end",
+                    cell: (d) => (
+                      <span className="d-inline-flex gap-1">
+                        <Button size="sm" variant="secondary" onClick={() => test(d)} aria-label={`Test ${d.name}`}>
+                          Test
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => setRemoving(d)}
+                          aria-label={`Delete ${d.name}`}
+                        >
+                          Delete
+                        </Button>
+                      </span>
+                    ),
+                  },
+                ]}
+              />
+            </Panel>
 
-            <div className="nx-muted small mb-3 d-flex align-items-center gap-1 flex-wrap">
+            <div className="nx-muted small d-flex align-items-center gap-1 flex-wrap">
               Repeated failures are sent once every
               <DurationInput
                 ariaLabel="Repeat period"
@@ -337,7 +348,7 @@ export function Notifications() {
             >
               {removing && <>"{removing.name}" stops receiving alerts.</>}
             </ConfirmDialog>
-          </div>
+          </>
         )
       }
     </Loaded>

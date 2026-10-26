@@ -215,10 +215,23 @@ export function Tasks() {
             </EmptyState>
           ) : (
             <>
-              <div className="nx-muted small mb-2" data-testid="tasks-summary">
-                {history
-                  ? `Showing ${Math.min(shown.length, total).toLocaleString("en-US")} of ${total.toLocaleString("en-US")} tasks. Tasks are kept permanently, so this includes earlier server runs.`
-                  : "Only recent tasks are available; they are lost when the server restarts."}
+              <div className="nx-meta" data-testid="tasks-summary">
+                <span>
+                  {history
+                    ? `Showing ${Math.min(shown.length, total).toLocaleString("en-US")} of ${total.toLocaleString("en-US")} tasks`
+                    : "Recent tasks only"}
+                </span>
+                {history && shown.length < total && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    data-testid="load-older-tasks"
+                    disabled={loadingOlder}
+                    onClick={showOlder}
+                  >
+                    {loadingOlder ? "Loading" : "Show older tasks"}
+                  </Button>
+                )}
               </div>
               <DataTable
                 label="tasks"
@@ -228,18 +241,6 @@ export function Tasks() {
                 initialSort={{ id: "started", desc: true }}
                 emptyText="No task matches the filters."
               />
-              {history && shown.length < total && (
-                <div className="text-center mb-3">
-                  <Button
-                    variant="secondary"
-                    data-testid="load-older-tasks"
-                    disabled={loadingOlder}
-                    onClick={showOlder}
-                  >
-                    {loadingOlder ? "Loading" : "Show older tasks"}
-                  </Button>
-                </div>
-              )}
             </>
           )
         }

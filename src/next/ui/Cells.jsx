@@ -44,7 +44,7 @@ export function DateTimeText({ value, ago = false, long = false, ...rest }) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
-    <span className="nx-num" title={ago ? formatDateTime(value) : undefined} {...rest}>
+    <span className="nx-num nx-date" title={ago ? formatDateTime(value) : undefined} {...rest}>
       {long ? formatLongDateTime(value) : ago ? formatAgo(value) : formatDateTime(value)}
     </span>
   );

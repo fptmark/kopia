@@ -12,7 +12,7 @@ export function Breadcrumbs({ trail }) {
   }
 
   return (
-    <Breadcrumb listProps={{ className: "mb-2" }} aria-label="Where you are">
+    <Breadcrumb className="nx-crumbs" listProps={{ className: "mb-0" }} aria-label="Where you are">
       {trail.map((c) => (
         <Breadcrumb.Item
           key={c.label + (c.to ?? "")}

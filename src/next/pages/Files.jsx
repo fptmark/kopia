@@ -5,7 +5,7 @@ import ProgressBar from "react-bootstrap/ProgressBar";
 import Spinner from "react-bootstrap/Spinner";
 import { Link } from "react-router";
 import { errorMessage } from "../api";
-import { formatDateTime } from "../format";
+import { formatDate, formatDateTime } from "../format";
 import {
   availableRanges,
   cancelSearch,
@@ -65,8 +65,8 @@ function Available({ avail }) {
       footer={false}
       columns={[
         { id: "path", header: "Source", cell: (r) => <PathText>{r.path}</PathText> },
-        { id: "first", header: "From", cell: (r) => new Date(r.first).toLocaleDateString() },
-        { id: "last", header: "To", cell: (r) => new Date(r.last).toLocaleDateString() },
+        { id: "first", header: "From", cell: (r) => formatDate(r.first) },
+        { id: "last", header: "To", cell: (r) => formatDate(r.last) },
         { id: "count", header: "Snapshots", align: "end", cell: (r) => <CountText n={r.count} /> },
       ]}
     />
@@ -223,8 +223,8 @@ export function Files() {
 
   return (
     <Page title="Files">
-      <div className="row g-3">
-        <div className="col-lg-7">
+      <div className="nx-columns">
+        <div>
           <Panel title="Search">
             <Form onSubmit={start} data-testid="search-form">
               <Field label="File or folder name">
@@ -330,7 +330,7 @@ export function Files() {
             </Form>
           </Panel>
         </div>
-        <div className="col-lg-5">
+        <div>
           <Panel title="Snapshots available" flush data-testid="available-snapshots">
             <Available avail={avail} />
           </Panel>
@@ -340,7 +340,7 @@ export function Files() {
       {error && <Notice kind="error">{error}</Notice>}
 
       {status && p && (
-        <div className="mb-3" data-testid="search-progress">
+        <div data-testid="search-progress">
           {running ? (
             <>
               <Spinner animation="border" size="sm" /> Searching: snapshot {p.snapshotsDone} of {p.snapshotsTotal},{" "}

@@ -95,6 +95,7 @@ function Shell({ children }) {
                   key={t.to}
                   to={t.to}
                   data-testid={"tab" + t.to.replace("/", "-")}
+                  data-label={t.label}
                   className={({ isActive }) =>
                     "nx-tab" + (isActive ? " active" : "") + (t.needsRepo && !repo.connected ? " disabled" : "")
                   }

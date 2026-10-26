@@ -16,7 +16,7 @@ const SNAPSHOTS = { label: "Snapshots", to: "/snapshots" };
 /**
  * The breadcrumbs for a page inside a snapshot: Snapshots, the source's history, then each folder opened on the
  * way (the router state of each page carries {label, oid, prevState, snapshot}). The folder being shown is the
- * last one; it is a link too unless current is set.
+ * last one; it is a link too unless current is set, and then the snapshot's top folder is left out.
  */
 export function browseTrail(state, oid, { current = false } = {}) {
   const trail = [SNAPSHOTS];
@@ -31,6 +31,9 @@ export function browseTrail(state, oid, { current = false } = {}) {
 
   chain.forEach((s, i) => {
     const last = i === chain.length - 1;
+    if (last && current && chain.length === 1) {
+      return; // the snapshot's own folder is named in the facts line
+    }
     const at = last ? oid : (s.oid ?? s.snapshot?.rootID);
     const crumb = { label: s.label };
     if (at && !(last && current)) {

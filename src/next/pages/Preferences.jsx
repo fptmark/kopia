@@ -4,7 +4,7 @@ import { queryState } from "../hooks";
 import { IgnoredErrors } from "../preferences/IgnoredErrors";
 import { Notifications } from "../preferences/Notifications";
 import { Settings } from "../preferences/Settings";
-import { Page, Panel, TabNav } from "../ui";
+import { Page, TabNav } from "../ui";
 
 const TABS = [
   { id: "settings", label: "Settings", view: Settings },
@@ -22,9 +22,7 @@ export function Preferences() {
   return (
     <Page title="Preferences">
       <TabNav tabs={TABS} active={active.id} onChange={(id) => set({ tab: id })} />
-      <Panel>
-        <View />
-      </Panel>
+      <View />
     </Page>
   );
 }

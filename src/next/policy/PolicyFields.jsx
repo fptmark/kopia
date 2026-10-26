@@ -200,9 +200,8 @@ export function PolicyFields({ target, policyState, initialSection = "retention"
   const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
 
   return (
-    <div data-testid="policy-fields">
+    <div className="nx-stack" data-testid="policy-fields">
       <TabNav tabs={SECTIONS.map((s) => ({ id: s.id, label: s.label }))} active={section} onChange={setSection} />
-      {current.note && <div className="nx-help mb-3">{current.note}</div>}
       <div className="nx-policy">
         <div className="nx-policy-row nx-policy-head">
           <div>Setting</div>

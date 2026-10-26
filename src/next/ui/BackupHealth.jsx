@@ -64,8 +64,8 @@ export function BackupHealth() {
       {(status) => {
         const s = status.state;
         return (
-          <div data-testid="backup-health">
-            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <div className="nx-stack" data-testid="backup-health">
+            <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
               <div className="d-flex flex-wrap align-items-center gap-2">
                 {s === "ok" && <StatusBadge kind="ok">Healthy</StatusBadge>}
                 {s === "failing" && <StatusBadge kind="error">Problem</StatusBadge>}

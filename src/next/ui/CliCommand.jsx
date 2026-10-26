@@ -22,7 +22,7 @@ export function CliCommand({ command }) {
   const text = `${exe} ${command}`.trim();
 
   return (
-    <div className="mt-4" data-testid="cli-command">
+    <div className="nx-small" data-testid="cli-command">
       <Button size="sm" variant="secondary" onClick={toggle} aria-expanded={open}>
         Command line
       </Button>

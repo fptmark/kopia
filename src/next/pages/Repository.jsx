@@ -192,7 +192,23 @@ export function Repository() {
             <Initializing taskId={s.initTaskID} />
           ) : s.connected ? (
             <>
-              <Panel title="Connected" actions={<StatusBadge kind="ok">connected</StatusBadge>}>
+              <Panel
+                title="Connected"
+                actions={
+                  <>
+                    <StatusBadge kind="ok">connected</StatusBadge>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      data-testid="disconnect"
+                      disabled={busy}
+                      onClick={() => setConfirming(true)}
+                    >
+                      Disconnect
+                    </Button>
+                  </>
+                }
+              >
                 {s.readonly && <Notice kind="warning">The repository is read-only.</Notice>}
                 <Field label="Description" error={!shown ? "A description is required." : undefined}>
                   {(id) => (
@@ -238,9 +254,7 @@ export function Repository() {
                   },
                 ]}
               />
-              <Button variant="danger" data-testid="disconnect" disabled={busy} onClick={() => setConfirming(true)}>
-                Disconnect
-              </Button>
+
               <CliCommand command="repository status" />
               <ConfirmDialog
                 show={confirming}

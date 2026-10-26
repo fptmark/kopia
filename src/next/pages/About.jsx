@@ -23,6 +23,7 @@ export function About() {
         .querySelector("#appVersion .version-info")
         ?.textContent?.replace(/^Version\s+/, "")
         .replace("%VITE_FULL_VERSION_INFO%", "")
+        .replace(/^vv/, "v")
         .trim() || "unknown",
   );
   const [bundle] = useState(
@@ -56,6 +57,7 @@ export function About() {
         data={rows}
         getRowId={(r) => r.k}
         footer={false}
+        head={false}
         data-testid="about-table"
         columns={[
           { id: "k", header: "", cell: (r) => <b>{r.k}</b>, width: "14rem" },

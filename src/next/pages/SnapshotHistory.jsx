@@ -36,7 +36,7 @@ import { groupVerifications, loadVerifications, verifySnapshots } from "../verif
 
 function Retention({ snap, onPin }) {
   return (
-    <span className="d-inline-flex flex-wrap gap-1 align-items-center">
+    <span className="d-inline-flex gap-1 align-items-center">
       {(snap.retention || []).map((l) => (
         <StatusBadge key={l} kind="neutral">
           {l}
