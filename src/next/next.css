@@ -332,6 +332,24 @@
   font-size: 0.85rem;
   color: var(--nx-muted);
 }
+.nx-table-top {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--nx-border);
+  background: var(--nx-surface-alt);
+  font-size: 0.85rem;
+  color: var(--nx-muted);
+}
+.nx-table.fixed {
+  table-layout: fixed;
+}
+.nx-table.fixed td,
+.nx-table.fixed th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nx-table-top .pager,
 .nx-table-foot .pager {
   margin-left: auto;
   display: flex;

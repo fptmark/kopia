@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { DataTable } from "../../../src/next/ui";
 
 const rows = Array.from({ length: 23 }, (_, i) => ({ id: "r" + i, name: "item" + String(i).padStart(2, "0"), n: i }));
@@ -24,20 +24,65 @@ describe("DataTable", () => {
     expect(screen.getByTestId("range")).toHaveTextContent("1–10 of 23");
   });
 
+  it("puts a pager above the grid as well as below it", () => {
+    const { container } = render(<DataTable data={rows} columns={columns} getRowId={(r) => r.id} pageSize={10} />);
+    const top = container.querySelector(".nx-table-top");
+    expect(top).toBeInTheDocument();
+    fireEvent.click(within(top).getByLabelText("Next page"));
+    expect(screen.getByTestId("range")).toHaveTextContent("11–20 of 23");
+  });
+
+  it("measures the column widths once and keeps them while paging", () => {
+    const spy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        width: 120,
+        height: 10,
+        top: 0,
+        left: 0,
+        right: 120,
+        bottom: 10,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+    try {
+      const { container } = render(<DataTable data={rows} columns={columns} getRowId={(r) => r.id} pageSize={10} />);
+      const widths = () => [...container.querySelectorAll("col")].map((c) => c.style.width);
+      expect(widths()).toEqual(["120px", "120px", "120px"]);
+      expect(container.querySelector("table")).toHaveClass("fixed");
+      spy.mockReturnValue({
+        width: 300,
+        height: 10,
+        top: 0,
+        left: 0,
+        right: 300,
+        bottom: 10,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      fireEvent.click(screen.getAllByLabelText("Next page")[0]);
+      expect(widths()).toEqual(["120px", "120px", "120px"]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("pages forward and back, and changes the page size", () => {
     render(<DataTable data={rows} columns={columns} getRowId={(r) => r.id} pageSize={10} />);
-    fireEvent.click(screen.getByLabelText("Next page"));
+    fireEvent.click(screen.getAllByLabelText("Next page")[0]);
     expect(names()[0]).toBe("item10");
-    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Last page"));
+    expect(screen.getAllByText("Page 2 of 3")[0]).toBeInTheDocument();
+    fireEvent.click(screen.getAllByLabelText("Last page")[0]);
     expect(names()).toHaveLength(3);
-    expect(screen.getByLabelText("Next page")).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("First page"));
+    expect(screen.getAllByLabelText("Next page")[0]).toBeDisabled();
+    fireEvent.click(screen.getAllByLabelText("First page")[0]);
     expect(names()[0]).toBe("item00");
 
     fireEvent.change(screen.getByLabelText("Rows per page"), { target: { value: "25" } });
     expect(names()).toHaveLength(23);
-    expect(screen.queryByLabelText("Next page")).not.toBeInTheDocument();
+    expect(screen.queryAllByLabelText("Next page")).toHaveLength(0);
   });
 
   it("sorts by clicking a header, ascending then descending, and not on columns without a value", () => {
@@ -81,9 +126,9 @@ describe("DataTable", () => {
       />,
     );
     expect(names()[0]).toBe("item22");
-    fireEvent.click(screen.getByLabelText("Next page"));
+    fireEvent.click(screen.getAllByLabelText("Next page")[0]);
     fireEvent.click(screen.getByText("Name"));
-    expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+    expect(screen.getAllByText("Page 1 of 3")[0]).toBeInTheDocument();
   });
 
   it("shows the empty text and no footer without data", () => {
@@ -94,9 +139,9 @@ describe("DataTable", () => {
 
   it("stays on a valid page when the data shrinks", () => {
     const { rerender } = render(<DataTable data={rows} columns={columns} getRowId={(r) => r.id} pageSize={10} />);
-    fireEvent.click(screen.getByLabelText("Last page"));
+    fireEvent.click(screen.getAllByLabelText("Last page")[0]);
     rerender(<DataTable data={rows.slice(0, 12)} columns={columns} getRowId={(r) => r.id} pageSize={10} />);
-    expect(screen.getByText("Page 2 of 2")).toBeInTheDocument();
+    expect(screen.getAllByText("Page 2 of 2")[0]).toBeInTheDocument();
     expect(names()).toHaveLength(2);
   });
 

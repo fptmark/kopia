@@ -1,4 +1,4 @@
-import React, { use, useMemo, useState } from "react";
+import React, { use, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getCoreRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
@@ -6,6 +6,52 @@ import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 import { EmptyState } from "./Feedback";
 
 const PAGE_SIZES = [10, 25, 50, 100];
+
+function Pager({ index, pageCount, setPageIndex }) {
+  return (
+    <div className="pager">
+      <Button
+        size="sm"
+        variant="secondary"
+        aria-label="First page"
+        disabled={index === 0}
+        onClick={() => setPageIndex(0)}
+      >
+        {"«"}
+      </Button>
+      <Button
+        size="sm"
+        variant="secondary"
+        aria-label="Previous page"
+        disabled={index === 0}
+        onClick={() => setPageIndex(index - 1)}
+      >
+        {"‹"}
+      </Button>
+      <span>
+        Page {index + 1} of {pageCount.toLocaleString("en-US")}
+      </span>
+      <Button
+        size="sm"
+        variant="secondary"
+        aria-label="Next page"
+        disabled={index >= pageCount - 1}
+        onClick={() => setPageIndex(index + 1)}
+      >
+        {"›"}
+      </Button>
+      <Button
+        size="sm"
+        variant="secondary"
+        aria-label="Last page"
+        disabled={index >= pageCount - 1}
+        onClick={() => setPageIndex(pageCount - 1)}
+      >
+        {"»"}
+      </Button>
+    </div>
+  );
+}
 
 /**
  * The one table of the UI: sorting by clicking a header, paging, optional row selection with a header
@@ -79,6 +125,24 @@ export function DataTable({
   const first = total === 0 ? 0 : index * pageSize + 1;
   const last = Math.min(total, (index + 1) * pageSize);
 
+  // Column widths are measured once, when the grid first has rows, and then held, so paging and sorting
+  // never make the columns jump.
+  const tableRef = useRef(null);
+  const sig = columns.map((c) => c.id).join("|") + (selection ? "+" : "");
+  const [measured, setMeasured] = useState(null);
+  const widths = total > 0 && measured?.sig === sig ? measured.widths : null;
+  useLayoutEffect(() => {
+    if (widths || total === 0 || !tableRef.current) {
+      return;
+    }
+    const w = [...tableRef.current.querySelectorAll("tbody tr:first-child > *")].map(
+      (c) => c.getBoundingClientRect().width,
+    );
+    if (w.reduce((a, b) => a + b, 0) > 0) {
+      setMeasured({ sig, widths: w });
+    }
+  });
+
   const selectable = (row) => !selection?.isSelectable || selection.isSelectable(row);
   const idOf = (row) => (getRowId ? String(getRowId(row)) : undefined);
   const pageRows = rows.map((r) => r.original).filter(selectable);
@@ -108,8 +172,24 @@ export function DataTable({
 
   return (
     <div className="nx-table-wrap" {...rest}>
+      {pageCount > 1 && total > 0 && (
+        <div className="nx-table-top">
+          <Pager index={index} pageCount={pageCount} setPageIndex={setPageIndex} />
+        </div>
+      )}
       <div className="nx-table-scroll">
-        <table className={"table table-hover nx-table" + (oneLine ? " nx-one-line" : "")} aria-label={label}>
+        <table
+          ref={tableRef}
+          className={"table table-hover nx-table" + (oneLine ? " nx-one-line" : "") + (widths ? " fixed" : "")}
+          aria-label={label}
+        >
+          {widths && (
+            <colgroup>
+              {widths.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
+          )}
           <thead hidden={!head}>
             <tr>
               {selection && (
@@ -210,49 +290,7 @@ export function DataTable({
               ))}
             </Form.Select>
           </label>
-          {pageCount > 1 && (
-            <div className="pager">
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label="First page"
-                disabled={index === 0}
-                onClick={() => setPageIndex(0)}
-              >
-                {"«"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label="Previous page"
-                disabled={index === 0}
-                onClick={() => setPageIndex(index - 1)}
-              >
-                {"‹"}
-              </Button>
-              <span>
-                Page {index + 1} of {pageCount.toLocaleString("en-US")}
-              </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label="Next page"
-                disabled={index >= pageCount - 1}
-                onClick={() => setPageIndex(index + 1)}
-              >
-                {"›"}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                aria-label="Last page"
-                disabled={index >= pageCount - 1}
-                onClick={() => setPageIndex(pageCount - 1)}
-              >
-                {"»"}
-              </Button>
-            </div>
-          )}
+          {pageCount > 1 && <Pager index={index} pageCount={pageCount} setPageIndex={setPageIndex} />}
         </div>
       )}
     </div>
