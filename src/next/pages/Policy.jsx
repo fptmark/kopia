@@ -47,6 +47,7 @@ export function Policy() {
     <Page
       title={PolicyTypeName(target)}
       trail={[{ label: "Policies", to: "/policies" }]}
+      crumb="Policy"
       actions={
         <>
           {!state.isNew && (

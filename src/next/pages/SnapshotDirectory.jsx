@@ -21,6 +21,7 @@ import {
   DateTimeText,
   FailedBadge,
   FailedFilesDialog,
+  FromLink,
   Loaded,
   Notice,
   Page,
@@ -56,9 +57,9 @@ function SnapshotFacts({ snapshot, taskId }) {
         </>
       )}
       {taskId && (
-        <Link to={"/tasks/" + taskId} data-testid="snapshot-details">
+        <FromLink to={"/tasks/" + taskId} data-testid="snapshot-details">
           Details
-        </Link>
+        </FromLink>
       )}
     </div>
   );

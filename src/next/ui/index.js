@@ -12,6 +12,7 @@ export { DataTable } from "./DataTable";
 export { FailedFilesDialog, FailedBadge, TaskErrorDialog } from "./FailedFiles";
 export { LogView } from "./LogView";
 export { Breadcrumbs } from "./Breadcrumbs";
+export { FromLink } from "./FromLink";
 export { CliCommand } from "./CliCommand";
 export { HealthBanner } from "./HealthBanner";
 export { VerifiedCell, VerifyDialog, VerifyModePicker, VerifyFailuresDialog } from "./Verification";

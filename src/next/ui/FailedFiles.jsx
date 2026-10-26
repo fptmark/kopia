@@ -67,7 +67,7 @@ function IgnoreDialog({ source, target, onClose, onDone }) {
       <div>
         <PathText>{target.path || source}</PathText>
       </div>
-      <Form.Group >
+      <Form.Group>
         {choices.map((c) => (
           <Form.Check
             key={c.id}
@@ -81,7 +81,7 @@ function IgnoreDialog({ source, target, onClose, onDone }) {
         ))}
       </Form.Group>
       <Form.Group className="nx-row">
-        <Form.Label >Ignore for</Form.Label>
+        <Form.Label>Ignore for</Form.Label>
         <Form.Select
           size="sm"
           style={{ width: "auto" }}
@@ -189,7 +189,7 @@ function Group({ group, onIgnore, onExclude, covered }) {
       {open && (
         <ul className="small">
           {group.items.map((i) => (
-            <li key={i.path} >
+            <li key={i.path}>
               <div className="nx-row">
                 <PathText>{i.path}</PathText>
                 {onIgnore && (

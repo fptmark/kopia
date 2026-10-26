@@ -250,7 +250,6 @@ export function Notifications() {
                         {d.type === "email" && fromChoices.length > 1 && (
                           <Form.Select
                             size="sm"
-                            
                             aria-label={`Send from for ${d.name}`}
                             value={d.from || ""}
                             onChange={(e) => replace({ ...d, from: e.target.value })}

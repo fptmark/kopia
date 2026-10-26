@@ -63,7 +63,7 @@ export function HealthBanner() {
   return (
     <Notice kind="error" data-testid="verify-banner">
       <strong>Backup failure</strong> on {formatDateTime(status.since)}{" "}
-      <Button variant="danger" size="sm"  disabled={busy || running} onClick={open}>
+      <Button variant="danger" size="sm" disabled={busy || running} onClick={open}>
         {running ? "Verifying…" : "Verify"}
       </Button>
       <Link to="/repo">Details</Link>

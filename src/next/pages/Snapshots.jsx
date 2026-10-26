@@ -24,6 +24,7 @@ import {
   DateTimeText,
   FailedBadge,
   FailedFilesDialog,
+  FromLink,
   Loaded,
   Notice,
   Page,
@@ -59,7 +60,13 @@ function SourceActions({ row, onStart, onCancel, base2 }) {
     default:
       return (
         <span className="nx-inline">
-          <Button as={Link} size="sm" variant="secondary" to={policyEditorURL(row.source)} data-testid="edit-policy">
+          <Button
+            as={FromLink}
+            size="sm"
+            variant="secondary"
+            to={policyEditorURL(row.source)}
+            data-testid="edit-policy"
+          >
             Policy
           </Button>
           <Button size="sm" variant="primary" data-testid="snapshot-now" onClick={() => onStart(row.source)}>

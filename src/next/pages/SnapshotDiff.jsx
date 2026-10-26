@@ -168,7 +168,7 @@ export function SnapshotDiff() {
       title="Compare snapshots"
       trail={[
         { label: "Sources", to: "/snapshots" },
-        ...(state.data ? [{ label: "History", to: historyUrl(state.data.source) }] : []),
+        ...(state.data ? [{ label: state.data.source.path, to: historyUrl(state.data.source) }] : []),
       ]}
       subtitle={
         state.data && (

@@ -154,7 +154,7 @@ const MODES = [
 /** The choice of what to read back: the data a snapshot added, a sample, or every file. */
 export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode" }) {
   return MODES.map((m) => (
-    <div key={m.id} >
+    <div key={m.id}>
       <Form.Check
         type="radio"
         id={name + "-" + m.id}
@@ -240,7 +240,7 @@ export function VerifyFailuresDialog({ verification, onClose }) {
             <>
               <ul className="small">
                 {d.failures.map((f) => (
-                  <li key={f.path + f.error} >
+                  <li key={f.path + f.error}>
                     <PathText>{f.path}</PathText>
                     <div className="nx-muted">{f.error}</div>
                   </li>

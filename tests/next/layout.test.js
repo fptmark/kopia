@@ -20,7 +20,8 @@ const scan = (re) =>
 // so every page spaces, aligns and sizes things the same way.
 describe("layout stays in the shared components", () => {
   it("has no Bootstrap spacing or flex utilities in class names", () => {
-    const utility = /^(?:m[tbsexy]?|p[tbsexy]?)-(?:[0-5]|auto)$|^d-(?:inline-)?flex$|^gap-\d$|^justify-content-|^align-items-|^flex-(?:wrap|grow-\d)$/;
+    const utility =
+      /^(?:m[tbsexy]?|p[tbsexy]?)-(?:[0-5]|auto)$|^d-(?:inline-)?flex$|^gap-\d$|^justify-content-|^align-items-|^flex-(?:wrap|grow-\d)$/;
     const bad = files(SRC).flatMap((f) =>
       [...fs.readFileSync(f, "utf8").matchAll(/className="([^"]*)"/g)]
         .filter((m) => m[1].split(/\s+/).some((c) => utility.test(c)))
@@ -30,7 +31,9 @@ describe("layout stays in the shared components", () => {
   });
   it("uses no Bootstrap grid, tables or tabs directly", () => {
     expect(
-      scan(/from ["']react-bootstrap\/(?:Row|Col|Container|Table|Nav|Navbar|Tabs|Tab|Card|ListGroup)["']/g).filter((x) => !x.startsWith("ui/")),
+      scan(/from ["']react-bootstrap\/(?:Row|Col|Container|Table|Nav|Navbar|Tabs|Tab|Card|ListGroup)["']/g).filter(
+        (x) => !x.startsWith("ui/"),
+      ),
     ).toEqual([]);
   });
   it("sets no inline margins or padding", () => {

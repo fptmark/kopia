@@ -27,7 +27,7 @@ export function CliCommand({ command }) {
         Command line
       </Button>
       {open && (
-        <InputGroup size="sm" >
+        <InputGroup size="sm">
           <Form.Control readOnly aria-label="Command" value={text} className="nx-path" />
           <Button variant="secondary" onClick={() => navigator.clipboard?.writeText(text).catch(() => {})}>
             Copy

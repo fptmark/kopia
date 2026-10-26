@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import {
   ConfirmDialog,
@@ -12,6 +12,7 @@ import {
   Field,
   Loaded,
   Notice,
+  FromLink,
   Page,
   Panel,
   PathText,
@@ -42,6 +43,56 @@ describe("Page", () => {
     expect(screen.getByRole("button", { name: "Do" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Snapshots/ })).toHaveAttribute("href", "/snapshots");
     expect(screen.getByText("body")).toBeInTheDocument();
+  });
+
+  it("shows the trail it was opened from, then itself", () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: "/tasks/9",
+            state: {
+              from: [
+                { label: "Sources", to: "/snapshots" },
+                { label: "/Users/me", to: "/snapshots/single-source?x=1" },
+              ],
+            },
+          },
+        ]}
+      >
+        <Page title="Snapshot: long description" trail={[{ label: "Tasks", to: "/tasks" }]} crumb="Details">
+          body
+        </Page>
+      </MemoryRouter>,
+    );
+    const crumbs = within(screen.getByLabelText("Where you are"));
+    expect(crumbs.getAllByRole("listitem").map((x) => x.textContent)).toEqual(["Sources", "/Users/me", "Details"]);
+    expect(crumbs.queryByRole("link", { name: "Details" })).not.toBeInTheDocument();
+    expect(crumbs.queryByRole("link", { name: "Tasks" })).not.toBeInTheDocument();
+  });
+
+  it("hands its own trail to the page a FromLink opens", () => {
+    const Dest = () => {
+      const l = useLocation();
+      return <div data-testid="from">{(l.state?.from ?? []).map((c) => c.label).join(" > ")}</div>;
+    };
+    render(
+      <MemoryRouter initialEntries={["/snapshots/single-source"]}>
+        <Routes>
+          <Route
+            path="/snapshots/single-source"
+            element={
+              <Page trail={[{ label: "Sources", to: "/snapshots" }, { label: "/Users/me" }]}>
+                <FromLink to="/policies/edit">Policy</FromLink>
+              </Page>
+            }
+          />
+          <Route path="/policies/edit" element={<Dest />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByText("Policy"));
+    expect(screen.getByTestId("from")).toHaveTextContent("Sources > /Users/me");
   });
 
   it("links each breadcrumb but the current one", () => {

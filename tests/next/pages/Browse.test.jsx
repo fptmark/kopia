@@ -25,7 +25,12 @@ const entries = [
 
 function Where() {
   const l = useLocation();
-  return <div data-testid="where">{l.pathname}</div>;
+  return (
+    <div data-testid="where">
+      {l.pathname}
+      <span data-testid="from">{(l.state?.from ?? []).map((c) => c.label).join(" > ")}</span>
+    </div>
+  );
 }
 
 const renderBrowse = (state) =>
@@ -89,6 +94,23 @@ describe("SnapshotDirectory", () => {
     );
     renderBrowse({ snapshot: { id: "s2", source: { path: "/Users/me" }, startTime: "2026-10-26T14:00:00Z" } });
     await waitFor(() => expect(screen.getByTestId("snapshot-details")).toHaveAttribute("href", "/tasks/42"));
+  });
+
+  it("hands its breadcrumbs to the task page it opens from Details", async () => {
+    axios.get.mockImplementation((url) =>
+      url.startsWith("/api/v1/mounts/")
+        ? Promise.reject({ response: { status: 404 } })
+        : url === "/api/v1/snapshots/task"
+          ? Promise.resolve({ data: { taskId: "42" } })
+          : Promise.resolve({ data: { entries } }),
+    );
+    renderBrowse({
+      label: "Oct 26, 2026, 2:00 PM",
+      snapshot: { id: "s2", source: { path: "/Users/me" }, startTime: "2026-10-26T14:00:00Z" },
+    });
+    fireEvent.click(await screen.findByTestId("snapshot-details"));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/tasks/42"));
+    expect(screen.getByTestId("from")).toHaveTextContent("Sources > /Users/me > Oct 26, 2026, 2:00 PM");
   });
 
   it("has no Details button for a snapshot with no task on record", async () => {

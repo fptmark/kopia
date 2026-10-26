@@ -107,6 +107,7 @@ export function Task({ taskID }) {
         <Page
           title={`${task.kind}: ${task.description}`}
           trail={[{ label: "Tasks", to: "/tasks" }]}
+          crumb="Details"
           actions={
             <>
               {madeIndex >= 0 && (
