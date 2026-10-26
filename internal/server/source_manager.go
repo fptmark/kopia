@@ -403,6 +403,9 @@ func (s *sourceManager) snapshotInternal(ctx context.Context, ctrl uitask.Contro
 			return errors.Wrap(err, "unable to apply retention policy")
 		}
 
+		// result.Manifest was copied before the save assigned the ID
+		result.Manifest.ID = snapshotID
+
 		userLog(ctx).Debugf("created snapshot %v", snapshotID)
 
 		return nil
