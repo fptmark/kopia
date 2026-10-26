@@ -211,7 +211,7 @@ export function Notifications() {
               data={dests}
               getRowId={(d) => d.id}
               footer={false}
-              emptyText="No destinations. Nothing is sent. Add one to be told about backup problems."
+              emptyText="No destinations."
               columns={[
                 {
                   id: "name",

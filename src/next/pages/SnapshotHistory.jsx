@@ -193,7 +193,7 @@ export function SnapshotHistory() {
     },
     {
       id: "size",
-      header: () => <span title="Total size of the files, before deduplication and compression.">Logical size</span>,
+      header: () => <span title="Before dedup and compression">Logical size</span>,
       align: "end",
       accessor: (s) => s.summary?.size ?? 0,
       cell: (s) => {
@@ -217,11 +217,7 @@ export function SnapshotHistory() {
     },
     {
       id: "new",
-      header: () => (
-        <span title="Data this snapshot added to the repository (compressed). Depends on snapshot order.">
-          New data
-        </span>
-      ),
+      header: () => <span title="Compressed data this snapshot added">New data</span>,
       align: "end",
       accessor: (s) => statById[s.id]?.newBytes ?? -1,
       cell: (s) => {
@@ -240,9 +236,7 @@ export function SnapshotHistory() {
     },
     {
       id: "result",
-      header: () => (
-        <span title="Whether every file was backed up. Failed files can be opened for details.">Result</span>
-      ),
+      header: () => <span title="Click a failure for the files">Result</span>,
       cell: (s) =>
         s.summary?.numFailed ? (
           <FailedBadge
@@ -255,11 +249,7 @@ export function SnapshotHistory() {
     },
     {
       id: "verified",
-      header: () => (
-        <span title="Whether the stored data of this snapshot was read back from the NAS and matched. Select snapshots and press Verify.">
-          Verified
-        </span>
-      ),
+      header: () => <span title="Last read-back from the NAS">Verified</span>,
       cell: (s) => <VerifiedCell info={verified[s.id]} onShowFailures={setVerifyFailed} />,
     },
     {
@@ -308,8 +298,7 @@ export function SnapshotHistory() {
           </span>
         </>
       }
-      back="/snapshots"
-      backLabel="Snapshots"
+      trail={[{ label: "Snapshots", to: "/snapshots" }]}
     >
       {message && (
         <Notice kind={message.kind} onClose={() => setMessage(null)}>
@@ -359,7 +348,7 @@ export function SnapshotHistory() {
                   variant="primary"
                   disabled={chosen.length !== 2}
                   onClick={compare}
-                  title="Select two snapshots to see what changed between them"
+                  title="Select two snapshots"
                 >
                   Compare
                 </Button>
@@ -368,7 +357,7 @@ export function SnapshotHistory() {
                   variant="primary"
                   disabled={chosen.length === 0}
                   onClick={() => setVerifying(true)}
-                  title="Read the selected snapshots back from the repository and check them"
+                  title="Read the selected snapshots back"
                 >
                   Verify
                 </Button>
@@ -474,7 +463,7 @@ export function SnapshotHistory() {
           saveEdit({ snapshots: [edit.snap.id], addPins: [text], removePins: edit.pin ? [edit.pin] : [] })
         }
       >
-        <Field label="Name of the pin" help="A pinned snapshot is kept whatever the retention rules say.">
+        <Field label="Name of the pin" help="Never expires.">
           {(id) => <Form.Control id={id} value={text} onChange={(e) => setText(e.target.value)} />}
         </Field>
         {edit?.pin && (

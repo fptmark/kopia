@@ -64,10 +64,7 @@ export function Policies() {
   };
 
   return (
-    <Page
-      title="Policies"
-      subtitle="Settings for what is backed up, when and for how long. More specific policies override the ones above them."
-    >
+    <Page title="Policies" subtitle="The most specific policy wins.">
       <Loaded state={state}>
         {({ policies, sources }) => {
           const me = sources.localUsername + "@" + sources.localHost;

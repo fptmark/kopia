@@ -96,8 +96,7 @@ export function Task({ taskID }) {
       {(task) => (
         <Page
           title={`${task.kind}: ${task.description}`}
-          back="/tasks"
-          backLabel="Tasks"
+          trail={[{ label: "Tasks", to: "/tasks" }]}
           actions={
             task.status === "RUNNING" && (
               <Button variant="danger" onClick={() => cancelTask(task.id)}>

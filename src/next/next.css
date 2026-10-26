@@ -89,17 +89,6 @@
   align-items: center;
   flex-wrap: wrap;
 }
-.nx-back {
-  display: inline-block;
-  margin-top: 1rem;
-  color: var(--nx-muted);
-  text-decoration: none;
-  font-size: 0.9rem;
-}
-.nx-back:hover {
-  color: var(--bs-body-color);
-}
-
 /* panels and toolbars */
 .nx-panel {
   border: 1px solid var(--nx-border);

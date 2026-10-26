@@ -222,7 +222,7 @@ export function Files() {
   ];
 
   return (
-    <Page title="Files" subtitle="Find a file or folder in any snapshot, then view or restore it.">
+    <Page title="Files">
       <div className="row g-3">
         <div className="col-lg-7">
           <Panel title="Search">

@@ -98,10 +98,26 @@ describe("SnapshotDirectory", () => {
     await waitFor(() => expect(screen.getByTestId("show-snapshot-errors")).toHaveTextContent("2 failed"));
   });
 
-  it("shows the trail that led here and goes back along it", async () => {
-    renderBrowse({ label: "Docs", oid: "kdocs", prevState: { label: "/Users/me" } });
-    await waitFor(() => expect(screen.getByText("/Users/me")).toBeInTheDocument());
+  it("shows the trail that led here, each step a link back", async () => {
+    renderBrowse({
+      label: "Docs",
+      oid: "kroot",
+      snapshot: {
+        id: "s2",
+        source: { host: "mac", userName: "me", path: "/Users/me" },
+        startTime: "2026-10-26T14:00:00Z",
+      },
+      prevState: {
+        label: "/Users/me",
+        snapshot: { id: "s2", rootID: "kbase", source: { host: "mac", userName: "me", path: "/Users/me" } },
+      },
+    });
+    await waitFor(() => expect(screen.getByRole("link", { name: "/Users/me" })).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "Snapshots" })).toHaveAttribute("href", "/snapshots");
+    expect(screen.getByRole("link", { name: "History" }).getAttribute("href")).toMatch(/^\/snapshots\/single-source\?/);
+    expect(screen.getByRole("link", { name: "/Users/me" })).toHaveAttribute("href", "/snapshots/dir/kbase");
     expect(screen.getByText("Docs")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Docs" })).not.toBeInTheDocument();
   });
 
   it("restores everything listed, or only the ticked entries, and mounts the folder", async () => {

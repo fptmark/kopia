@@ -290,14 +290,12 @@ describe("HealthBanner", () => {
               },
       }),
     );
-    axios.post
-      .mockReset()
-      .mockImplementation((url) =>
-        Promise.resolve({
-          data:
-            url === "/api/v1/snapshots/verifications" ? { verifications: [], running: [] } : { started: ["s1", "s2"] },
-        }),
-      );
+    axios.post.mockReset().mockImplementation((url) =>
+      Promise.resolve({
+        data:
+          url === "/api/v1/snapshots/verifications" ? { verifications: [], running: [] } : { started: ["s1", "s2"] },
+      }),
+    );
     const { unmount } = renderBanner();
     await waitFor(() => expect(screen.getByTestId("verify-banner")).toHaveTextContent("Backup failure on"));
     expect(screen.getByText("Details")).toHaveAttribute("href", "/repo");

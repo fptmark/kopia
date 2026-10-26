@@ -397,10 +397,7 @@ export function Exclusions() {
   };
 
   return (
-    <Page
-      title="Exclusions"
-      subtitle="What is left out of backups. Global rules apply to every source; source rules to one."
-    >
+    <Page title="Exclusions">
       <Loaded state={state}>
         {(d) => {
           const sources = d.sources;

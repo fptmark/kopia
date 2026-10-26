@@ -137,17 +137,17 @@ const MODES = [
   {
     id: "new",
     label: "Data this snapshot added",
-    help: "Reads back everything the snapshot wrote to the repository. Usually quick, and exactly what a bad write would damage.",
+    help: "Quick.",
   },
   {
     id: "sample",
     label: "A sample of the files",
-    help: "Reads back a share of the files, chosen at random. Quick to run, but can miss a few damaged files.",
+    help: "A random share of the files.",
   },
   {
     id: "full",
     label: "Every file",
-    help: "Reads back the whole snapshot from the NAS. Thorough but slow: the home folder is hundreds of GB.",
+    help: "Thorough but slow.",
   },
 ];
 
@@ -207,10 +207,6 @@ export function VerifyDialog({ count, busy, onStart, onCancel }) {
           setPercent(p);
         }}
       />
-      <p className="nx-muted small mb-0">
-        Each snapshot runs as a Verify task, one at a time, so they do not compete for the NAS. The result stays on the
-        snapshot; failed files are listed by name.
-      </p>
     </ConfirmDialog>
   );
 }

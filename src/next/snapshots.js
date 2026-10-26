@@ -101,6 +101,9 @@ export function sizeJump(size, previousSize) {
   return Math.abs(diff) < 100e6 || Math.abs(diff) / previousSize < 0.25 ? null : diff;
 }
 
+/** Where the history of one source is shown. */
+export const historyUrl = (source) => "/snapshots/single-source?" + sourceQueryStringParams(source);
+
 export function loadDiff(from, to) {
   return api.get("/api/v1/snapshots/diff", { params: { from, to } }).then((r) => r.data);
 }

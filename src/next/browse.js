@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { historyUrl } from "./snapshots";
 
 export const loadDirectory = (oid) => api.get("/api/v1/objects/" + oid).then((r) => r.data);
 export const loadMount = (oid) =>
@@ -9,6 +10,38 @@ export const loadMount = (oid) =>
 export const mountDirectory = (oid) => api.post("/api/v1/mounts", { root: oid }).then((r) => r.data);
 export const unmountDirectory = (oid) => api.delete("/api/v1/mounts/" + oid);
 export const startRestore = (req) => api.post("/api/v1/restore", req).then((r) => r.data);
+
+const SNAPSHOTS = { label: "Snapshots", to: "/snapshots" };
+
+/**
+ * The breadcrumbs for a page inside a snapshot: Snapshots, the source's history, then each folder opened on the
+ * way (the router state of each page carries {label, oid, prevState, snapshot}). The folder being shown is the
+ * last one; it is a link too unless current is set.
+ */
+export function browseTrail(state, oid, { current = false } = {}) {
+  const trail = [SNAPSHOTS];
+  if (state?.snapshot?.source) {
+    trail.push({ label: "History", to: historyUrl(state.snapshot.source) });
+  }
+
+  const chain = [];
+  for (let s = state; s; s = s.prevState) {
+    chain.unshift(s);
+  }
+
+  chain.forEach((s, i) => {
+    const last = i === chain.length - 1;
+    const at = last ? oid : (s.oid ?? s.snapshot?.rootID);
+    const crumb = { label: s.label };
+    if (at && !(last && current)) {
+      crumb.to = "/snapshots/dir/" + at;
+      crumb.state = { ...s, items: undefined };
+    }
+    trail.push(crumb);
+  });
+
+  return trail;
+}
 
 /** The size shown for a directory entry: a file's own, or a folder's total. */
 export function entrySize(item) {

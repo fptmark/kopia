@@ -4,7 +4,7 @@ import Form from "react-bootstrap/Form";
 import { Link, useLocation, useParams } from "react-router";
 import { errorMessage } from "../api";
 import { plural } from "../format";
-import { RESTORE_DEFAULTS, restoreRequest, startRestore } from "../browse";
+import { browseTrail, RESTORE_DEFAULTS, restoreRequest, startRestore } from "../browse";
 import { Field, FormSection, Notice, Page, Panel, SwitchField } from "../ui";
 
 const SWITCHES = [
@@ -22,7 +22,9 @@ const SWITCHES = [
 
 export function SnapshotRestore() {
   const { oid } = useParams();
-  const items = useLocation().state?.items ?? []; // the ticked entries; none means the whole folder
+  const location = useLocation();
+  const items = location.state?.items ?? []; // the ticked entries; none means the whole folder
+  const trail = browseTrail(location.state, oid);
   const [form, setForm] = useState(RESTORE_DEFAULTS);
   const [started, setStarted] = useState([]);
   const [error, setError] = useState("");
@@ -53,7 +55,7 @@ export function SnapshotRestore() {
 
   if (started.length) {
     return (
-      <Page title="Restore started" back>
+      <Page title="Restore started" trail={trail}>
         <Notice kind="success">
           {started.length === 1 ? (
             <Link to={"/tasks/" + started[0]}>Open the task</Link>
@@ -70,9 +72,13 @@ export function SnapshotRestore() {
   const zip = form.destination.trim().endsWith(".zip");
 
   return (
-    <Page title="Restore" back subtitle={items.length ? plural(items.length, "item") + " selected" : undefined}>
+    <Page
+      title="Restore"
+      trail={trail}
+      subtitle={items.length ? plural(items.length, "item") + " selected" : undefined}
+    >
       <Form onSubmit={submit}>
-        <Panel title="Where to">
+        <Panel>
           <Field
             label={items.length ? "Destination folder" : "Destination"}
             help={items.length ? undefined : "A folder. End with .zip or .tar for one file."}
@@ -88,8 +94,6 @@ export function SnapshotRestore() {
               />
             )}
           </Field>
-        </Panel>
-        <Panel title="Options">
           <div className="row">
             {SWITCHES.map(([k, label, help]) => (
               <div className="col-md-6" key={k}>

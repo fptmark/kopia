@@ -46,8 +46,7 @@ export function Policy() {
   return (
     <Page
       title={PolicyTypeName(target)}
-      back="/policies"
-      backLabel="Policies"
+      trail={[{ label: "Policies", to: "/policies" }]}
       actions={
         <>
           {!state.isNew && (

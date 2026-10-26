@@ -3,11 +3,18 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { Link, useLocation, useParams } from "react-router";
 import { errorMessage } from "../api";
-import { entryLink, entrySize, loadDirectory, loadMount, mountDirectory, unmountDirectory } from "../browse";
+import {
+  browseTrail,
+  entryLink,
+  entrySize,
+  loadDirectory,
+  loadMount,
+  mountDirectory,
+  unmountDirectory,
+} from "../browse";
 import { useLoad } from "../hooks";
 import { loadDiff } from "../snapshots";
 import {
-  Breadcrumbs,
   CountText,
   DataTable,
   DateTimeText,
@@ -127,8 +134,7 @@ export function SnapshotDirectory() {
   const mounted = mount.data?.path;
 
   return (
-    <Page back backLabel="Back">
-      {location.state?.prevState && <Breadcrumbs />}
+    <Page trail={browseTrail(location.state, oid, { current: true })}>
       {location.state?.snapshot && <SnapshotFacts snapshot={location.state.snapshot} />}
       {message && (
         <Notice kind="error" onClose={() => setMessage(null)}>

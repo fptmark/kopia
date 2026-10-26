@@ -180,7 +180,7 @@ export function Repository() {
   };
 
   return (
-    <Page title="Repository" subtitle="Where the backups are stored.">
+    <Page title="Repository">
       {message && (
         <Notice kind={message.kind} onClose={() => setMessage(null)}>
           {message.text}
@@ -215,10 +215,7 @@ export function Repository() {
                   )}
                 </Field>
                 {!s.apiServerURL && (
-                  <Field
-                    label="Total size on storage"
-                    help="After deduplication and compression, as listed on the storage."
-                  >
+                  <Field label="Total size on storage" help="After dedup and compression.">
                     {() => <StorageUsage />}
                   </Field>
                 )}

@@ -1,43 +1,28 @@
 import React from "react";
 import Breadcrumb from "react-bootstrap/Breadcrumb";
-import { useLocation, useNavigate } from "react-router";
+import { Link } from "react-router";
 
 /**
- * The trail of folders that led to this page. Each page in the trail passes {label, oid, prevState} as the
- * router state; going back to a crumb goes back that many pages.
+ * Where this page sits: every page's way back. trail is [{label, to?, state?}] from the top down; an item with
+ * `to` is a link, one without is the current place. Pages pass it to <Page trail>.
  */
-export function Breadcrumbs() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const trail = [];
-  for (let s = location.state; s; s = s.prevState) {
-    trail.unshift(s);
-  }
-
-  if (trail.length === 0) {
+export function Breadcrumbs({ trail }) {
+  if (!trail?.length) {
     return null;
   }
 
   return (
-    <Breadcrumb listProps={{ className: "mb-2" }} aria-label="Folders">
-      {trail.map((s, i) => {
-        const back = trail.length - i - 1;
-        return (
-          <Breadcrumb.Item
-            key={back}
-            active={back === 0}
-            linkProps={{ role: "button" }}
-            onClick={() => {
-              if (back) {
-                navigate(-back);
-              }
-            }}
-          >
-            {s.label}
-          </Breadcrumb.Item>
-        );
-      })}
+    <Breadcrumb listProps={{ className: "mb-2" }} aria-label="Where you are">
+      {trail.map((c) => (
+        <Breadcrumb.Item
+          key={c.label + (c.to ?? "")}
+          active={!c.to}
+          linkAs={Link}
+          linkProps={c.to ? { to: c.to, state: c.state } : undefined}
+        >
+          {c.label}
+        </Breadcrumb.Item>
+      ))}
     </Breadcrumb>
   );
 }

@@ -161,7 +161,7 @@ export function Tasks() {
   ];
 
   return (
-    <Page title="Tasks" subtitle="Snapshots, maintenance, restores and health checks, newest first.">
+    <Page title="Tasks">
       {message && (
         <Notice kind="error" onClose={() => setMessage(null)}>
           {message}

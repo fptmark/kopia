@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import {
   ConfirmDialog,
@@ -26,9 +26,14 @@ import {
 const inRouter = (ui) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 describe("Page", () => {
-  it("shows title, subtitle, actions and a back link to a path", () => {
+  it("shows title, subtitle, actions and the breadcrumbs", () => {
     inRouter(
-      <Page title="History" subtitle="of a path" back="/snapshots" backLabel="Snapshots" actions={<button>Do</button>}>
+      <Page
+        title="History"
+        subtitle="of a path"
+        trail={[{ label: "Snapshots", to: "/snapshots" }]}
+        actions={<button>Do</button>}
+      >
         body
       </Page>,
     );
@@ -39,17 +44,20 @@ describe("Page", () => {
     expect(screen.getByText("body")).toBeInTheDocument();
   });
 
-  it("goes to the previous page with back={true}", () => {
-    render(
-      <MemoryRouter initialEntries={["/a", "/b"]} initialIndex={1}>
-        <Routes>
-          <Route path="/a" element={<div>page a</div>} />
-          <Route path="/b" element={<Page title="B" back />} />
-        </Routes>
-      </MemoryRouter>,
+  it("links each breadcrumb but the current one", () => {
+    inRouter(
+      <Page
+        title="T"
+        trail={[
+          { label: "Snapshots", to: "/snapshots" },
+          { label: "Docs", to: "/snapshots/dir/k1", state: { label: "Docs" } },
+          { label: "Here" },
+        ]}
+      />,
     );
-    fireEvent.click(screen.getByText(/Back/));
-    expect(screen.getByText("page a")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute("href", "/snapshots/dir/k1");
+    expect(screen.queryByRole("link", { name: "Here" })).not.toBeInTheDocument();
+    expect(screen.getByText("Here")).toBeInTheDocument();
   });
 });
 

@@ -98,7 +98,6 @@ export function Snapshots() {
   return (
     <Page
       title="Snapshots"
-      subtitle="Each folder that is backed up. Open one to see its snapshots."
       actions={
         <>
           <Button variant="secondary" onClick={sync} disabled={syncing} title="Fetch the latest from the repository">
@@ -138,11 +137,7 @@ export function Snapshots() {
             ...(showOwner ? [{ id: "owner", header: "Owner", accessor: (r) => ownerName(r.source) }] : []),
             {
               id: "size",
-              header: () => (
-                <span title="Total size of the files in the newest snapshot, before deduplication and compression.">
-                  Logical size
-                </span>
-              ),
+              header: () => <span title="Before dedup and compression">Logical size</span>,
               align: "end",
               accessor: (r) => r.lastSnapshot?.stats?.totalSize ?? -1,
               cell: (r) =>
@@ -214,7 +209,7 @@ export function Snapshots() {
                 columns={columns}
                 getRowId={(r) => ownerName(r.source) + ":" + r.source.path}
                 initialSort={{ id: "path", desc: false }}
-                emptyText="Nothing is backed up yet. Use New snapshot to add a folder."
+                emptyText="Nothing is backed up yet."
               />
             </>
           );

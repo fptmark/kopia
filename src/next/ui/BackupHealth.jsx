@@ -98,7 +98,7 @@ export function BackupHealth() {
               data={status.checks || []}
               getRowId={(c) => c.name}
               footer={false}
-              emptyText="The first check runs shortly after the server starts."
+              emptyText="No checks yet."
               columns={[
                 {
                   id: "ok",
@@ -119,11 +119,6 @@ export function BackupHealth() {
                 { id: "at", header: "Last checked", cell: (c) => <DateTimeText value={c.checkedAt} /> },
               ]}
             />
-            <p className="nx-muted small">
-              Snapshot checks run every 10 minutes. The data and restore checks run once a day, early in the morning. A
-              failed check stays failed until the next full check passes. Who is told about a problem is set under
-              Preferences → Notifications.
-            </p>
           </div>
         );
       }}

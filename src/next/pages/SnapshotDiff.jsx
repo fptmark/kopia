@@ -7,7 +7,7 @@ import { errorMessage } from "../api";
 import { addExclusions } from "../exclusions";
 import { baseName, formatLongDateTime, formatSizeChange, plural } from "../format";
 import { useLoad } from "../hooks";
-import { loadDiff } from "../snapshots";
+import { historyUrl, loadDiff } from "../snapshots";
 import {
   ConfirmDialog,
   CountText,
@@ -166,8 +166,10 @@ export function SnapshotDiff() {
   return (
     <Page
       title="Compare snapshots"
-      back
-      backLabel="History"
+      trail={[
+        { label: "Snapshots", to: "/snapshots" },
+        ...(state.data ? [{ label: "History", to: historyUrl(state.data.source) }] : []),
+      ]}
       subtitle={
         state.data && (
           <>

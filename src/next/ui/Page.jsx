@@ -1,32 +1,14 @@
 import React from "react";
-import { Link, useNavigate } from "react-router";
+import { Breadcrumbs } from "./Breadcrumbs";
 
 /**
- * The frame every page uses: optional back link, title with a line under it, and actions on the right.
- * back is a path to link to, or true for "the page before".
+ * The frame every page uses: breadcrumbs, optional title with a line under it, and actions on the right.
+ * trail is [{label, to?, state?}] from the top down; see Breadcrumbs.
  */
-export function Page({ title, subtitle, back, backLabel = "Back", actions, children }) {
-  const navigate = useNavigate();
-
+export function Page({ title, subtitle, trail, actions, children }) {
   return (
     <div className="nx-page" data-testid="page">
-      {back && typeof back === "string" && (
-        <Link className="nx-back" to={back}>
-          {"←"} {backLabel}
-        </Link>
-      )}
-      {back === true && (
-        <a
-          className="nx-back"
-          href="#back"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate(-1);
-          }}
-        >
-          {"←"} {backLabel}
-        </a>
-      )}
+      <Breadcrumbs trail={trail} />
       {(title || actions) && (
         <div className="nx-page-header">
           <div>
