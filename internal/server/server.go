@@ -1074,6 +1074,12 @@ func RetryInitRepository(initialize InitRepositoryFunc) InitRepositoryFunc {
 	}
 }
 
+// savedWithoutID says a snapshot was written to the repository but its result carries no snapshot ID, which is
+// always a bug: the result cannot be linked, recorded or verified without it.
+func savedWithoutID(r *notifydata.ManifestWithError) bool {
+	return r.Saved && r.Manifest.ID == ""
+}
+
 func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, inner func(ctx context.Context, ctrl uitask.Controller, result *notifydata.ManifestWithError) error) error {
 	if !s.beginUpload(ctx, src) {
 		return nil
@@ -1104,8 +1110,7 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 		result.Error = err.Error()
 	}
 
-	// a saved snapshot always has an ID; without one the result cannot be linked, recorded or verified
-	if result.Saved && result.Manifest.ID == "" {
+	if savedWithoutID(&result) {
 		userLog(ctx).Errorf("BUG: snapshot of %v was saved but its result has no snapshot ID", src)
 	}
 
