@@ -146,7 +146,7 @@ export function SnapshotCreate() {
   const ready = !!source?.path;
 
   return (
-    <Page title="New snapshot" trail={[{ label: "Sources", to: "/snapshots" }]}>
+    <Page title="New source" trail={[{ label: "Sources", to: "/snapshots" }]}>
       {message && (
         <Notice kind={message.kind} onClose={() => setMessage(null)}>
           {message.text}

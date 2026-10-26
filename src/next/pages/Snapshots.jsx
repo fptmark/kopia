@@ -104,7 +104,7 @@ export function Snapshots() {
             {syncing ? "Synchronizing" : "Synchronize"}
           </Button>
           <Button as={Link} variant="primary" to="/snapshots/new" data-testid="new-snapshot">
-            New snapshot
+            New source
           </Button>
         </>
       }
