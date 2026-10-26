@@ -3,16 +3,18 @@ import Form from "react-bootstrap/Form";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Modal from "react-bootstrap/Modal";
 import { Link } from "react-router";
+import { formatLongDateTime } from "../format";
 import { useLoad } from "../hooks";
 import { describeCovered, loadVerificationFailures } from "../verification";
 import { CountText, DateTimeText, PathText, SizeText, StatusBadge } from "./Cells";
 import { Loaded } from "./Feedback";
 import { ConfirmDialog } from "./ConfirmDialog";
 
-function VerifiedBadge({ v, onShowFailures, label }) {
+function VerifiedBadge({ v, onShowFailures, label, when }) {
+  const at = when ? formatLongDateTime(when) + ". " : "";
   if (v.ok) {
     return (
-      <span title={`Read back ${describeCovered(v)}; ${v.files.toLocaleString("en-US")} checked, no problems.`}>
+      <span title={`${at}Read back ${describeCovered(v)}; ${v.files.toLocaleString("en-US")} checked, no problems.`}>
         <StatusBadge kind="ok">{label}</StatusBadge>
       </span>
     );
@@ -21,7 +23,7 @@ function VerifiedBadge({ v, onShowFailures, label }) {
     <button
       type="button"
       className="btn btn-sm p-0 border-0"
-      title={`${v.errorCount.toLocaleString("en-US")} failed when reading back ${describeCovered(v)}. Click for the list.`}
+      title={`${at}${v.errorCount.toLocaleString("en-US")} failed when reading back ${describeCovered(v)}. Click for the list.`}
       onClick={() => onShowFailures(v)}
       data-testid="verify-failed"
     >
@@ -101,12 +103,12 @@ export function VerifiedCell({ info, onShowFailures }) {
         <VerifyProgress key={r.mode} r={r} />
       ))}
       {info.latest && (
-        <>
-          <VerifiedBadge v={info.latest} onShowFailures={onShowFailures} label={badgeLabel(info.latest)} />
-          <span className="nx-muted small">
-            <DateTimeText value={info.latest.finishedAt} />
-          </span>
-        </>
+        <VerifiedBadge
+          v={info.latest}
+          onShowFailures={onShowFailures}
+          label={badgeLabel(info.latest)}
+          when={info.latest.finishedAt}
+        />
       )}
     </span>
   );
@@ -207,7 +209,7 @@ export function VerifyFailuresDialog({ verification, onClose }) {
       </Modal.Header>
       <Modal.Body data-testid="verify-failures">
         <p className="small">
-          Read back {describeCovered(verification)} on <DateTimeText value={verification.finishedAt} />;{" "}
+          Read back {describeCovered(verification)} on <DateTimeText long value={verification.finishedAt} />;{" "}
           <CountText n={verification.files} /> checked, <SizeText bytes={verification.readBytes} /> read.
           {verification.taskSeq > 0 && (
             <>

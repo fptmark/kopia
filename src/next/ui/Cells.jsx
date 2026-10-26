@@ -1,5 +1,5 @@
 import React from "react";
-import { compactCount, formatAgo, formatDateTime, sizeDisplayName } from "../format";
+import { compactCount, formatAgo, formatDateTime, formatLongDateTime, sizeDisplayName } from "../format";
 import { use } from "react";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 
@@ -38,13 +38,14 @@ export function CountText({ n, ...rest }) {
 }
 
 /** A date and time; ago shows "3 h ago" instead, with the date on hover. */
-export function DateTimeText({ value, ago = false, ...rest }) {
+export function DateTimeText({ value, ago = false, long = false, ...rest }) {
+  use(UIPreferencesContext); // so a change of date format redraws
   if (!value) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
     <span className="nx-num" title={ago ? formatDateTime(value) : undefined} {...rest}>
-      {ago ? formatAgo(value) : formatDateTime(value)}
+      {long ? formatLongDateTime(value) : ago ? formatAgo(value) : formatDateTime(value)}
     </span>
   );
 }

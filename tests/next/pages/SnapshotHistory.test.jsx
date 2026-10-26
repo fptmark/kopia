@@ -84,7 +84,7 @@ describe("SnapshotHistory", () => {
 
     expect(screen.getByTestId("history-summary")).toHaveTextContent("Newest230 GB");
     await waitFor(() => expect(screen.getByTestId("history-summary")).toHaveTextContent("150 GB"));
-    expect(screen.getByText("before the cleanup")).toBeInTheDocument();
+    expect(screen.getByTitle("before the cleanup")).toBeInTheDocument(); // the note is a tooltip: one line per snapshot
     expect(screen.getAllByText("1.3M").length).toBe(3);
     expect(screen.getByText("pin: keep")).toBeInTheDocument();
 
@@ -106,7 +106,7 @@ describe("SnapshotHistory", () => {
     serve({ stats: new Error("boom") });
     renderPage();
     await waitFor(() => expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3));
-    expect(screen.getByText("before the cleanup")).toBeInTheDocument();
+    expect(screen.getByTitle("before the cleanup")).toBeInTheDocument(); // the note is a tooltip: one line per snapshot
   });
 
   it("marks a large change in logical size against the previous snapshot", async () => {
@@ -175,7 +175,7 @@ describe("SnapshotHistory", () => {
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/snapshots"));
   });
 
-  it("edits a note and a pin", async () => {
+  it("edits a note and removes a pin", async () => {
     serve();
     renderPage();
     await waitFor(() => expect(screen.getByText("Compare")).toBeInTheDocument());
@@ -192,14 +192,12 @@ describe("SnapshotHistory", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
-    fireEvent.click(screen.getByLabelText("Pin s3"));
-    fireEvent.click(screen.getByTestId("confirm"));
+    // there is no button for adding a pin, but an existing pin can be edited and removed
+    expect(screen.queryByLabelText("Pin s3")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("Edit pin"));
+    fireEvent.click(screen.getByText("Remove this pin"));
     await waitFor(() =>
-      expect(axios.post).toHaveBeenCalledWith("/api/v1/snapshots/edit", {
-        snapshots: ["s3"],
-        addPins: ["do-not-delete"],
-        removePins: [],
-      }),
+      expect(axios.post).toHaveBeenCalledWith("/api/v1/snapshots/edit", { snapshots: ["s2"], removePins: ["keep"] }),
     );
   });
 

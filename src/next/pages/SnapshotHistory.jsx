@@ -165,10 +165,16 @@ export function SnapshotHistory() {
       accessor: (s) => s.startTime,
       cell: (s) => (
         <>
-          <Link to={objectLink(s.rootID)} state={{ label: source.path }} title="Browse this snapshot">
+          <Link
+            to={objectLink(s.rootID)}
+            state={{
+              label: source.path,
+              snapshot: { ...s, source, previousId: snapshots[snapshots.indexOf(s) + 1]?.id },
+            }}
+            title="Browse this snapshot"
+          >
             <DateTimeText value={s.startTime} />
           </Link>
-          {s.description && <div className="nx-muted small">{s.description}</div>}
         </>
       ),
     },
@@ -234,7 +240,9 @@ export function SnapshotHistory() {
     },
     {
       id: "result",
-      header: () => <span title="Whether every file was backed up. Failed files can be opened for details.">Result</span>,
+      header: () => (
+        <span title="Whether every file was backed up. Failed files can be opened for details.">Result</span>
+      ),
       cell: (s) =>
         s.summary?.numFailed ? (
           <FailedBadge
@@ -273,30 +281,18 @@ export function SnapshotHistory() {
       header: "",
       align: "end",
       cell: (s) => (
-        <span className="d-inline-flex gap-1">
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-label={"Note for " + s.id}
-            onClick={() => {
-              setText(s.description || "");
-              setEdit({ type: "note", snap: s });
-            }}
-          >
-            Note
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-label={"Pin " + s.id}
-            onClick={() => {
-              setText("do-not-delete");
-              setEdit({ type: "pin", snap: s, pin: "" });
-            }}
-          >
-            Pin
-          </Button>
-        </span>
+        <Button
+          size="sm"
+          variant={s.description ? "primary" : "secondary"}
+          aria-label={"Note for " + s.id}
+          title={s.description || "Add a note"}
+          onClick={() => {
+            setText(s.description || "");
+            setEdit({ type: "note", snap: s });
+          }}
+        >
+          {"✎"}
+        </Button>
       ),
     },
   ];
@@ -392,6 +388,7 @@ export function SnapshotHistory() {
 
             <DataTable
               label="snapshots"
+              oneLine
               data={snapshots}
               columns={columns}
               getRowId={(s) => s.id}

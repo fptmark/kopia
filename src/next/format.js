@@ -3,14 +3,42 @@ import { compactCount, sizeDisplayName } from "../utils/formatutils";
 
 export { compactCount, sizeDisplayName };
 
-const dateTime = new Intl.DateTimeFormat("en-US", {
+export const DATE_FORMATS = [
+  {
+    id: "medium",
+    label: "Oct 26, 2026, 7:00 AM",
+    options: { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
+  },
+  {
+    id: "numeric",
+    label: "10/26/2026, 7:00 AM",
+    options: { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" },
+  },
+  { id: "iso", label: "2026-10-26 07:00", iso: true },
+];
+
+const formatters = Object.fromEntries(
+  DATE_FORMATS.filter((f) => !f.iso).map((f) => [f.id, new Intl.DateTimeFormat("en-US", f.options)]),
+);
+const longDateTime = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
   year: "numeric",
-  month: "short",
+  month: "long",
   day: "numeric",
   hour: "numeric",
   minute: "2-digit",
+  second: "2-digit",
 });
 const dateOnly = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" });
+
+// the format summary pages (tables, lists, banners) use; the Preferences provider sets it
+let summaryFormat = "medium";
+
+export function setSummaryDateFormat(id) {
+  summaryFormat = DATE_FORMATS.some((f) => f.id === id) ? id : "medium";
+}
+
+const pad = (n) => String(n).padStart(2, "0");
 
 function toDate(v) {
   if (v === undefined || v === null || v === "") {
@@ -20,10 +48,22 @@ function toDate(v) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** "Oct 23, 2026, 5:22 PM", or "" when there is no date. */
+/** A date and time in the format chosen in Preferences ("Oct 23, 2026, 5:22 PM" by default), "" when there is no date. */
 export function formatDateTime(v) {
   const d = toDate(v);
-  return d ? dateTime.format(d) : "";
+  if (!d) {
+    return "";
+  }
+  if (summaryFormat === "iso") {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  return formatters[summaryFormat].format(d);
+}
+
+/** "Monday, October 26, 2026 at 7:00:00 AM": what a page about one thing (a snapshot, a task) shows. */
+export function formatLongDateTime(v) {
+  const d = toDate(v);
+  return d ? longDateTime.format(d).replace(/(\d{4}),/, "$1 at") : "";
 }
 
 /** "Oct 23, 2026". */

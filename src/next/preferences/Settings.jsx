@@ -1,6 +1,7 @@
 import React, { use } from "react";
 import Form from "react-bootstrap/Form";
 import { PAGE_SIZES, UIPreferencesContext } from "../../contexts/UIPreferencesContext";
+import { DATE_FORMATS } from "../format";
 import { Field, FormSection, SwitchField, VerifyModePicker } from "../ui";
 
 /** How the pages look, how the Mac behaves while backing up, and how much checking each snapshot gets. */
@@ -11,6 +12,7 @@ export function Settings() {
     bytesStringBase2,
     pageSize,
     keepAwake,
+    dateFormat,
     verifyNewData,
     verifyEachMode,
     verifyEachPercent,
@@ -19,6 +21,7 @@ export function Settings() {
     setByteStringBase,
     setPageSize,
     setKeepAwake,
+    setDateFormat,
     setVerifyNewData,
     setVerifyEach,
   } = use(UIPreferencesContext);
@@ -73,6 +76,22 @@ export function Settings() {
                   {PAGE_SIZES.map((n) => (
                     <option key={n} value={n}>
                       {n}
+                    </option>
+                  ))}
+                </Form.Select>
+              )}
+            </Field>
+          </div>
+          <div className="col-md-6 col-lg-3">
+            <Field
+              label="Dates in tables"
+              help="Tables and lists use this. A page about one snapshot or task writes the date out in full."
+            >
+              {(id) => (
+                <Form.Select id={id} value={dateFormat || "medium"} onChange={(e) => setDateFormat(e.target.value)}>
+                  {DATE_FORMATS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
                     </option>
                   ))}
                 </Form.Select>

@@ -126,8 +126,11 @@ export function Task({ taskID }) {
           )}
           <Panel>
             <Stats>
-              <Stat label="Started" value={<DateTimeText value={task.startTime} />} />
-              <Stat label="Finished" value={task.endTime ? <DateTimeText value={task.endTime} /> : "still running"} />
+              <Stat label="Started" value={<DateTimeText long value={task.startTime} />} />
+              <Stat
+                label="Finished"
+                value={task.endTime ? <DateTimeText long value={task.endTime} /> : "still running"}
+              />
               <Stat label="Took" value={taskDuration(task)} />
             </Stats>
           </Panel>

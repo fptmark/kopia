@@ -5,6 +5,7 @@ import { Link, useLocation, useParams } from "react-router";
 import { errorMessage } from "../api";
 import { entryLink, entrySize, loadDirectory, loadMount, mountDirectory, unmountDirectory } from "../browse";
 import { useLoad } from "../hooks";
+import { loadDiff } from "../snapshots";
 import {
   Breadcrumbs,
   CountText,
@@ -19,6 +20,40 @@ import {
   SizeText,
   Toolbar,
 } from "../ui";
+
+/** What snapshot is being browsed: its folder, when, how big, and what changed since the one before it. */
+function SnapshotFacts({ snapshot }) {
+  const diff = useLoad(() => loadDiff(snapshot.previousId, snapshot.id), [snapshot.id, snapshot.previousId], {
+    enabled: !!snapshot.previousId,
+  });
+  const n = (v) => (diff.data ? <CountText n={v} /> : diff.loading ? "…" : "—");
+  return (
+    <div className="nx-facts" data-testid="snapshot-facts">
+      <span>
+        <span className="nx-muted">Volume:</span> <span className="nx-path">{snapshot.source?.path}</span>
+      </span>
+      <span>
+        <span className="nx-muted">Date:</span> <DateTimeText long value={snapshot.startTime} />
+      </span>
+      <span>
+        <span className="nx-muted">Size:</span> <SizeText bytes={snapshot.summary?.size} />
+      </span>
+      {snapshot.previousId && (
+        <>
+          <span>
+            <span className="nx-muted">Files Added:</span> {n(diff.data?.added)}
+          </span>
+          <span>
+            <span className="nx-muted">Modified:</span> {n(diff.data?.modified)}
+          </span>
+          <span>
+            <span className="nx-muted">Deleted:</span> {n(diff.data?.removed)}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function SnapshotDirectory() {
   const { oid } = useParams();
@@ -48,7 +83,10 @@ export function SnapshotDirectory() {
         const l = entryLink(x);
         const label = x.type === "d" ? x.name + "/" : x.name;
         return l.page ? (
-          <Link to={l.to} state={{ label: x.name, oid: x.obj, prevState: location.state }}>
+          <Link
+            to={l.to}
+            state={{ label: x.name, oid: x.obj, prevState: location.state, snapshot: location.state?.snapshot }}
+          >
             {label}
           </Link>
         ) : (
@@ -97,6 +135,7 @@ export function SnapshotDirectory() {
       }
     >
       <Breadcrumbs />
+      {location.state?.snapshot && <SnapshotFacts snapshot={location.state.snapshot} />}
       {message && (
         <Notice kind="error" onClose={() => setMessage(null)}>
           {message}

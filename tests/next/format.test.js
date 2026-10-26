@@ -4,6 +4,8 @@ import {
   formatAgo,
   formatDate,
   formatDateTime,
+  formatLongDateTime,
+  setSummaryDateFormat,
   formatSizeChange,
   formatSpan,
   plural,
@@ -16,6 +18,22 @@ describe("format", () => {
     expect(formatDateTime("")).toBe("");
     expect(formatDateTime(undefined)).toBe("");
     expect(formatDateTime("not a date")).toBe("");
+  });
+
+  it("writes dates in the chosen summary format and always long for a drill-in page", () => {
+    const t = new Date(2026, 9, 26, 7, 5).toISOString();
+    try {
+      setSummaryDateFormat("iso");
+      expect(formatDateTime(t)).toBe("2026-10-26 07:05");
+      setSummaryDateFormat("numeric");
+      expect(formatDateTime(t)).toMatch(/^10\/26\/2026, 7:05\sAM$/);
+      setSummaryDateFormat("nonsense");
+      expect(formatDateTime(t)).toMatch(/^Oct 26, 2026, 7:05\sAM$/);
+      expect(formatLongDateTime(t)).toMatch(/^Monday, October 26, 2026 at 7:05:00\sAM$/);
+      expect(formatLongDateTime("")).toBe("");
+    } finally {
+      setSummaryDateFormat("medium");
+    }
   });
 
   it("says how long ago", () => {

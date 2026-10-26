@@ -1,5 +1,6 @@
 import React, { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { setSummaryDateFormat } from "../next/format";
 
 export const PAGE_SIZES = [10, 20, 30, 40, 50, 100];
 export const UIPreferencesContext = React.createContext<UIPreferences>({} as UIPreferences);
@@ -29,6 +30,7 @@ export interface UIPreferences {
   get keepAwake(): KeepAwake;
   get verifierIMessageTo(): string;
   get verifyNewData(): boolean;
+  get dateFormat(): string;
   get verifyEachMode(): string;
   get verifyEachPercent(): number;
   setTheme: (theme: Theme) => void;
@@ -39,6 +41,7 @@ export interface UIPreferences {
   setKeepAwake: (keepAwake: string) => void;
   setVerifierIMessageTo: (to: string) => void;
   setVerifyNewData: (on: boolean) => void;
+  setDateFormat: (format: string) => void;
   setVerifyEach: (mode: string, percent: number) => void;
 }
 
@@ -53,6 +56,7 @@ interface SerializedUIPreferences {
   verifyNewData?: boolean;
   verifyEachMode?: string;
   verifyEachPercent?: number;
+  dateFormat?: string;
 }
 
 export interface UIPreferenceProviderProps {
@@ -129,6 +133,11 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
       return { ...oldPreferences, verifyNewData: input };
     });
 
+  const setDateFormat = (dateFormat: string) =>
+    setPreferences((oldPreferences) => {
+      return { ...oldPreferences, dateFormat };
+    });
+
   const setVerifyEach = (verifyEachMode: string, verifyEachPercent: number) =>
     setPreferences((oldPreferences) => {
       return { ...oldPreferences, verifyEachMode, verifyEachPercent };
@@ -172,6 +181,9 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
       .catch((err) => console.error(err));
   }, [setTheme, setFontSize]);
 
+  // set during render so the first paint after a change already uses the new format
+  setSummaryDateFormat(preferences.dateFormat ?? "medium");
+
   useEffect(() => {
     if (!preferences || savedJsonRef.current === null) {
       return; // the stored preferences have not been read yet
@@ -214,6 +226,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
     setVerifierIMessageTo,
     setVerifyNewData,
     setVerifyEach,
+    setDateFormat,
   } as UIPreferences;
 
   return <UIPreferencesContext value={providedValue}>{props.children}</UIPreferencesContext>;

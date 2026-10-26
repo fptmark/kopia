@@ -230,6 +230,9 @@
   padding: 0.5rem 0.75rem;
   vertical-align: middle;
 }
+.nx-one-line td {
+  white-space: nowrap;
+}
 .nx-table td.end,
 .nx-table th.end {
   text-align: right;
@@ -406,4 +409,12 @@
   .nx-policy-head {
     display: none;
   }
+}
+
+/* a line of labelled facts about the thing a page shows */
+.nx-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+  margin-bottom: var(--nx-gap);
 }

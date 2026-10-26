@@ -28,6 +28,7 @@ export function DataTable({
   emptyText = "Nothing to show.",
   footer = true,
   label = "table",
+  oneLine = false,
   ...rest
 }) {
   const prefs = use(UIPreferencesContext);
@@ -107,7 +108,7 @@ export function DataTable({
   return (
     <div className="nx-table-wrap" {...rest}>
       <div className="nx-table-scroll">
-        <table className="table table-hover nx-table" aria-label={label}>
+        <table className={"table table-hover nx-table" + (oneLine ? " nx-one-line" : "")} aria-label={label}>
           <thead>
             <tr>
               {selection && (

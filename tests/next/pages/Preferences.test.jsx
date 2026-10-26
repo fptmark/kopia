@@ -277,18 +277,42 @@ describe("HealthBanner", () => {
       </MemoryRouter>,
     );
 
-  it("says when the backup failed, offers a check to clear it, and shows nothing otherwise", async () => {
-    axios.get.mockReset().mockResolvedValue({
-      data: { state: "failing", since: "2026-10-23T10:00:00Z", checks: [{ name: "Snapshots are recent", ok: false }] },
-    });
-    axios.post.mockReset().mockResolvedValue({ data: {} });
+  it("says when the backup failed, verifies the newest snapshots with the usual options, and shows nothing otherwise", async () => {
+    axios.get.mockReset().mockImplementation((url) =>
+      Promise.resolve({
+        data:
+          url === "/api/v1/sources"
+            ? { sources: [{ lastSnapshot: { id: "s1" } }, { lastSnapshot: { id: "s2" } }, {}] }
+            : {
+                state: "failing",
+                since: "2026-10-23T10:00:00Z",
+                checks: [{ name: "Snapshots are recent", ok: false }],
+              },
+      }),
+    );
+    axios.post
+      .mockReset()
+      .mockImplementation((url) =>
+        Promise.resolve({
+          data:
+            url === "/api/v1/snapshots/verifications" ? { verifications: [], running: [] } : { started: ["s1", "s2"] },
+        }),
+      );
     const { unmount } = renderBanner();
     await waitFor(() => expect(screen.getByTestId("verify-banner")).toHaveTextContent("Backup failure on"));
     expect(screen.getByText("Details")).toHaveAttribute("href", "/repository");
 
-    fireEvent.click(screen.getByText("Check to clear"));
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/verify/run", {}));
-    await waitFor(() => expect(screen.getByText("Checking…")).toBeDisabled());
+    fireEvent.click(screen.getByText("Verify"));
+    await waitFor(() => expect(screen.getByTestId("verify-dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText("A sample of the files"));
+    fireEvent.click(screen.getByTestId("confirm"));
+    await waitFor(() =>
+      expect(axios.post).toHaveBeenCalledWith("/api/v1/snapshots/verify", {
+        snapshotIds: ["s1", "s2"],
+        mode: "sample",
+        percent: 10,
+      }),
+    );
     unmount();
 
     axios.get.mockResolvedValue({ data: { state: "ok", checks: [] } });

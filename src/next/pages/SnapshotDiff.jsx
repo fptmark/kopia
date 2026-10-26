@@ -5,7 +5,7 @@ import { useLocation } from "react-router";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 import { errorMessage } from "../api";
 import { addExclusions } from "../exclusions";
-import { baseName, formatDateTime, formatSizeChange, plural } from "../format";
+import { baseName, formatLongDateTime, formatSizeChange, plural } from "../format";
 import { useLoad } from "../hooks";
 import { loadDiff } from "../snapshots";
 import {
@@ -185,7 +185,7 @@ export function SnapshotDiff() {
                 <Stats data-testid="diff-summary">
                   <Stat
                     label="Before"
-                    value={formatDateTime(d.from.startTime)}
+                    value={formatLongDateTime(d.from.startTime)}
                     note={
                       <>
                         <SizeText bytes={d.from.summary?.size} /> logical
@@ -194,7 +194,7 @@ export function SnapshotDiff() {
                   />
                   <Stat
                     label="After"
-                    value={formatDateTime(d.to.startTime)}
+                    value={formatLongDateTime(d.to.startTime)}
                     note={
                       <>
                         <SizeText bytes={d.to.summary?.size} /> logical

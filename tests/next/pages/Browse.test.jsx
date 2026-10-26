@@ -53,6 +53,32 @@ describe("SnapshotDirectory", () => {
     axios.delete.mockReset();
   });
 
+  it("says which snapshot is open and what changed since the one before it", async () => {
+    axios.get.mockImplementation((url) =>
+      url.startsWith("/api/v1/mounts/")
+        ? Promise.reject({ response: { status: 404 } })
+        : url.startsWith("/api/v1/snapshots/diff")
+          ? Promise.resolve({ data: { added: 3, modified: 12, removed: 1 } })
+          : Promise.resolve({ data: { entries } }),
+    );
+    renderBrowse({
+      snapshot: {
+        id: "s2",
+        previousId: "s1",
+        source: { path: "/Users/me" },
+        startTime: "2026-10-26T14:00:00Z",
+        summary: { size: 2048 },
+      },
+    });
+    await waitFor(() => expect(screen.getByTestId("snapshot-facts")).toHaveTextContent("Files Added: 3"));
+    const facts = screen.getByTestId("snapshot-facts");
+    expect(facts).toHaveTextContent("Volume: /Users/me");
+    expect(facts).toHaveTextContent(/Date: \w+day, October 26, 2026 at/);
+    expect(facts).toHaveTextContent("Modified: 12");
+    expect(facts).toHaveTextContent("Deleted: 1");
+    expect(axios.get).toHaveBeenCalledWith("/api/v1/snapshots/diff", { params: { from: "s1", to: "s2" } });
+  });
+
   it("lists folders first, links folders to the browser and files to a download", async () => {
     renderBrowse();
     await waitFor(() => expect(screen.getByText("Docs/")).toBeInTheDocument());
