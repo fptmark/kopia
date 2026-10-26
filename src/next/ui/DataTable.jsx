@@ -173,7 +173,7 @@ export function DataTable({
   return (
     <div className="nx-table-wrap" {...rest}>
       {pageCount > 1 && total > 0 && (
-        <div className="nx-table-top">
+        <div className={"nx-table-top" + (head ? " over-head" : "")}>
           <Pager index={index} pageCount={pageCount} setPageIndex={setPageIndex} />
         </div>
       )}
