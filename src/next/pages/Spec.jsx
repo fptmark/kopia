@@ -109,7 +109,7 @@ export function Spec() {
 
       <Panel title="Status badges">
         {["added", "removed", "modified", "ok", "warning", "error", "running", "info", "neutral"].map((k) => (
-          <span key={k} >
+          <span key={k}>
             <StatusBadge kind={k} />
           </span>
         ))}

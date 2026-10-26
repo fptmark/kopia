@@ -3,8 +3,8 @@ import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { Link, useLocation, useNavigate } from "react-router";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
-import { objectLink } from "../../utils/formatutils";
 import { errorMessage } from "../api";
+import { snapshotBrowse } from "../browse";
 import { formatDate, formatSizeChange } from "../format";
 import { useLoad } from "../hooks";
 import {
@@ -165,14 +165,7 @@ export function SnapshotHistory() {
       accessor: (s) => s.startTime,
       cell: (s) => (
         <>
-          <Link
-            to={objectLink(s.rootID)}
-            state={{
-              label: source.path,
-              snapshot: { ...s, source, previousId: snapshots[snapshots.indexOf(s) + 1]?.id },
-            }}
-            title="Browse this snapshot"
-          >
+          <Link {...snapshotBrowse(source, s, snapshots[snapshots.indexOf(s) + 1]?.id)} title="Browse this snapshot">
             <DateTimeText value={s.startTime} />
           </Link>
         </>
@@ -288,15 +281,7 @@ export function SnapshotHistory() {
   ];
 
   return (
-    <Page
-      title={<span className="nx-path">{source.path}</span>}
-      subtitle={
-        <span className="nx-muted">
-          {source.userName}@{source.host}
-        </span>
-      }
-      trail={[{ label: "Sources", to: "/snapshots" }, { label: "History" }]}
-    >
+    <Page trail={[{ label: "Sources", to: "/snapshots" }, { label: source.path }]}>
       {message && (
         <Notice kind={message.kind} onClose={() => setMessage(null)}>
           {message.text}

@@ -239,7 +239,7 @@ export function Files() {
                 )}
               </Field>
               <div className="nx-row">
-                <Field label="Snapshots from" >
+                <Field label="Snapshots from">
                   {(id) => (
                     <Form.Select
                       id={id}
@@ -257,7 +257,7 @@ export function Files() {
                 </Field>
                 {rangeValue === "custom" && (
                   <>
-                    <Field label="From" >
+                    <Field label="From">
                       {(id) => (
                         <Form.Control
                           id={id}
@@ -269,7 +269,7 @@ export function Files() {
                         />
                       )}
                     </Field>
-                    <Field label="To" >
+                    <Field label="To">
                       {(id) => (
                         <Form.Control
                           id={id}

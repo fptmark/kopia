@@ -5,6 +5,7 @@ import { PagerSlotContext } from "./PagerSlot";
  * The row above a table. Related controls go in one Group, which is drawn as a bordered box with a small
  * label, so what belongs together reads as together. end pushes a group to the right; grow lets it take the
  * free width; center puts it in the middle of the row.
+ * Only a group with a label is boxed; buttons and a lone checkbox sit unboxed.
  */
 export function Toolbar({ children, ...rest }) {
   const pager = use(PagerSlotContext);
@@ -19,7 +20,13 @@ export function Toolbar({ children, ...rest }) {
 function Group({ label, grow = false, end = false, center = false, children, ...rest }) {
   return (
     <div
-      className={"nx-toolbar-group" + (grow ? " grow" : "") + (end ? " end" : "") + (center ? " center" : "")}
+      className={
+        "nx-toolbar-group" +
+        (grow ? " grow" : "") +
+        (end ? " end" : "") +
+        (center ? " center" : "") +
+        (label ? "" : " plain")
+      }
       {...rest}
     >
       {label && <span className="nx-toolbar-label">{label}</span>}

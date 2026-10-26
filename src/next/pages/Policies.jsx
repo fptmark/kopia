@@ -98,10 +98,7 @@ export function Policies() {
                   <SearchBox value={filter} onChange={setFilter} placeholder="Filter" label="Filter policies" />
                 </Toolbar.Group>
                 <Toolbar.Group label="Folder" grow>
-                  <Form
-                    className="nx-row"
-                    onSubmit={(e) => edit(e, sources.localUsername, sources.localHost)}
-                  >
+                  <Form className="nx-row" onSubmit={(e) => edit(e, sources.localUsername, sources.localHost)}>
                     <Form.Control
                       size="sm"
                       className="nx-search"

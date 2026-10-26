@@ -1,5 +1,7 @@
 import { api } from "./api";
+import { formatDateTime } from "./format";
 import { historyUrl } from "./snapshots";
+import { objectLink } from "../utils/formatutils";
 
 export const loadDirectory = (oid) => api.get("/api/v1/objects/" + oid).then((r) => r.data);
 export const loadMount = (oid) =>
@@ -9,19 +11,28 @@ export const loadMount = (oid) =>
   );
 export const mountDirectory = (oid) => api.post("/api/v1/mounts", { root: oid }).then((r) => r.data);
 export const unmountDirectory = (oid) => api.delete("/api/v1/mounts/" + oid);
+export const loadSnapshotTask = (snapshotId) =>
+  api.get("/api/v1/snapshots/task", { params: { snapshotId } }).then((r) => r.data.taskId);
+
+/** The link that opens a snapshot in the browser, with the state its breadcrumbs and facts are drawn from. */
+export const snapshotBrowse = (source, snapshot, previousId) => ({
+  to: objectLink(snapshot.rootID),
+  state: { label: formatDateTime(snapshot.startTime), snapshot: { ...snapshot, source, previousId } },
+});
+
 export const startRestore = (req) => api.post("/api/v1/restore", req).then((r) => r.data);
 
 const SNAPSHOTS = { label: "Sources", to: "/snapshots" };
 
 /**
- * The breadcrumbs for a page inside a snapshot: Snapshots, the source's history, then each folder opened on the
+ * The breadcrumbs for a page inside a snapshot: Sources, the source (its history), then each folder opened on the
  * way (the router state of each page carries {label, oid, prevState, snapshot}). The folder being shown is the
  * last one; it is a link too unless current is set, and then the snapshot's top folder is left out.
  */
 export function browseTrail(state, oid, { current = false } = {}) {
   const trail = [SNAPSHOTS];
   if (state?.snapshot?.source) {
-    trail.push({ label: "History", to: historyUrl(state.snapshot.source) });
+    trail.push({ label: state.snapshot.source.path, to: historyUrl(state.snapshot.source) });
   }
 
   const chain = [];
@@ -32,7 +43,7 @@ export function browseTrail(state, oid, { current = false } = {}) {
   chain.forEach((s, i) => {
     const last = i === chain.length - 1;
     if (last && current && chain.length === 1) {
-      return; // the snapshot's own folder is named in the facts line
+      return; // the snapshot's own folder is what the page is about
     }
     const at = last ? oid : (s.oid ?? s.snapshot?.rootID);
     const crumb = { label: s.label };

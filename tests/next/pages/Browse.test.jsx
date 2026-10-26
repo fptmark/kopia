@@ -72,11 +72,36 @@ describe("SnapshotDirectory", () => {
     });
     await waitFor(() => expect(screen.getByTestId("snapshot-facts")).toHaveTextContent("Files Added: 3"));
     const facts = screen.getByTestId("snapshot-facts");
-    expect(facts).toHaveTextContent("Source: /Users/me");
+    expect(facts).not.toHaveTextContent("Source:");
     expect(facts).toHaveTextContent(/Date: \w+day, October 26, 2026 at/);
     expect(facts).toHaveTextContent("Modified: 12");
     expect(facts).toHaveTextContent("Deleted: 1");
     expect(axios.get).toHaveBeenCalledWith("/api/v1/snapshots/diff", { params: { from: "s1", to: "s2" } });
+  });
+
+  it("links to the task that made the snapshot, when there is one", async () => {
+    axios.get.mockImplementation((url) =>
+      url.startsWith("/api/v1/mounts/")
+        ? Promise.reject({ response: { status: 404 } })
+        : url === "/api/v1/snapshots/task"
+          ? Promise.resolve({ data: { taskId: "42" } })
+          : Promise.resolve({ data: { entries } }),
+    );
+    renderBrowse({ snapshot: { id: "s2", source: { path: "/Users/me" }, startTime: "2026-10-26T14:00:00Z" } });
+    await waitFor(() => expect(screen.getByTestId("snapshot-details")).toHaveAttribute("href", "/tasks/42"));
+  });
+
+  it("has no Details button for a snapshot with no task on record", async () => {
+    axios.get.mockImplementation((url) =>
+      url.startsWith("/api/v1/mounts/")
+        ? Promise.reject({ response: { status: 404 } })
+        : url === "/api/v1/snapshots/task"
+          ? Promise.resolve({ data: { taskId: "" } })
+          : Promise.resolve({ data: { entries } }),
+    );
+    renderBrowse({ snapshot: { id: "s2", source: { path: "/Users/me" }, startTime: "2026-10-26T14:00:00Z" } });
+    await waitFor(() => expect(screen.getByText("Docs/")).toBeInTheDocument());
+    expect(screen.queryByTestId("snapshot-details")).not.toBeInTheDocument();
   });
 
   it("lists folders first, links folders to the browser and files to a download", async () => {
@@ -112,10 +137,13 @@ describe("SnapshotDirectory", () => {
         snapshot: { id: "s2", rootID: "kbase", source: { host: "mac", userName: "me", path: "/Users/me" } },
       },
     });
-    await waitFor(() => expect(screen.getByRole("link", { name: "/Users/me" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByRole("link", { name: "/Users/me" })).toHaveLength(2));
     expect(screen.getByRole("link", { name: "Sources" })).toHaveAttribute("href", "/snapshots");
-    expect(screen.getByRole("link", { name: "History" }).getAttribute("href")).toMatch(/^\/snapshots\/single-source\?/);
-    expect(screen.getByRole("link", { name: "/Users/me" })).toHaveAttribute("href", "/snapshots/dir/kbase");
+    expect(screen.getAllByRole("link", { name: "/Users/me" })[0].getAttribute("href")).toMatch(
+      /^\/snapshots\/single-source\?/,
+    );
+    expect(screen.queryByRole("link", { name: "History" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "/Users/me" })[1]).toHaveAttribute("href", "/snapshots/dir/kbase");
     expect(screen.getByText("Docs")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Docs" })).not.toBeInTheDocument();
   });

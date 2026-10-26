@@ -176,6 +176,9 @@ describe("Task page", () => {
       if (url.endsWith("/errors")) {
         return Promise.resolve({ data: extra.errors ?? { errors: [] } });
       }
+      if (url.startsWith("/api/v1/snapshots?")) {
+        return Promise.resolve({ data: extra.history ?? { snapshots: [] } });
+      }
       return Promise.resolve({ data: t });
     });
 
@@ -218,6 +221,29 @@ describe("Task page", () => {
     );
     fireEvent.click(screen.getByTestId("show-failed-files"));
     expect(screen.getByTestId("snapshot-errors")).toBeInTheDocument();
+  });
+
+  it("links a snapshot task to the snapshot it made and to the history of its source", async () => {
+    serve(task("t1"), {
+      errors: { errors: [], source: "/Users/me", userName: "me", host: "mac", snapshotId: "s2" },
+      history: {
+        snapshots: [
+          { id: "s1", rootID: "kold", startTime: "2026-10-26T13:00:00Z" },
+          { id: "s2", rootID: "knew", startTime: "2026-10-26T14:00:00Z" },
+        ],
+      },
+    });
+    renderTask();
+    const view = await screen.findByText("View snapshot");
+    expect(view.closest("a")).toHaveAttribute("href", "/snapshots/dir/knew");
+    expect(screen.getByText("History").closest("a").getAttribute("href")).toMatch(/^\/snapshots\/single-source\?/);
+  });
+
+  it("has no snapshot link for a task that made no snapshot", async () => {
+    serve(task("t1"), { errors: { errors: [], source: "/Users/me", userName: "me", host: "mac" } });
+    renderTask();
+    await waitFor(() => expect(screen.getByText("Task succeeded after 5 min.")).toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: "View snapshot" })).not.toBeInTheDocument();
   });
 
   it("can stop a running task", async () => {

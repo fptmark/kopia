@@ -9,6 +9,7 @@ import {
   entrySize,
   loadDirectory,
   loadMount,
+  loadSnapshotTask,
   mountDirectory,
   unmountDirectory,
 } from "../browse";
@@ -27,7 +28,7 @@ import {
   Toolbar,
 } from "../ui";
 
-/** What snapshot is being browsed: its folder, when, how big, and what changed since the one before it. */
+/** What snapshot is being browsed: when, how big, and what changed since the one before it. */
 function SnapshotFacts({ snapshot }) {
   const diff = useLoad(() => loadDiff(snapshot.previousId, snapshot.id), [snapshot.id, snapshot.previousId], {
     enabled: !!snapshot.previousId,
@@ -35,9 +36,6 @@ function SnapshotFacts({ snapshot }) {
   const n = (v) => (diff.data ? <CountText n={v} /> : diff.loading ? "…" : "—");
   return (
     <div className="nx-facts" data-testid="snapshot-facts">
-      <span>
-        <span className="nx-muted">Source:</span> <span className="nx-path">{snapshot.source?.path}</span>
-      </span>
       <span>
         <span className="nx-muted">Date:</span> <DateTimeText long value={snapshot.startTime} />
       </span>
@@ -66,6 +64,8 @@ export function SnapshotDirectory() {
   const location = useLocation();
   const dir = useLoad(() => loadDirectory(oid), [oid]);
   const mount = useLoad(() => loadMount(oid), [oid]);
+  const snapshotId = location.state?.snapshot?.id;
+  const task = useLoad(() => loadSnapshotTask(snapshotId).catch(() => ""), [snapshotId], { enabled: !!snapshotId });
   const [message, setMessage] = useState(null);
   const [failures, setFailures] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -152,6 +152,11 @@ export function SnapshotDirectory() {
           >
             {ticked.length ? `Restore ${ticked.length} selected` : "Restore all"}
           </Button>
+          {task.data && (
+            <Button as={Link} variant="secondary" to={"/tasks/" + task.data} data-testid="snapshot-details">
+              Details
+            </Button>
+          )}
           {!mounted && (
             <Button variant="secondary" disabled={busy} onClick={() => change(mountDirectory(oid), "Not mounted: ")}>
               Mount to browse

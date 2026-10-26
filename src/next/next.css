@@ -212,6 +212,11 @@
   padding: 0.4rem 0.8rem;
   background: var(--nx-surface);
 }
+.nx-toolbar-group.plain {
+  border: 0;
+  padding: 0;
+  background: none;
+}
 .nx-toolbar-group.grow {
   flex: 1 1 22rem;
 }
