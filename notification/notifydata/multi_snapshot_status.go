@@ -16,6 +16,8 @@ type ManifestWithError struct {
 	Previous *snapshot.Manifest `json:"previous"` // may not be filled out
 
 	Error string `json:"error"` // will be present if there was an error
+
+	Saved bool `json:"-"` // the snapshot manifest was written to the repository, so Manifest.ID must be set
 }
 
 // StartTimestamp returns the start time of the snapshot.

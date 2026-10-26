@@ -405,6 +405,7 @@ func (s *sourceManager) snapshotInternal(ctx context.Context, ctrl uitask.Contro
 
 		// result.Manifest was copied before the save assigned the ID
 		result.Manifest.ID = snapshotID
+		result.Saved = true
 
 		userLog(ctx).Debugf("created snapshot %v", snapshotID)
 

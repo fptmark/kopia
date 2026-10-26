@@ -1104,6 +1104,11 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 		result.Error = err.Error()
 	}
 
+	// a saved snapshot always has an ID; without one the result cannot be linked, recorded or verified
+	if result.Saved && result.Manifest.ID == "" {
+		userLog(ctx).Errorf("BUG: snapshot of %v was saved but its result has no snapshot ID", src)
+	}
+
 	s.recordSnapshotResult(ctx, taskID, src, &result.Manifest)
 	s.verifyNewData(ctx, &result.Manifest, err)
 
