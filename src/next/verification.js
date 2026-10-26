@@ -17,17 +17,19 @@ export function loadVerificationFailures(id, limit = 2000) {
     .then((r) => r.data);
 }
 
-const isNewData = (mode) => mode === "new";
-
 /**
- * Groups the answer by snapshot: {[snapshotId]: {read, added, running}} where read is the latest full or sample
- * verification, added the latest one of the data the snapshot added, and running what is queued or reading now.
+ * Groups the answer by snapshot: {[snapshotId]: {latest, running}} where latest is the most recent finished
+ * verification, whether the daily check, a snapshot's own check or a manual Verify made it, and running is what
+ * is queued or reading now.
  */
 export function groupVerifications(data) {
   const out = {};
-  const of = (id) => (out[id] ||= { read: null, added: null, running: [] });
+  const of = (id) => (out[id] ||= { latest: null, running: [] });
   for (const v of data?.verifications || []) {
-    of(v.snapshotId)[isNewData(v.mode) ? "added" : "read"] = v;
+    const o = of(v.snapshotId);
+    if (!o.latest || v.id > o.latest.id) {
+      o.latest = v;
+    }
   }
   for (const r of data?.running || []) {
     of(r.snapshotId).running.push(r);

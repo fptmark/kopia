@@ -84,12 +84,15 @@ function VerifyProgress({ r }) {
   );
 }
 
+const badgeLabel = (v) =>
+  v.mode === "new" ? "Added data ok" : v.mode === "sample" ? v.percent + "% verified" : "Verified";
+
 /**
- * What is known about one snapshot's health: a badge for the latest full or sample read-back, one for the
- * data it added, and progress while one is queued or running. info is {read, added, running} from groupVerifications.
+ * What is known about one snapshot's health: a badge for its latest verification (automatic or manual) with when
+ * it finished, and progress while one is queued or running. info is {latest, running} from groupVerifications.
  */
 export function VerifiedCell({ info, onShowFailures }) {
-  if (!info || (!info.read && !info.added && !info.running.length)) {
+  if (!info || (!info.latest && !info.running.length)) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
@@ -97,14 +100,14 @@ export function VerifiedCell({ info, onShowFailures }) {
       {info.running.map((r) => (
         <VerifyProgress key={r.mode} r={r} />
       ))}
-      {info.read && (
-        <VerifiedBadge
-          v={info.read}
-          onShowFailures={onShowFailures}
-          label={info.read.mode === "full" ? "Verified" : info.read.percent + "% verified"}
-        />
+      {info.latest && (
+        <>
+          <VerifiedBadge v={info.latest} onShowFailures={onShowFailures} label={badgeLabel(info.latest)} />
+          <span className="nx-muted small">
+            <DateTimeText value={info.latest.finishedAt} />
+          </span>
+        </>
       )}
-      {info.added && <VerifiedBadge v={info.added} onShowFailures={onShowFailures} label="Added data ok" />}
     </span>
   );
 }

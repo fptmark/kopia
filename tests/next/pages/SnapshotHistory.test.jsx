@@ -255,8 +255,8 @@ describe("SnapshotHistory", () => {
       renderPage();
       await waitFor(() => expect(screen.getAllByTestId("verified-cell")).toHaveLength(3));
       const cells = screen.getAllByTestId("verified-cell");
-      expect(cells[0]).toHaveTextContent("Verified");
-      expect(cells[0]).toHaveTextContent("Added data ok");
+      expect(cells[0]).toHaveTextContent("Added data ok"); // the latest of the two, not both
+      expect(cells[0]).not.toHaveTextContent("Verified");
       expect(cells[1]).toHaveTextContent("12 failed");
       expect(cells[2]).toHaveTextContent("Verifying 10%");
       expect(cells[2]).toHaveTextContent("2 failed");
