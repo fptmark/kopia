@@ -159,6 +159,7 @@ func handleTaskErrors(_ context.Context, rc requestContext) (any, *apiError) {
 	src, _ := h.SnapshotSource(rc.muxVar("taskID"))
 	resp.Source = sourcePath(src)
 	resp.UserName, resp.Host = sourceUserHost(src)
+	resp.SnapshotID, _ = h.SnapshotIDOf(rc.muxVar("taskID"))
 
 	var ignored *ignoreerr.Store
 	if srv, ok := rc.srv.(*Server); ok {
@@ -195,4 +196,23 @@ func handleStorageUsageHistory(_ context.Context, rc requestContext) (any, *apiE
 	}
 
 	return hist, nil
+}
+
+// handleSnapshotTask finds the task that made a snapshot, so the snapshot can link to its run.
+func handleSnapshotTask(_ context.Context, rc requestContext) (any, *apiError) {
+	resp := serverapi.SnapshotTaskResponse{}
+
+	h := rc.srv.getOptions().TaskHistory
+	if h == nil {
+		return resp, nil
+	}
+
+	id, err := h.TaskOfSnapshot(rc.queryParam("snapshotId"))
+	if err != nil {
+		return nil, internalServerError(err)
+	}
+
+	resp.TaskID = id
+
+	return resp, nil
 }

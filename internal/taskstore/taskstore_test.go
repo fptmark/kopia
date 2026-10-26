@@ -610,3 +610,30 @@ func TestRepeatStateIsPerDestinationKindAndDetail(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, had, "no detail clears every detail of the kind")
 }
+
+func TestSnapshotAndItsTaskFindEachOther(t *testing.T) {
+	s, _ := openStore(t)
+	record(t, s, info(5, "Snapshot", "snap", uitask.StatusSuccess, t0))
+	record(t, s, info(6, "Snapshot", "snap 2", uitask.StatusSuccess, t0.Add(time.Hour)))
+
+	require.NoError(t, s.RecordSnapshotResult("5", taskstore.SnapshotResult{Source: "u@h:/Users/u", SnapshotID: "abc"}))
+	require.NoError(t, s.RecordSnapshotResult("6", taskstore.SnapshotResult{Source: "u@h:/Users/u"}))
+
+	id, err := s.SnapshotIDOf("5")
+	require.NoError(t, err)
+	require.Equal(t, "abc", id)
+
+	id, err = s.SnapshotIDOf("6")
+	require.NoError(t, err)
+	require.Empty(t, id, "a task that saved no snapshot has no ID")
+
+	task, err := s.TaskOfSnapshot("abc")
+	require.NoError(t, err)
+	require.Equal(t, "5", task)
+
+	for _, unknown := range []string{"", "nope"} {
+		task, err = s.TaskOfSnapshot(unknown)
+		require.NoError(t, err)
+		require.Empty(t, task, "snapshot %q", unknown)
+	}
+}

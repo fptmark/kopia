@@ -703,6 +703,44 @@ func (s *Store) SnapshotSource(taskID string) (string, error) {
 	return src, errors.Wrap(err, "unable to read the task source")
 }
 
+// SnapshotIDOf returns the ID of the snapshot a snapshot task made, or "" when it made none or predates the record.
+func (s *Store) SnapshotIDOf(taskID string) (string, error) {
+	seq, ok := uitask.ParseTaskID(taskID)
+	if !ok {
+		return "", errors.Errorf("invalid task ID %q", taskID)
+	}
+
+	var id string
+
+	err := s.db.QueryRow(`SELECT snapshot_id FROM tasks WHERE seq = ?`, seq).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+
+	return id, errors.Wrap(err, "unable to read the task snapshot")
+}
+
+// TaskOfSnapshot returns the ID of the snapshot task that made the snapshot, or "" when none is on record.
+func (s *Store) TaskOfSnapshot(snapshotID string) (string, error) {
+	if snapshotID == "" {
+		return "", nil
+	}
+
+	var seq int
+
+	err := s.db.QueryRow(
+		`SELECT seq FROM tasks WHERE snapshot_id = ? AND kind = 'Snapshot' ORDER BY seq DESC LIMIT 1`, snapshotID).Scan(&seq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", errors.Wrap(err, "unable to find the task of the snapshot")
+	}
+
+	return uitask.FormatTaskID(seq), nil
+}
+
 // SourceError is a failed file of a snapshot, with the source it belongs to.
 type SourceError struct {
 	Source string
