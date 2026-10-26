@@ -254,7 +254,12 @@ describe("SnapshotHistory", () => {
       await waitFor(() => expect(screen.getAllByTestId("verified-cell")).toHaveLength(3));
       const cells = screen.getAllByTestId("verified-cell");
       expect(cells[0]).toHaveTextContent("Added data ok"); // the latest of the two, not both
-      expect(within(cells[0]).getByTitle(/Saturday, October 24, 2026 at .*Read back/)).toBeInTheDocument();
+      const badge = within(cells[0]).getByText("Added data ok");
+      fireEvent.mouseOver(badge);
+      expect(screen.queryByTestId("verified-tooltip")).not.toBeInTheDocument(); // not at once
+      await waitFor(() =>
+        expect(screen.getByTestId("verified-tooltip")).toHaveTextContent(/Saturday, October 24, 2026 at .*Read back/),
+      );
       expect(cells[0]).not.toHaveTextContent("Oct 24"); // the date is only in the tooltip
       expect(cells[0]).not.toHaveTextContent("Verified");
       expect(cells[1]).toHaveTextContent("12 failed");

@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import Form from "react-bootstrap/Form";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Modal from "react-bootstrap/Modal";
+import OverlayTrigger from "react-bootstrap/OverlayTrigger";
+import Tooltip from "react-bootstrap/Tooltip";
 import { Link } from "react-router";
 import { formatLongDateTime } from "../format";
 import { useLoad } from "../hooks";
@@ -10,25 +12,42 @@ import { CountText, DateTimeText, PathText, SizeText, StatusBadge } from "./Cell
 import { Loaded } from "./Feedback";
 import { ConfirmDialog } from "./ConfirmDialog";
 
+// the browser's own tooltip waits over a second; this one shows after half a second
+const TIP_DELAY = { show: 500, hide: 0 };
+
 function VerifiedBadge({ v, onShowFailures, label, when }) {
   const at = when ? formatLongDateTime(when) + ". " : "";
+  const tip = (text) => <Tooltip data-testid="verified-tooltip">{text}</Tooltip>;
   if (v.ok) {
     return (
-      <span title={`${at}Read back ${describeCovered(v)}; ${v.files.toLocaleString("en-US")} checked, no problems.`}>
-        <StatusBadge kind="ok">{label}</StatusBadge>
-      </span>
+      <OverlayTrigger
+        placement="top"
+        delay={TIP_DELAY}
+        overlay={tip(`${at}Read back ${describeCovered(v)}; ${v.files.toLocaleString("en-US")} checked, no problems.`)}
+      >
+        <span>
+          <StatusBadge kind="ok">{label}</StatusBadge>
+        </span>
+      </OverlayTrigger>
     );
   }
   return (
-    <button
-      type="button"
-      className="btn btn-sm p-0 border-0"
-      title={`${at}${v.errorCount.toLocaleString("en-US")} failed when reading back ${describeCovered(v)}. Click for the list.`}
-      onClick={() => onShowFailures(v)}
-      data-testid="verify-failed"
+    <OverlayTrigger
+      placement="top"
+      delay={TIP_DELAY}
+      overlay={tip(
+        `${at}${v.errorCount.toLocaleString("en-US")} failed when reading back ${describeCovered(v)}. Click for the list.`,
+      )}
     >
-      <StatusBadge kind="error">{v.errorCount.toLocaleString("en-US")} failed</StatusBadge>
-    </button>
+      <button
+        type="button"
+        className="btn btn-sm p-0 border-0"
+        onClick={() => onShowFailures(v)}
+        data-testid="verify-failed"
+      >
+        <StatusBadge kind="error">{v.errorCount.toLocaleString("en-US")} failed</StatusBadge>
+      </button>
+    </OverlayTrigger>
   );
 }
 
