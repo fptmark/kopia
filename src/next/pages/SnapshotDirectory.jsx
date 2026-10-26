@@ -16,7 +16,6 @@ import {
   Loaded,
   Notice,
   Page,
-  Panel,
   SizeText,
   Toolbar,
 } from "../ui";
@@ -63,6 +62,7 @@ export function SnapshotDirectory() {
   const [message, setMessage] = useState(null);
   const [failures, setFailures] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState({});
 
   const change = (promise, failure) => {
     setBusy(true);
@@ -123,60 +123,57 @@ export function SnapshotDirectory() {
     },
   ];
 
+  const ticked = (dir.data?.entries ?? []).filter((x) => selected[x.obj + x.name]);
+  const mounted = mount.data?.path;
+
   return (
-    <Page
-      title="Browse"
-      back
-      backLabel="Back"
-      actions={
-        <Button as={Link} variant="primary" to={"/snapshots/dir/" + oid + "/restore"} state={location.state}>
-          Restore files and folders
-        </Button>
-      }
-    >
-      <Breadcrumbs />
+    <Page back backLabel="Back">
+      {location.state?.prevState && <Breadcrumbs />}
       {location.state?.snapshot && <SnapshotFacts snapshot={location.state.snapshot} />}
       {message && (
         <Notice kind="error" onClose={() => setMessage(null)}>
           {message}
         </Notice>
       )}
-      <Panel
-        title="Use these files"
-        note="Restore all of what is listed, mount it to browse it like a drive, or restore single files from the list."
-      >
-        <Loaded state={mount}>
-          {(m) =>
-            m.path ? (
-              <Toolbar>
-                <Toolbar.Group label="Mounted at" grow>
-                  <Form.Control size="sm" readOnly aria-label="Mounted path" className="mounted-path" value={m.path} />
-                  <Button size="sm" variant="secondary" onClick={copy} data-testid="copy-path-button">
-                    Copy
-                  </Button>
-                  {window.kopiaUI && (
-                    <Button size="sm" variant="secondary" onClick={() => window.kopiaUI.browseDirectory(m.path)}>
-                      Open
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => change(unmountDirectory(oid), "Not unmounted: ")}
-                  >
-                    Unmount
-                  </Button>
-                </Toolbar.Group>
-              </Toolbar>
-            ) : (
-              <Button variant="secondary" disabled={busy} onClick={() => change(mountDirectory(oid), "Not mounted: ")}>
-                Mount as local filesystem
+      <Toolbar>
+        <Toolbar.Group>
+          <Button
+            as={Link}
+            variant="primary"
+            to={"/snapshots/dir/" + oid + "/restore"}
+            state={{ ...location.state, items: ticked.map((x) => ({ obj: x.obj, name: x.name })) }}
+            data-testid="restore"
+          >
+            {ticked.length ? `Restore ${ticked.length} selected` : "Restore all"}
+          </Button>
+          {!mounted && (
+            <Button variant="secondary" disabled={busy} onClick={() => change(mountDirectory(oid), "Not mounted: ")}>
+              Mount to browse
+            </Button>
+          )}
+        </Toolbar.Group>
+        {mounted && (
+          <Toolbar.Group label="Mounted at" grow>
+            <Form.Control size="sm" readOnly aria-label="Mounted path" className="mounted-path" value={mounted} />
+            <Button size="sm" variant="secondary" onClick={copy} data-testid="copy-path-button">
+              Copy
+            </Button>
+            {window.kopiaUI && (
+              <Button size="sm" variant="secondary" onClick={() => window.kopiaUI.browseDirectory(mounted)}>
+                Open
               </Button>
-            )
-          }
-        </Loaded>
-      </Panel>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => change(unmountDirectory(oid), "Not unmounted: ")}
+            >
+              Unmount
+            </Button>
+          </Toolbar.Group>
+        )}
+      </Toolbar>
       <Loaded state={dir}>
         {(d) => (
           <DataTable
@@ -184,6 +181,7 @@ export function SnapshotDirectory() {
             data={d.entries || []}
             columns={columns}
             getRowId={(x) => x.obj + x.name}
+            selection={{ selected, onChange: setSelected }}
             initialSort={{ id: "name", desc: false }}
             emptyText="This folder is empty."
           />

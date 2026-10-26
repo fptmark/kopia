@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
-import { Link, useParams } from "react-router";
+import { Link, useLocation, useParams } from "react-router";
 import { errorMessage } from "../api";
+import { plural } from "../format";
 import { RESTORE_DEFAULTS, restoreRequest, startRestore } from "../browse";
 import { Field, FormSection, Notice, Page, Panel, SwitchField } from "../ui";
 
@@ -21,8 +22,9 @@ const SWITCHES = [
 
 export function SnapshotRestore() {
   const { oid } = useParams();
+  const items = useLocation().state?.items ?? []; // the ticked entries; none means the whole folder
   const [form, setForm] = useState(RESTORE_DEFAULTS);
-  const [task, setTask] = useState("");
+  const [started, setStarted] = useState([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
@@ -33,19 +35,33 @@ export function SnapshotRestore() {
       setError("Enter where to restore to.");
       return;
     }
+    const dst = form.destination.trim();
+    if (items.length && /\.(zip|tar)$/.test(dst)) {
+      setError("Zip and tar hold the whole folder. Untick the entries, or restore into a folder.");
+      return;
+    }
     setBusy(true);
     setError("");
-    startRestore(restoreRequest(oid, form))
-      .then((r) => setTask(r.id))
+    const requests = items.length
+      ? items.map((it) => restoreRequest(it.obj, { ...form, destination: dst.replace(/\/+$/, "") + "/" + it.name }))
+      : [restoreRequest(oid, form)];
+    Promise.all(requests.map(startRestore))
+      .then((rs) => setStarted(rs.map((x) => x.id)))
       .catch((err) => setError("Not started: " + errorMessage(err)))
       .finally(() => setBusy(false));
   };
 
-  if (task) {
+  if (started.length) {
     return (
       <Page title="Restore started" back>
         <Notice kind="success">
-          The restore is running. <Link to={"/tasks/" + task}>Open the task</Link> to follow it.
+          {started.length === 1 ? (
+            <Link to={"/tasks/" + started[0]}>Open the task</Link>
+          ) : (
+            <>
+              {started.length} restores are running. <Link to="/tasks">Open Tasks</Link>
+            </>
+          )}
         </Notice>
       </Page>
     );
@@ -54,12 +70,12 @@ export function SnapshotRestore() {
   const zip = form.destination.trim().endsWith(".zip");
 
   return (
-    <Page title="Restore" back subtitle="Copy these files and folders out of the snapshot.">
+    <Page title="Restore" back subtitle={items.length ? plural(items.length, "item") + " selected" : undefined}>
       <Form onSubmit={submit}>
         <Panel title="Where to">
           <Field
-            label="Destination"
-            help="A folder to restore into. End the name with .zip or .tar to restore into one file."
+            label={items.length ? "Destination folder" : "Destination"}
+            help={items.length ? undefined : "A folder. End with .zip or .tar for one file."}
             error={error}
           >
             {(id) => (

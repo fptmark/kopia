@@ -27,13 +27,15 @@ export function Page({ title, subtitle, back, backLabel = "Back", actions, child
           {"←"} {backLabel}
         </a>
       )}
-      <div className="nx-page-header">
-        <div>
-          <h1 className="nx-page-title">{title}</h1>
-          {subtitle && <div className="nx-page-subtitle">{subtitle}</div>}
+      {(title || actions) && (
+        <div className="nx-page-header">
+          <div>
+            {title && <h1 className="nx-page-title">{title}</h1>}
+            {subtitle && <div className="nx-page-subtitle">{subtitle}</div>}
+          </div>
+          {actions && <div className="nx-page-actions">{actions}</div>}
         </div>
-        {actions && <div className="nx-page-actions">{actions}</div>}
-      </div>
+      )}
       {children}
     </div>
   );

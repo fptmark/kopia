@@ -104,22 +104,18 @@ describe("SnapshotDirectory", () => {
     expect(screen.getByText("Docs")).toBeInTheDocument();
   });
 
-  it("links to restore, and mounts the folder as a local filesystem", async () => {
+  it("restores everything listed, or only the ticked entries, and mounts the folder", async () => {
     axios.post.mockResolvedValue({ data: { path: "/Volumes/kopia" } });
     renderBrowse();
-    await waitFor(() => expect(screen.getByText("Mount as local filesystem")).toBeInTheDocument());
-    expect(screen.getByText("Restore files and folders").closest("a")).toHaveAttribute(
-      "href",
-      "/snapshots/dir/kroot/restore",
-    );
+    await waitFor(() => expect(screen.getByText("Mount to browse")).toBeInTheDocument());
+    expect(screen.getByTestId("restore")).toHaveTextContent("Restore all");
+    expect(screen.getByTestId("restore")).toHaveAttribute("href", "/snapshots/dir/kroot/restore");
 
-    fireEvent.click(screen.getByText("Mount as local filesystem"));
+    fireEvent.click(screen.getAllByRole("checkbox")[2]);
+    expect(screen.getByTestId("restore")).toHaveTextContent("Restore 1 selected");
+
+    fireEvent.click(screen.getByText("Mount to browse"));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/mounts", { root: "kroot" }));
-    axios.get.mockImplementation((url) =>
-      url.startsWith("/api/v1/mounts/")
-        ? Promise.resolve({ data: { path: "/Volumes/kopia" } })
-        : Promise.resolve({ data: { entries } }),
-    );
   });
 
   it("shows an existing mount and unmounts it", async () => {
@@ -176,6 +172,30 @@ describe("SnapshotRestore", () => {
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "Open the task" })).toHaveAttribute("href", "/tasks/task9"),
     );
+  });
+
+  it("restores each ticked entry into the chosen folder", async () => {
+    const items = [
+      { obj: "o1", name: "b.txt" },
+      { obj: "kdocs", name: "Docs" },
+    ];
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/snapshots/dir/kroot/restore", state: { items } }]}>
+        <Routes>
+          <Route path="/snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
+          <Route path="/tasks" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("2 items selected")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Destination folder"), { target: { value: "/tmp/out/" } });
+    fireEvent.click(screen.getByTestId("submit-button"));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
+    expect(axios.post.mock.calls.map(([, r]) => [r.root, r.fsOutput.targetPath])).toEqual([
+      ["o1", "/tmp/out/b.txt"],
+      ["kdocs", "/tmp/out/Docs"],
+    ]);
+    await waitFor(() => expect(screen.getByRole("link", { name: "Open Tasks" })).toHaveAttribute("href", "/tasks"));
   });
 
   it("shows the zip option only for a zip file", async () => {
