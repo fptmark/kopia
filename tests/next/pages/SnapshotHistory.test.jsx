@@ -209,11 +209,11 @@ describe("SnapshotHistory", () => {
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("&all=1")));
   });
 
-  it("greys out the duplicate snapshots box when there are none", async () => {
+  it("hides the duplicate snapshots box when there are none", async () => {
     serve({ list: history(THREE, { unfilteredCount: 3, uniqueCount: 3 }) });
     renderPage();
     await waitFor(() => expect(screen.getByTestId("history-summary")).toBeInTheDocument());
-    expect(screen.getByLabelText(/Show duplicate snapshots \(0\)/)).toBeDisabled();
+    expect(screen.queryByLabelText(/Show duplicate snapshots/)).not.toBeInTheDocument();
   });
 
   it("lets an empty folder be removed", async () => {
