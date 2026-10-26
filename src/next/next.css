@@ -218,6 +218,10 @@
 .nx-toolbar-group.end {
   margin-left: auto;
 }
+.nx-toolbar-group.center {
+  margin-left: auto;
+  margin-right: auto;
+}
 .nx-toolbar-label {
   color: var(--nx-muted);
   font-size: 0.78rem;
@@ -351,7 +355,8 @@
 .nx-pager-slot:empty {
   display: none;
 }
-.nx-toolbar-group.end ~ .nx-pager-slot {
+.nx-toolbar-group.end ~ .nx-pager-slot,
+.nx-toolbar-group.center ~ .nx-pager-slot {
   margin-left: 0;
 }
 .nx-table.fixed {

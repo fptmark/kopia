@@ -201,19 +201,19 @@ describe("SnapshotHistory", () => {
     );
   });
 
-  it("offers unchanged snapshots only when there are some", async () => {
+  it("offers duplicate snapshots only when there are some", async () => {
     serve({ list: history(THREE, { unfilteredCount: 41, uniqueCount: 3 }) });
     renderPage();
-    await waitFor(() => expect(screen.getByLabelText(/Unchanged snapshots \(38\)/)).toBeEnabled());
-    fireEvent.click(screen.getByLabelText(/Unchanged snapshots/));
+    await waitFor(() => expect(screen.getByLabelText(/Show duplicate snapshots \(38\)/)).toBeEnabled());
+    fireEvent.click(screen.getByLabelText(/Show duplicate snapshots/));
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("&all=1")));
   });
 
-  it("does not offer unchanged snapshots when there are none", async () => {
+  it("does not offer duplicate snapshots when there are none", async () => {
     serve({ list: history(THREE, { unfilteredCount: 3, uniqueCount: 3 }) });
     renderPage();
     await waitFor(() => expect(screen.getByTestId("history-summary")).toBeInTheDocument());
-    expect(screen.queryByLabelText(/Unchanged snapshots/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Show duplicate snapshots/)).not.toBeInTheDocument();
   });
 
   it("lets an empty folder be removed", async () => {

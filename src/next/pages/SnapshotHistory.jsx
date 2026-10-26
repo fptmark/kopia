@@ -310,7 +310,7 @@ export function SnapshotHistory() {
                 <Stat
                   label="Snapshots"
                   value={snapshots.length}
-                  note={d.unfilteredCount !== d.uniqueCount ? `${d.unfilteredCount} with unchanged ones` : undefined}
+                  note={d.unfilteredCount !== d.uniqueCount ? `${d.unfilteredCount} with duplicates` : undefined}
                 />
                 <Stat label="Latest" value={<SizeText bytes={snapshots[0]?.summary?.size} />} note="logical size" />
                 <Stat
@@ -326,19 +326,8 @@ export function SnapshotHistory() {
             </Panel>
 
             <Toolbar>
-              {(d.unfilteredCount !== d.uniqueCount || showAll) && (
-                <Toolbar.Group label="Show">
-                  <Form.Check
-                    type="checkbox"
-                    id="show-identical"
-                    label={`Unchanged snapshots (${d.unfilteredCount - d.uniqueCount})`}
-                    checked={showAll}
-                    onChange={(e) => setShowAll(e.target.checked)}
-                  />
-                </Toolbar.Group>
-              )}
-              <Toolbar.Group label="Selected" end>
-                <span className={chosen.length ? "" : "nx-muted"}>{chosen.length === 0 ? "none" : chosen.length}</span>
+              <Toolbar.Group>
+                <span className={chosen.length ? "" : "nx-muted"}>{chosen.length} Selected</span>
                 <Button
                   size="sm"
                   variant="primary"
@@ -369,6 +358,17 @@ export function SnapshotHistory() {
                   Delete
                 </Button>
               </Toolbar.Group>
+              {(d.unfilteredCount !== d.uniqueCount || showAll) && (
+                <Toolbar.Group center>
+                  <Form.Check
+                    type="checkbox"
+                    id="show-identical"
+                    label={`Show duplicate snapshots (${d.unfilteredCount - d.uniqueCount})`}
+                    checked={showAll}
+                    onChange={(e) => setShowAll(e.target.checked)}
+                  />
+                </Toolbar.Group>
+              )}
             </Toolbar>
 
             <DataTable
