@@ -289,16 +289,13 @@ export function SnapshotHistory() {
 
   return (
     <Page
-      title="History"
+      title={<span className="nx-path">{source.path}</span>}
       subtitle={
-        <>
-          <span className="nx-path">{source.path}</span>{" "}
-          <span className="nx-muted">
-            {source.userName}@{source.host}
-          </span>
-        </>
+        <span className="nx-muted">
+          {source.userName}@{source.host}
+        </span>
       }
-      trail={[{ label: "Sources", to: "/snapshots" }]}
+      trail={[{ label: "Sources", to: "/snapshots" }, { label: "History" }]}
     >
       {message && (
         <Notice kind={message.kind} onClose={() => setMessage(null)}>
@@ -313,9 +310,7 @@ export function SnapshotHistory() {
                 <Stat
                   label="Snapshots"
                   value={snapshots.length}
-                  note={
-                    d.unfilteredCount !== d.uniqueCount ? `${d.unfilteredCount} counting identical ones` : undefined
-                  }
+                  note={d.unfilteredCount !== d.uniqueCount ? `${d.unfilteredCount} with unchanged ones` : undefined}
                 />
                 <Stat label="Latest" value={<SizeText bytes={snapshots[0]?.summary?.size} />} note="logical size" />
                 <Stat
@@ -331,16 +326,17 @@ export function SnapshotHistory() {
             </Panel>
 
             <Toolbar>
-              <Toolbar.Group label="Show">
-                <Form.Check
-                  type="checkbox"
-                  id="show-identical"
-                  label={`Identical snapshots too (${d.unfilteredCount})`}
-                  checked={showAll}
-                  disabled={d.unfilteredCount === d.uniqueCount && !showAll}
-                  onChange={(e) => setShowAll(e.target.checked)}
-                />
-              </Toolbar.Group>
+              {(d.unfilteredCount !== d.uniqueCount || showAll) && (
+                <Toolbar.Group label="Show">
+                  <Form.Check
+                    type="checkbox"
+                    id="show-identical"
+                    label={`Unchanged snapshots (${d.unfilteredCount - d.uniqueCount})`}
+                    checked={showAll}
+                    onChange={(e) => setShowAll(e.target.checked)}
+                  />
+                </Toolbar.Group>
+              )}
               <Toolbar.Group label="Selected" end>
                 <span className={chosen.length ? "" : "nx-muted"}>{chosen.length === 0 ? "none" : chosen.length}</span>
                 <Button

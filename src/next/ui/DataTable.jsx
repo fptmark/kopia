@@ -2,6 +2,8 @@ import React, { use, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getCoreRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
+import { createPortal } from "react-dom";
+import { PagerSlotContext } from "./PagerSlot";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 import { EmptyState } from "./Feedback";
 
@@ -79,6 +81,7 @@ export function DataTable({
   ...rest
 }) {
   const prefs = use(UIPreferencesContext);
+  const slot = use(PagerSlotContext)?.slot;
   const preferred = pageSizeProp ?? prefs?.pageSize ?? 25;
   const sizes = PAGE_SIZES.includes(preferred) ? PAGE_SIZES : [...PAGE_SIZES, preferred].sort((a, b) => a - b);
 
@@ -125,12 +128,15 @@ export function DataTable({
   const first = total === 0 ? 0 : index * pageSize + 1;
   const last = Math.min(total, (index + 1) * pageSize);
 
-  // Column widths are measured once, when the grid first has rows, and then held, so paging and sorting
-  // never make the columns jump.
+  // Column widths are measured whenever the data is (re)loaded and then held, so paging and sorting never
+  // make the columns jump.
   const tableRef = useRef(null);
   const sig = columns.map((c) => c.id).join("|") + (selection ? "+" : "");
   const [measured, setMeasured] = useState(null);
-  const widths = total > 0 && measured?.sig === sig ? measured.widths : null;
+  const widths =
+    total > 0 && measured?.sig === sig && measured.data === data && measured.columns === columns
+      ? measured.widths
+      : null;
   useLayoutEffect(() => {
     if (widths || total === 0 || !tableRef.current) {
       return;
@@ -139,7 +145,7 @@ export function DataTable({
       (c) => c.getBoundingClientRect().width,
     );
     if (w.reduce((a, b) => a + b, 0) > 0) {
-      setMeasured({ sig, widths: w });
+      setMeasured({ sig, data, columns, widths: w });
     }
   });
 
@@ -172,11 +178,15 @@ export function DataTable({
 
   return (
     <div className="nx-table-wrap" {...rest}>
-      {pageCount > 1 && total > 0 && (
-        <div className={"nx-table-top" + (head ? " over-head" : "")}>
+      {pageCount > 1 && total > 0 && !slot && (
+        <div className="nx-table-top">
           <Pager index={index} pageCount={pageCount} setPageIndex={setPageIndex} />
         </div>
       )}
+      {pageCount > 1 &&
+        total > 0 &&
+        slot &&
+        createPortal(<Pager index={index} pageCount={pageCount} setPageIndex={setPageIndex} />, slot)}
       <div className="nx-table-scroll">
         <table
           ref={tableRef}

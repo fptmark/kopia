@@ -341,19 +341,18 @@
   font-size: 0.85rem;
   color: var(--nx-muted);
 }
-/* with a header row the pager sits in it, at the right end, so it costs no line of its own */
-.nx-table-wrap {
-  position: relative;
-}
-.nx-table-top.over-head {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 1;
-  height: 2.25rem;
+.nx-pager-slot {
+  margin-left: auto;
+  display: flex;
   align-items: center;
-  padding: 0 0.75rem;
-  border-bottom: 0;
+  font-size: 0.85rem;
+  color: var(--nx-muted);
+}
+.nx-pager-slot:empty {
+  display: none;
+}
+.nx-toolbar-group.end ~ .nx-pager-slot {
+  margin-left: 0;
 }
 .nx-table.fixed {
   table-layout: fixed;
@@ -363,6 +362,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.nx-pager-slot .pager,
 .nx-table-top .pager,
 .nx-table-foot .pager {
   margin-left: auto;
@@ -532,6 +532,8 @@
 .nx .nx-table-foot .btn.btn-sm,
 .nx .nx-table-top .btn,
 .nx .nx-table-top .btn.btn-sm,
+.nx .nx-pager-slot .btn,
+.nx .nx-pager-slot .btn.btn-sm,
 .nx .nx-panel-head .btn,
 .nx .nx-panel-head .btn.btn-sm,
 .nx .nx-notice .btn,

@@ -1,4 +1,5 @@
-import React from "react";
+import React, { use } from "react";
+import { PagerSlotContext } from "./PagerSlot";
 
 /**
  * The row above a table. Related controls go in one Group, which is drawn as a bordered box with a small
@@ -6,9 +7,11 @@ import React from "react";
  * free width.
  */
 export function Toolbar({ children, ...rest }) {
+  const pager = use(PagerSlotContext);
   return (
     <div className="nx-toolbar" {...rest}>
       {children}
+      <span className="nx-pager-slot" ref={pager?.setSlot} />
     </div>
   );
 }
