@@ -24,7 +24,7 @@ export function HealthBanner() {
           </li>
         ))}
       </ul>
-      <Link to="/tasks">See the Tasks page</Link> · <Link to="/preferences?tab=health">Backup health</Link>
+      <Link to="/tasks">See the Tasks page</Link> · <Link to="/repository">Backup health</Link>
     </Notice>
   );
 }

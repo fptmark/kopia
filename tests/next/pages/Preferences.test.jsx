@@ -51,7 +51,7 @@ describe("Preferences page", () => {
     axios.delete.mockReset().mockResolvedValue({ data: {} });
   });
 
-  it("opens on Appearance and changes the settings", () => {
+  it("opens on Settings and changes them", () => {
     const p = setters();
     renderPrefs("", p);
     expect(screen.getByLabelText("Theme")).toHaveValue("light");
@@ -73,76 +73,20 @@ describe("Preferences page", () => {
 
   it("goes to the tab named in the address, and switches tabs", () => {
     const p = setters();
-    renderPrefs("?tab=scheduling", { ...p });
+    renderPrefs("", { ...p });
     expect(screen.getByLabelText("Keep the Mac awake during snapshots and checks")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Keep the Mac awake during snapshots and checks"), { target: { value: "ac" } });
+    fireEvent.change(screen.getByLabelText("Keep the Mac awake during snapshots and checks"), {
+      target: { value: "ac" },
+    });
     expect(p.setKeepAwake).toHaveBeenCalledWith("ac");
 
-    fireEvent.click(screen.getByTestId("tab-appearance"));
-    expect(screen.getByLabelText("Theme")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("tab-notifications"));
+    expect(screen.queryByLabelText("Theme")).not.toBeInTheDocument();
   });
 
-  it("shows the health checks and runs the full check", async () => {
-    axios.get.mockResolvedValue({
-      data: {
-        state: "failing",
-        since: "2026-10-23T10:00:00Z",
-        lastDeepRun: "2026-10-23T03:00:00Z",
-        lastDeepTaskId: "d1",
-        checks: [
-          { name: "Snapshots are recent", ok: false, detail: "3 h old", checkedAt: "2026-10-23T11:00:00Z" },
-          { name: "Snapshots can be read", ok: true, detail: "40 snapshots" },
-        ],
-      },
-    });
-    renderPrefs("?tab=health");
-    await waitFor(() => expect(screen.getByText("Problem")).toBeInTheDocument());
-    expect(screen.getByText("3 h old")).toBeInTheDocument();
-    expect(screen.getByText("failed")).toBeInTheDocument();
-    expect(screen.getByText("log")).toHaveAttribute("href", "/tasks/d1");
-
-    fireEvent.click(screen.getByText("Run full check now"));
-    await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/verify/run", {}));
-    await waitFor(() => expect(screen.getByText("Check started.")).toBeInTheDocument());
-  });
-
-  it("names the files a failed data check could not read, and loads all of them on request", async () => {
-    const check = {
-      name: "Sample of stored data verifies",
-      ok: false,
-      detail: "7 of 900 files failed to read back; first: /Applications/A.app/x: bad",
-      failureCount: 7,
-      verificationId: 42,
-      failures: [
-        { path: "/Applications/A.app/x", error: "bad" },
-        { path: "/Users/me/.npm/y", error: "invalid length" },
-      ],
-    };
-    axios.get.mockImplementation((url) =>
-      Promise.resolve({
-        data: url.startsWith("/api/v1/snapshots/verifications/42/failures")
-          ? {
-              failures: Array.from({ length: 7 }, (_, i) => ({ path: "/p/f" + i, error: "bad" })),
-            }
-          : { state: "failing", since: "2026-10-24T10:00:00Z", checks: [check] },
-      }),
-    );
-    renderPrefs("?tab=health");
-    await waitFor(() => expect(screen.getByTestId("check-failures")).toBeInTheDocument());
-    const list = screen.getByTestId("check-failures");
-    expect(list).toHaveTextContent("7 files failed");
-    expect(list).toHaveTextContent("/Users/me/.npm/y");
-    expect(screen.getByText("7 of 900 files failed to read back")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText("Show all 7"));
-    await waitFor(() => expect(screen.getByTestId("check-failures")).toHaveTextContent("/p/f6"));
-  });
-
-  it("turns on reading back the data each snapshot adds", async () => {
-    axios.get.mockResolvedValue({ data: { state: "ok", checks: [] } });
+  it("turns on reading back the data each snapshot adds", () => {
     const setVerifyNewData = vi.fn();
-    renderPrefs("?tab=health", { verifyNewData: false, setVerifyNewData });
-    await waitFor(() => expect(screen.getByTestId("verify-new-data")).toBeInTheDocument());
+    renderPrefs("", { verifyNewData: false, setVerifyNewData });
     expect(screen.getByTestId("verify-new-data")).not.toBeChecked();
     fireEvent.click(screen.getByTestId("verify-new-data"));
     expect(setVerifyNewData).toHaveBeenCalledWith(true);

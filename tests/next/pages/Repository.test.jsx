@@ -41,11 +41,24 @@ const renderPage = () =>
     </MemoryRouter>,
   );
 
-const serve = (status, usage = { blobCount: 0, totalBytes: 0 }) =>
+const serve = (
+  status,
+  usage = { blobCount: 0, totalBytes: 0 },
+  health = { state: "ok", checks: [] },
+  failures = null,
+) =>
   axios.get.mockImplementation((url) =>
     Promise.resolve({
       data:
-        url === "/api/v1/repo/status" ? status : url.startsWith("/api/v1/repo/storage-usage") ? usage : { logs: [] },
+        url === "/api/v1/repo/status"
+          ? status
+          : url.startsWith("/api/v1/repo/storage-usage")
+            ? usage
+            : url === "/api/v1/verify/status"
+              ? health
+              : failures && url.startsWith("/api/v1/snapshots/verifications/")
+                ? failures
+                : { logs: [] },
     }),
   );
 
@@ -153,5 +166,56 @@ describe("repository helpers", () => {
     expect(f["Error correction"]).toBe("RS 2%");
     expect(f["Internal compression"]).toBe("yes");
     expect(Object.fromEntries(repoFacts(connected()))["Error correction"]).toBe("Disabled");
+  });
+
+  it("shows the health checks and runs the full check", async () => {
+    serve(connected(), undefined, {
+      state: "failing",
+      since: "2026-10-23T10:00:00Z",
+      lastDeepRun: "2026-10-23T03:00:00Z",
+      lastDeepTaskId: "d1",
+      checks: [
+        { name: "Snapshots are recent", ok: false, detail: "3 h old", checkedAt: "2026-10-23T11:00:00Z" },
+        { name: "Snapshots can be read", ok: true, detail: "40 snapshots" },
+      ],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("Problem")).toBeInTheDocument());
+    expect(screen.getByText("3 h old")).toBeInTheDocument();
+    expect(screen.getByText("failed")).toBeInTheDocument();
+    expect(screen.getByText("log")).toHaveAttribute("href", "/tasks/d1");
+
+    fireEvent.click(screen.getByText("Run full check now"));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/verify/run", {}));
+    await waitFor(() => expect(screen.getByText("Check started.")).toBeInTheDocument());
+  });
+
+  it("names the files a failed data check could not read, and loads all of them on request", async () => {
+    const check = {
+      name: "Sample of stored data verifies",
+      ok: false,
+      detail: "7 of 900 files failed to read back; first: /Applications/A.app/x: bad",
+      failureCount: 7,
+      verificationId: 42,
+      failures: [
+        { path: "/Applications/A.app/x", error: "bad" },
+        { path: "/Users/me/.npm/y", error: "invalid length" },
+      ],
+    };
+    serve(
+      connected(),
+      undefined,
+      { state: "failing", since: "2026-10-24T10:00:00Z", checks: [check] },
+      { failures: Array.from({ length: 7 }, (_, i) => ({ path: "/p/f" + i, error: "bad" })) },
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("check-failures")).toBeInTheDocument());
+    const list = screen.getByTestId("check-failures");
+    expect(list).toHaveTextContent("7 files failed");
+    expect(list).toHaveTextContent("/Users/me/.npm/y");
+    expect(screen.getByText("7 of 900 files failed to read back")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Show all 7"));
+    await waitFor(() => expect(screen.getByTestId("check-failures")).toHaveTextContent("/p/f6"));
   });
 });

@@ -1,4 +1,4 @@
-import React, { use, useState } from "react";
+import React, { useState } from "react";
 import Button from "react-bootstrap/Button";
 import { Link } from "react-router";
 import { errorMessage } from "../api";
@@ -6,8 +6,9 @@ import { formatDateTime } from "../format";
 import { loadHealth, runHealthCheck } from "../health";
 import { useLoad } from "../hooks";
 import { loadVerificationFailures } from "../verification";
-import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
-import { DataTable, DateTimeText, Loaded, PathText, StatusBadge, SwitchField } from "../ui";
+import { DataTable } from "./DataTable";
+import { Loaded } from "./Feedback";
+import { DateTimeText, PathText, StatusBadge } from "./Cells";
 
 /** The files a failed check could not read back: the first ones it kept, and all of them on request. */
 function CheckFailures({ check }) {
@@ -46,8 +47,7 @@ function CheckFailures({ check }) {
 }
 
 /** The health checks with their latest result, and a button to run the full check now. */
-export function Health() {
-  const { verifyNewData, setVerifyNewData } = use(UIPreferencesContext);
+export function BackupHealth() {
   const state = useLoad(loadHealth, [], { refreshMs: 10000 });
   const [message, setMessage] = useState("");
 
@@ -119,17 +119,10 @@ export function Health() {
                 { id: "at", header: "Last checked", cell: (c) => <DateTimeText value={c.checkedAt} /> },
               ]}
             />
-            <SwitchField
-              label="Read back the data each snapshot adds"
-              help="Right after every snapshot, reads back everything it wrote to the repository from the NAS and checks it. Quick, because most of a snapshot is data that was already stored. A failure shows on the History page and fails the health check for a day. Applies to snapshots that finish after the change."
-              checked={verifyNewData}
-              onChange={setVerifyNewData}
-              data-testid="verify-new-data"
-            />
             <p className="nx-muted small">
               Snapshot checks run every 10 minutes. The data and restore checks run once a day, early in the morning. A
               failed check stays failed until the next full check passes. Who is told about a problem is set under
-              Notifications.
+              Preferences → Notifications.
             </p>
           </div>
         );

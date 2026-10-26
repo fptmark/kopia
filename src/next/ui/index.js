@@ -15,3 +15,4 @@ export { Breadcrumbs } from "./Breadcrumbs";
 export { CliCommand } from "./CliCommand";
 export { HealthBanner } from "./HealthBanner";
 export { VerifiedCell, VerifyDialog, VerifyFailuresDialog } from "./Verification";
+export { BackupHealth } from "./BackupHealth";

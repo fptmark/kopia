@@ -12,6 +12,7 @@ import { useLoad } from "../hooks";
 import { cancelTask } from "../tasks";
 import { clock, disconnectRepo, loadRepoStatus, loadStorageUsage, repoFacts, setRepoDescription } from "../repository";
 import {
+  BackupHealth,
   CliCommand,
   ConfirmDialog,
   CountText,
@@ -222,6 +223,9 @@ export function Repository() {
                   </Field>
                 )}
                 <Field label="Connected as">{() => <span>{s.username + "@" + s.hostname}</span>}</Field>
+              </Panel>
+              <Panel title="Backup health">
+                <BackupHealth />
               </Panel>
               <DataTable
                 label="repository details"

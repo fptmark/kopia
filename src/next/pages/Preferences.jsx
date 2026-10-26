@@ -1,17 +1,13 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router";
 import { queryState } from "../hooks";
-import { Appearance } from "../preferences/Appearance";
-import { Health } from "../preferences/Health";
 import { IgnoredErrors } from "../preferences/IgnoredErrors";
 import { Notifications } from "../preferences/Notifications";
-import { Scheduling } from "../preferences/Scheduling";
+import { Settings } from "../preferences/Settings";
 import { Page, Panel, TabNav } from "../ui";
 
 const TABS = [
-  { id: "appearance", label: "Appearance", view: Appearance },
-  { id: "scheduling", label: "Scheduling", view: Scheduling },
-  { id: "health", label: "Backup health", view: Health },
+  { id: "settings", label: "Settings", view: Settings },
   { id: "notifications", label: "Notifications", view: Notifications },
   { id: "ignored", label: "Ignored errors", view: IgnoredErrors },
 ];

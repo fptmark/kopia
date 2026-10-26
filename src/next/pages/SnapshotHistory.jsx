@@ -205,14 +205,6 @@ export function SnapshotHistory() {
               </span>
             )}
             <SizeText bytes={s.summary?.size} />
-            <FailedBadge
-              summ={
-                s.summary?.numFailed
-                  ? { ...s.summary, source: source.path, userName: source.userName, host: source.host }
-                  : null
-              }
-              onOpen={setFailures}
-            />
           </span>
         );
       },
@@ -239,6 +231,19 @@ export function SnapshotHistory() {
           <span className="nx-muted">{"—"}</span>
         );
       },
+    },
+    {
+      id: "result",
+      header: () => <span title="Whether every file was backed up. Failed files can be opened for details.">Result</span>,
+      cell: (s) =>
+        s.summary?.numFailed ? (
+          <FailedBadge
+            summ={{ ...s.summary, source: source.path, userName: source.userName, host: source.host }}
+            onOpen={setFailures}
+          />
+        ) : (
+          <StatusBadge kind="ok">OK</StatusBadge>
+        ),
     },
     {
       id: "verified",
