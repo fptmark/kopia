@@ -39,6 +39,28 @@ describe("Tasks page", () => {
     axios.post.mockReset().mockResolvedValue({ data: {} });
   });
 
+  it("opens a finished snapshot in the snapshot browser and any other task on its own page", async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        history: true,
+        total: 3,
+        kinds: [],
+        tasks: [
+          task("a"),
+          task("b", { status: "FAILED" }),
+          task("c", { kind: "Maintenance", description: "Periodic maintenance" }),
+        ],
+      },
+    });
+    renderTasks();
+    await waitFor(() => expect(screen.getAllByTestId("task-started")).toHaveLength(3));
+    expect(screen.getAllByTestId("task-started").map((a) => a.getAttribute("href"))).toEqual([
+      "/snapshots/of-task/a",
+      "/tasks/b",
+      "/tasks/c",
+    ]);
+  });
+
   it("lists tasks in words, with how each ended", async () => {
     axios.get.mockResolvedValue({
       data: {
@@ -223,7 +245,7 @@ describe("Task page", () => {
     expect(screen.getByTestId("snapshot-errors")).toBeInTheDocument();
   });
 
-  it("links a snapshot task to the snapshot it made and to the history of its source", async () => {
+  it("links a snapshot task to the snapshot it made", async () => {
     serve(task("t1"), {
       errors: { errors: [], source: "/Users/me", userName: "me", host: "mac", snapshotId: "s2" },
       history: {
@@ -236,7 +258,6 @@ describe("Task page", () => {
     renderTask();
     const view = await screen.findByText("View snapshot");
     expect(view.closest("a")).toHaveAttribute("href", "/snapshots/dir/knew");
-    expect(screen.getByText("History").closest("a").getAttribute("href")).toMatch(/^\/snapshots\/single-source\?/);
   });
 
   it("has no snapshot link for a task that made no snapshot", async () => {

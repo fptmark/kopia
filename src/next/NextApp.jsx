@@ -22,6 +22,7 @@ import { SnapshotDirectory } from "./pages/SnapshotDirectory";
 import { SnapshotRestore } from "./pages/SnapshotRestore";
 import { Tasks } from "./pages/Tasks";
 import { Task } from "./pages/Task";
+import { TaskSnapshot } from "./pages/TaskSnapshot";
 
 setupApi();
 
@@ -139,6 +140,7 @@ export default function NextApp() {
             <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="tasks/:tid" element={<Task />} />
+            <Route path="snapshots/of-task/:tid" element={<TaskSnapshot />} />
             <Route path="/" element={<Navigate to="/snapshots" replace />} />
             <Route path="*" element={<div className="nx-empty">Not built yet.</div>} />
           </Routes>

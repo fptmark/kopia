@@ -29,7 +29,7 @@ import {
 } from "../ui";
 
 /** What snapshot is being browsed: when, how big, and what changed since the one before it. */
-function SnapshotFacts({ snapshot }) {
+function SnapshotFacts({ snapshot, taskId }) {
   const diff = useLoad(() => loadDiff(snapshot.previousId, snapshot.id), [snapshot.id, snapshot.previousId], {
     enabled: !!snapshot.previousId,
   });
@@ -54,6 +54,11 @@ function SnapshotFacts({ snapshot }) {
             <span className="nx-muted">Deleted:</span> {n(diff.data?.removed)}
           </span>
         </>
+      )}
+      {taskId && (
+        <Link to={"/tasks/" + taskId} data-testid="snapshot-details">
+          Details
+        </Link>
       )}
     </div>
   );
@@ -135,7 +140,7 @@ export function SnapshotDirectory() {
 
   return (
     <Page trail={browseTrail(location.state, oid, { current: true })}>
-      {location.state?.snapshot && <SnapshotFacts snapshot={location.state.snapshot} />}
+      {location.state?.snapshot && <SnapshotFacts snapshot={location.state.snapshot} taskId={task.data} />}
       {message && (
         <Notice kind="error" onClose={() => setMessage(null)}>
           {message}
@@ -152,11 +157,6 @@ export function SnapshotDirectory() {
           >
             {ticked.length ? `Restore ${ticked.length} selected` : "Restore all"}
           </Button>
-          {task.data && (
-            <Button as={Link} variant="secondary" to={"/tasks/" + task.data} data-testid="snapshot-details">
-              Details
-            </Button>
-          )}
           {!mounted && (
             <Button variant="secondary" disabled={busy} onClick={() => change(mountDirectory(oid), "Not mounted: ")}>
               Mount to browse

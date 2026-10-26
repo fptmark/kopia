@@ -4,7 +4,7 @@ import Spinner from "react-bootstrap/Spinner";
 import { Link, useParams } from "react-router";
 import { snapshotBrowse } from "../browse";
 import { useLoad } from "../hooks";
-import { historyUrl, loadHistory } from "../snapshots";
+import { loadHistory } from "../snapshots";
 import {
   cancelTask,
   loadTask,
@@ -116,11 +116,6 @@ export function Task({ taskID }) {
                   {...snapshotBrowse(source, made[madeIndex], made[madeIndex + 1]?.id)}
                 >
                   View snapshot
-                </Button>
-              )}
-              {source && (
-                <Button as={Link} variant="secondary" to={historyUrl(source)}>
-                  History
                 </Button>
               )}
               {task.status === "RUNNING" && (

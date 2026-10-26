@@ -130,7 +130,10 @@ export function Tasks() {
       header: "Started",
       accessor: (t) => t.startTime,
       cell: (t) => (
-        <Link to={"/tasks/" + t.id} data-testid="task-started">
+        <Link
+          to={(t.kind === "Snapshot" && t.status === "SUCCESS" ? "/snapshots/of-task/" : "/tasks/") + t.id}
+          data-testid="task-started"
+        >
           <DateTimeText value={t.startTime} />
         </Link>
       ),
