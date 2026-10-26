@@ -1,7 +1,7 @@
 import React, { use } from "react";
 import Form from "react-bootstrap/Form";
 import { PAGE_SIZES, UIPreferencesContext } from "../../contexts/UIPreferencesContext";
-import { Field, FormSection, SwitchField } from "../ui";
+import { Field, FormSection, SwitchField, VerifyModePicker } from "../ui";
 
 /** How the pages look, how the Mac behaves while backing up, and how much checking each snapshot gets. */
 export function Settings() {
@@ -12,12 +12,15 @@ export function Settings() {
     pageSize,
     keepAwake,
     verifyNewData,
+    verifyEachMode,
+    verifyEachPercent,
     setTheme,
     setFontSize,
     setByteStringBase,
     setPageSize,
     setKeepAwake,
     setVerifyNewData,
+    setVerifyEach,
   } = use(UIPreferencesContext);
 
   return (
@@ -101,12 +104,22 @@ export function Settings() {
       </FormSection>
       <FormSection title="Verification">
         <SwitchField
-          label="Read back the data each snapshot adds"
-          help="Right after every snapshot, reads back everything it wrote to the repository from the NAS and checks it. Quick, because most of a snapshot is data that was already stored. The result shows in the Verified column on the History page, and a failure fails the health check for a day. Applies to snapshots that finish after the change. The daily health check also samples each source's newest snapshot."
+          label="Verify every snapshot when it finishes"
+          help="Starts a Verify task right after each snapshot is saved, one at a time. The result shows in the Verified column on the History page, and a failure fails the health check for a day. Applies to snapshots that finish after the change. The daily health check also samples each source's newest snapshot."
           checked={verifyNewData}
           onChange={setVerifyNewData}
           data-testid="verify-new-data"
         />
+        {verifyNewData && (
+          <div className="ms-4" data-testid="verify-each">
+            <VerifyModePicker
+              name="verify-each"
+              mode={verifyEachMode || "new"}
+              percent={verifyEachPercent || 10}
+              onChange={(m, p) => setVerifyEach(m, Number(p))}
+            />
+          </div>
+        )}
       </FormSection>
     </>
   );

@@ -29,6 +29,8 @@ export interface UIPreferences {
   get keepAwake(): KeepAwake;
   get verifierIMessageTo(): string;
   get verifyNewData(): boolean;
+  get verifyEachMode(): string;
+  get verifyEachPercent(): number;
   setTheme: (theme: Theme) => void;
   setPageSize: (pageSize: number) => void;
   setByteStringBase: (bytesStringBase2: string) => void;
@@ -37,6 +39,7 @@ export interface UIPreferences {
   setKeepAwake: (keepAwake: string) => void;
   setVerifierIMessageTo: (to: string) => void;
   setVerifyNewData: (on: boolean) => void;
+  setVerifyEach: (mode: string, percent: number) => void;
 }
 
 interface SerializedUIPreferences {
@@ -48,6 +51,8 @@ interface SerializedUIPreferences {
   keepAwake?: KeepAwake;
   verifierIMessageTo?: string;
   verifyNewData?: boolean;
+  verifyEachMode?: string;
+  verifyEachPercent?: number;
 }
 
 export interface UIPreferenceProviderProps {
@@ -122,6 +127,11 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
   const setVerifyNewData = (input: boolean) =>
     setPreferences((oldPreferences) => {
       return { ...oldPreferences, verifyNewData: input };
+    });
+
+  const setVerifyEach = (verifyEachMode: string, verifyEachPercent: number) =>
+    setPreferences((oldPreferences) => {
+      return { ...oldPreferences, verifyEachMode, verifyEachPercent };
     });
 
   const setVerifierIMessageTo = (input: string) =>
@@ -203,6 +213,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
     setKeepAwake,
     setVerifierIMessageTo,
     setVerifyNewData,
+    setVerifyEach,
   } as UIPreferences;
 
   return <UIPreferencesContext value={providedValue}>{props.children}</UIPreferencesContext>;

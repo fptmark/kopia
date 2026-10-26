@@ -127,6 +127,38 @@ const MODES = [
   },
 ];
 
+/** The choice of what to read back: the data a snapshot added, a sample, or every file. */
+export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode" }) {
+  return MODES.map((m) => (
+    <div key={m.id} className="mb-2">
+      <Form.Check
+        type="radio"
+        id={name + "-" + m.id}
+        name={name}
+        label={m.label}
+        checked={mode === m.id}
+        onChange={() => onChange(m.id, percent)}
+      />
+      <div className="nx-help ms-4">{m.help}</div>
+      {m.id === "sample" && mode === "sample" && (
+        <div className="ms-4 mt-1 d-flex align-items-center gap-2">
+          <Form.Control
+            size="sm"
+            type="number"
+            min={1}
+            max={99}
+            style={{ width: "6rem" }}
+            aria-label="Percent of files"
+            value={percent}
+            onChange={(e) => onChange(mode, e.target.value)}
+          />
+          <span>% of the files</span>
+        </div>
+      )}
+    </div>
+  ));
+}
+
 /** Asks what to read back for the selected snapshots. onStart gets (mode, percent). */
 export function VerifyDialog({ count, busy, onStart, onCancel }) {
   const [mode, setMode] = useState("new");
@@ -143,34 +175,14 @@ export function VerifyDialog({ count, busy, onStart, onCancel }) {
       onConfirm={() => onStart(mode, mode === "sample" ? Number(percent) : 100)}
       data-testid="verify-dialog"
     >
-      {MODES.map((m) => (
-        <div key={m.id} className="mb-2">
-          <Form.Check
-            type="radio"
-            id={"verify-" + m.id}
-            name="verify-mode"
-            label={m.label}
-            checked={mode === m.id}
-            onChange={() => setMode(m.id)}
-          />
-          <div className="nx-help ms-4">{m.help}</div>
-          {m.id === "sample" && mode === "sample" && (
-            <div className="ms-4 mt-1 d-flex align-items-center gap-2">
-              <Form.Control
-                size="sm"
-                type="number"
-                min={1}
-                max={99}
-                style={{ width: "6rem" }}
-                aria-label="Percent of files"
-                value={percent}
-                onChange={(e) => setPercent(e.target.value)}
-              />
-              <span>% of the files</span>
-            </div>
-          )}
-        </div>
-      ))}
+      <VerifyModePicker
+        mode={mode}
+        percent={percent}
+        onChange={(m, p) => {
+          setMode(m);
+          setPercent(p);
+        }}
+      />
       <p className="nx-muted small mb-0">
         Each snapshot runs as a Verify task, one at a time, so they do not compete for the NAS. The result stays on the
         snapshot; failed files are listed by name.

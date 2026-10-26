@@ -92,6 +92,13 @@ describe("Preferences page", () => {
     expect(setVerifyNewData).toHaveBeenCalledWith(true);
   });
 
+  it("chooses what to verify after each snapshot", () => {
+    const setVerifyEach = vi.fn();
+    renderPrefs("", { verifyNewData: true, verifyEachMode: "new", setVerifyEach });
+    fireEvent.click(screen.getByLabelText("A sample of the files"));
+    expect(setVerifyEach).toHaveBeenCalledWith("sample", 10);
+  });
+
   it("lists ignored errors and removes one", async () => {
     axios.get.mockResolvedValue({
       data: {
