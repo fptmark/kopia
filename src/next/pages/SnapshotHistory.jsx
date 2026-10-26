@@ -358,17 +358,16 @@ export function SnapshotHistory() {
                   Delete
                 </Button>
               </Toolbar.Group>
-              {(d.unfilteredCount !== d.uniqueCount || showAll) && (
-                <Toolbar.Group center>
-                  <Form.Check
-                    type="checkbox"
-                    id="show-identical"
-                    label={`Show duplicate snapshots (${d.unfilteredCount - d.uniqueCount})`}
-                    checked={showAll}
-                    onChange={(e) => setShowAll(e.target.checked)}
-                  />
-                </Toolbar.Group>
-              )}
+              <Toolbar.Group center>
+                <Form.Check
+                  type="checkbox"
+                  id="show-identical"
+                  label={`Show duplicate snapshots (${d.unfilteredCount - d.uniqueCount})`}
+                  checked={showAll}
+                  disabled={d.unfilteredCount === d.uniqueCount && !showAll}
+                  onChange={(e) => setShowAll(e.target.checked)}
+                />
+              </Toolbar.Group>
             </Toolbar>
 
             <DataTable
