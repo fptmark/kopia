@@ -4,6 +4,7 @@ import React, { use, useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router";
 import { api, setupApi } from "./api";
 import { NextContext } from "./context";
+import { TaskStatus } from "./tasks";
 import { HealthBanner } from "./ui";
 import { UIPreferenceProvider, UIPreferencesContext } from "../contexts/UIPreferencesContext";
 import { Spec } from "./pages/Spec";
@@ -57,7 +58,7 @@ function Shell({ children }) {
   const refreshTasks = useCallback(() => {
     api
       .get("/api/v1/tasks-summary")
-      .then((r) => setRunning(r.data["RUNNING"] || 0))
+      .then((r) => setRunning(r.data[TaskStatus.RUNNING] || 0))
       .catch(() => {});
   }, []);
 

@@ -51,6 +51,20 @@ export function cancelTask(id) {
   return api.post("/api/v1/tasks/" + encodeURIComponent(id) + "/cancel", {});
 }
 
+/** The states a task is in, as the server names them: the only place these words are written in the UI. */
+export const TaskStatus = Object.freeze({
+  RUNNING: "RUNNING",
+  CANCELING: "CANCELING",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+  CANCELED: "CANCELED",
+});
+
+export const isRunning = (t) => t.status === TaskStatus.RUNNING;
+export const isSuccess = (t) => t.status === TaskStatus.SUCCESS;
+/** A failed task that says why. */
+export const failedWithMessage = (t) => t.status === TaskStatus.FAILED && !!t.errorMessage;
+
 /** How long a task ran (or has been running), in words. */
 export function taskDuration(t, now = Date.now()) {
   const end = t.endTime ? new Date(t.endTime).getTime() : now;
@@ -61,17 +75,17 @@ export function taskDuration(t, now = Date.now()) {
 export function taskStatus(t) {
   const d = taskDuration(t);
   switch (t.status) {
-    case "RUNNING":
+    case TaskStatus.RUNNING:
       return { kind: "running", text: "Running for " + d };
-    case "CANCELING":
+    case TaskStatus.CANCELING:
       return { kind: "warning", text: "Canceling" };
-    case "SUCCESS":
+    case TaskStatus.SUCCESS:
       return t.failedFiles > 0
         ? { kind: "warning", text: "Finished in " + d }
         : { kind: "ok", text: "Finished in " + d };
-    case "FAILED":
+    case TaskStatus.FAILED:
       return { kind: "error", text: "Failed after " + d };
-    case "CANCELED":
+    case TaskStatus.CANCELED:
       return { kind: "neutral", text: "Canceled after " + d };
     default:
       return { kind: "neutral", text: t.status };

@@ -126,6 +126,12 @@ describe("SnapshotDirectory", () => {
     expect(screen.queryByTestId("snapshot-details")).not.toBeInTheDocument();
   });
 
+  it("asks for the folder with its source, so ignored failures are not counted", async () => {
+    renderBrowse({ snapshot: { id: "s2", source: { path: "/Users/me" }, startTime: "2026-10-26T14:00:00Z" } });
+    await waitFor(() => expect(screen.getByText("Docs/")).toBeInTheDocument());
+    expect(axios.get).toHaveBeenCalledWith("/api/v1/objects/kroot", { params: { source: "/Users/me" } });
+  });
+
   it("lists folders first, links folders to the browser and files to a download", async () => {
     renderBrowse();
     await waitFor(() => expect(screen.getByText("Docs/")).toBeInTheDocument());

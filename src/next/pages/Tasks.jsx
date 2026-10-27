@@ -7,6 +7,9 @@ import { errorMessage } from "../api";
 import { useDebounced, useLoad } from "../hooks";
 import {
   cancelTask,
+  failedWithMessage,
+  isRunning,
+  isSuccess,
   loadTaskErrors,
   loadTasks,
   shortTaskError,
@@ -31,7 +34,7 @@ import {
 /** The status of a task and, for one that failed or skipped files, the button that explains it. */
 function StatusCell({ task, onDetails, onCancel }) {
   const s = taskStatus(task);
-  const hasError = task.status === "FAILED" && task.errorMessage;
+  const hasError = failedWithMessage(task);
   const skipped = task.failedFiles > 0;
 
   return (
@@ -53,7 +56,7 @@ function StatusCell({ task, onDetails, onCancel }) {
           {hasError ? "Why" : `${formatCount(task.failedFiles)} failed`}
         </Button>
       )}
-      {task.status === "RUNNING" && (
+      {isRunning(task) && (
         <Button size="sm" variant="secondary" onClick={() => onCancel(task)}>
           Stop
         </Button>
@@ -96,7 +99,7 @@ export function Tasks() {
   };
 
   const details = (t) => {
-    if (t.status === "FAILED" && t.errorMessage) {
+    if (failedWithMessage(t)) {
       setDialog({ error: { taskId: t.id, title: taskDescription(t), message: t.errorMessage } });
       return;
     }
@@ -132,7 +135,7 @@ export function Tasks() {
       accessor: (t) => t.startTime,
       cell: (t) => (
         <Link
-          to={(t.kind === "Snapshot" && t.status === "SUCCESS" ? "/snapshots/of-task/" : "/tasks/") + t.id}
+          to={(t.kind === "Snapshot" && isSuccess(t) ? "/snapshots/of-task/" : "/tasks/") + t.id}
           data-testid="task-started"
         >
           <DateTimeText value={t.startTime} />
@@ -153,7 +156,7 @@ export function Tasks() {
       cell: (t) => (
         <span title={t.description}>
           {taskDescription(t)}
-          {t.status === "FAILED" && t.errorMessage && (
+          {failedWithMessage(t) && (
             <span className="text-danger" data-testid="task-error-inline">
               {" "}
               · {shortTaskError(t.errorMessage)}

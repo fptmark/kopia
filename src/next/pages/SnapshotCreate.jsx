@@ -9,7 +9,7 @@ import { api, errorMessage } from "../api";
 import { useDebounced } from "../hooks";
 import { PolicyFields } from "../policy/PolicyFields";
 import { usePolicy } from "../policy/usePolicy";
-import { cancelTask, loadTask } from "../tasks";
+import { cancelTask, isRunning, loadTask } from "../tasks";
 import { CliCommand, Field, Notice, Page, Panel, SizeText, Stat, Stats } from "../ui";
 
 /** The result of an estimate: what a snapshot of the folder would hold, with the counts of what is left out. */
@@ -43,7 +43,7 @@ function Estimate({ taskId }) {
     return <Spinner animation="border" size="sm" />;
   }
   const c = (k) => task.counters[k]?.value ?? 0;
-  const running = task.status === "RUNNING";
+  const running = isRunning(task);
 
   return (
     <Panel

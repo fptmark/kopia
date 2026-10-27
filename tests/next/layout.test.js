@@ -49,4 +49,9 @@ describe("layout stays in the shared components", () => {
       );
     expect(bad).toEqual([]);
   });
+  it("names task states through TaskStatus, not as quoted words", () => {
+    expect(
+      scan(/["'](?:RUNNING|CANCELING|SUCCESS|FAILED|CANCELED)["']/g).filter((x) => !x.startsWith("tasks.js")),
+    ).toEqual([]);
+  });
 });

@@ -68,7 +68,8 @@ function SnapshotFacts({ snapshot, taskId }) {
 export function SnapshotDirectory() {
   const { oid } = useParams();
   const location = useLocation();
-  const dir = useLoad(() => loadDirectory(oid), [oid]);
+  const source = location.state?.snapshot?.source;
+  const dir = useLoad(() => loadDirectory(oid, source?.path), [oid, source?.path]);
   const mount = useLoad(() => loadMount(oid), [oid]);
   const snapshotId = location.state?.snapshot?.id;
   const task = useLoad(() => loadSnapshotTask(snapshotId).catch(() => ""), [snapshotId], { enabled: !!snapshotId });
@@ -116,7 +117,14 @@ export function SnapshotDirectory() {
       cell: (x) => (
         <>
           <SizeText bytes={entrySize(x)} />
-          <FailedBadge summ={x.summ?.numFailed ? x.summ : null} onOpen={setFailures} />
+          <FailedBadge
+            summ={
+              x.summ?.numFailed
+                ? { ...x.summ, source: source?.path, userName: source?.userName, host: source?.host }
+                : null
+            }
+            onOpen={setFailures}
+          />
         </>
       ),
     },

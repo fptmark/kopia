@@ -8,12 +8,14 @@ import { useLoad } from "../hooks";
 import { loadHistory } from "../snapshots";
 import {
   cancelTask,
+  isRunning,
   loadTask,
   loadTaskErrors,
   loadTaskLogs,
   shortTaskError,
   taskDuration,
   taskErrorHint,
+  TaskStatus,
 } from "../tasks";
 import {
   DataTable,
@@ -34,9 +36,9 @@ const LEVEL_ORDER = { error: 30, notice: 10, warning: 5 };
 function Summary({ task }) {
   const d = taskDuration(task);
   switch (task.status) {
-    case "SUCCESS":
+    case TaskStatus.SUCCESS:
       return <Notice kind="success">Task succeeded after {d}.</Notice>;
-    case "FAILED":
+    case TaskStatus.FAILED:
       return (
         <Notice kind="error" data-testid="task-error" title="Error:">
           {shortTaskError(task.errorMessage)}
@@ -49,9 +51,9 @@ function Summary({ task }) {
           </details>
         </Notice>
       );
-    case "CANCELED":
+    case TaskStatus.CANCELED:
       return <Notice kind="warning">Task canceled.</Notice>;
-    case "CANCELING":
+    case TaskStatus.CANCELING:
       return (
         <Notice kind="warning">
           <Spinner animation="border" size="sm" /> Canceling {d}: {task.progressInfo}.
@@ -120,7 +122,7 @@ export function Task({ taskID }) {
                   View snapshot
                 </Button>
               )}
-              {task.status === "RUNNING" && (
+              {isRunning(task) && (
                 <Button variant="danger" onClick={() => cancelTask(task.id)}>
                   Stop
                 </Button>

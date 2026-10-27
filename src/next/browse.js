@@ -3,7 +3,9 @@ import { formatDateTime } from "./format";
 import { historyUrl } from "./snapshots";
 import { objectLink } from "../utils/formatutils";
 
-export const loadDirectory = (oid) => api.get("/api/v1/objects/" + oid).then((r) => r.data);
+/** A folder of a snapshot; with the path of its source the failures that ignore rules cover are left out of its counts. */
+export const loadDirectory = (oid, source) =>
+  api.get("/api/v1/objects/" + oid, source ? { params: { source } } : undefined).then((r) => r.data);
 export const loadMount = (oid) =>
   api.get("/api/v1/mounts/" + oid).then(
     (r) => r.data,
