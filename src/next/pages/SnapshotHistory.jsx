@@ -230,15 +230,15 @@ export function SnapshotHistory() {
     {
       id: "result",
       header: () => <span title="Click a failure for the files">Result</span>,
-      cell: (s) =>
-        s.summary?.numFailed ? (
+      cell: (s) => (
+        <span className="nx-inline">
+          {s.summary?.numFailed ? null : <StatusBadge kind="ok">OK</StatusBadge>}
           <FailedBadge
             summ={{ ...s.summary, source: source.path, userName: source.userName, host: source.host }}
             onOpen={setFailures}
           />
-        ) : (
-          <StatusBadge kind="ok">OK</StatusBadge>
-        ),
+        </span>
+      ),
     },
     {
       id: "verified",

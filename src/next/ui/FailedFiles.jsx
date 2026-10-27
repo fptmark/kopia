@@ -342,9 +342,12 @@ export function FailedFilesDialog({ summ, onClose }) {
   );
 }
 
-/** A badge with the number of failed files that opens the list. summ as for FailedFilesDialog. */
+/**
+ * A badge with the number of failed files that opens the list, or, when every failure is covered by an ignore
+ * rule, the number ignored: ignored failures stay visible, only quieter. summ as for FailedFilesDialog.
+ */
 export function FailedBadge({ summ, onOpen }) {
-  if (!summ || !summ.numFailed) {
+  if (!summ || !(summ.numFailed || summ.ignored)) {
     return null;
   }
   const lines = (summ.errors || []).slice(0, 5).map((e) => e.path + ": " + e.error);
@@ -356,7 +359,11 @@ export function FailedBadge({ summ, onOpen }) {
       data-testid="show-snapshot-errors"
       onClick={() => onOpen(summ)}
     >
-      <StatusBadge kind="warning">{summ.numFailed} failed</StatusBadge>
+      {summ.numFailed ? (
+        <StatusBadge kind="warning">{summ.numFailed} failed</StatusBadge>
+      ) : (
+        <StatusBadge kind="neutral">{summ.ignored} ignored</StatusBadge>
+      )}
     </button>
   );
 }

@@ -45,7 +45,7 @@ export function ownerName(source) {
 /** The failed-files summary of a source's newest snapshot, with what the dialog needs to act on it. */
 export function failedSummary(row) {
   const summ = row.lastSnapshot?.rootEntry?.summ;
-  if (!summ || !summ.numFailed) {
+  if (!summ || !(summ.numFailed || summ.ignored)) {
     return null;
   }
   return { ...summ, source: row.source.path, userName: row.source.userName, host: row.source.host };

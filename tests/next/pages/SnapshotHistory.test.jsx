@@ -216,6 +216,29 @@ describe("SnapshotHistory", () => {
     expect(screen.queryByLabelText(/Show duplicate snapshots/)).not.toBeInTheDocument();
   });
 
+  it("keeps failures that an ignore rule covers visible, only quieter", async () => {
+    const ignored = snap("s3", "2026-10-23T17:22:07Z", 230e9, {
+      summary: {
+        size: 230e9,
+        numFailed: 0,
+        ignored: 2,
+        errors: [
+          { path: "Library/Duet/a", error: "operation not permitted", ignored: true },
+          { path: "Library/Duet/b", error: "operation not permitted", ignored: true },
+        ],
+      },
+    });
+    const failing = snap("s2", "2026-10-23T14:01:53Z", 204.8e9, { summary: { size: 1, numFailed: 3 } });
+    serve({ list: history([ignored, failing]) });
+    renderPage();
+    await waitFor(() => expect(screen.getAllByTestId("show-snapshot-errors")).toHaveLength(2));
+    const [quiet, loud] = screen.getAllByTestId("show-snapshot-errors");
+    expect(quiet).toHaveTextContent("2 ignored");
+    expect(loud).toHaveTextContent("3 failed");
+    fireEvent.click(quiet);
+    expect(screen.getByText("2 errors ignored")).toBeInTheDocument();
+  });
+
   it("lets an empty folder be removed", async () => {
     serve({ list: history([]) });
     renderPage();
