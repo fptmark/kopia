@@ -234,6 +234,7 @@ describe("SnapshotHistory", () => {
     await waitFor(() => expect(screen.getAllByTestId("show-snapshot-errors")).toHaveLength(2));
     const [quiet, loud] = screen.getAllByTestId("show-snapshot-errors");
     expect(quiet).toHaveTextContent("2 ignored");
+    expect(quiet.parentElement).not.toHaveTextContent("OK");
     expect(loud).toHaveTextContent("3 failed");
     fireEvent.click(quiet);
     expect(screen.getByText("2 errors ignored")).toBeInTheDocument();
