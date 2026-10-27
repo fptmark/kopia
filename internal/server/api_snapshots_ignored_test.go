@@ -10,6 +10,8 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/serverapi"
+	"github.com/kopia/kopia/snapshot"
+	"github.com/kopia/kopia/snapshot/policy"
 )
 
 func TestMarkIgnoredFailuresTakesCoveredFailuresOutOfTheCount(t *testing.T) {
@@ -66,4 +68,28 @@ func TestWithIgnoredFailuresReturnsTheSameSummaryWhenNothingIsCovered(t *testing
 	require.Equal(t, 1, got.FatalErrorCount)
 	require.Zero(t, got.IgnoredByRule)
 	require.Nil(t, withIgnoredFailures(rules, "/Users/me", nil))
+}
+
+func TestSourceOverdueUsesTheHealthCheckLimit(t *testing.T) {
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	status := func(ago time.Duration, p policy.SchedulingPolicy, state string) *serverapi.SourceStatus {
+		return &serverapi.SourceStatus{
+			Status:           state,
+			SchedulingPolicy: p,
+			LastSnapshot:     &snapshot.Manifest{StartTime: fs.UTCTimestampFromTime(now.Add(-ago))},
+		}
+	}
+
+	hourly := policy.SchedulingPolicy{IntervalSeconds: 3600}
+	require.False(t, sourceOverdue(status(2*time.Hour, hourly, "IDLE"), now))
+	require.True(t, sourceOverdue(status(3*time.Hour+time.Minute, hourly, "IDLE"), now))
+	require.False(t, sourceOverdue(status(30*time.Hour, hourly, "PAUSED"), now))
+
+	// the schedules the old copy of this rule in the UI did not know about
+	daily := policy.SchedulingPolicy{TimesOfDay: []policy.TimeOfDay{{Hour: 3}}}
+	require.False(t, sourceOverdue(status(25*time.Hour, daily, "IDLE"), now))
+	require.True(t, sourceOverdue(status(27*time.Hour, daily, "IDLE"), now))
+	require.False(t, sourceOverdue(status(7*24*time.Hour, policy.SchedulingPolicy{Manual: true}, "IDLE"), now))
+
+	require.False(t, sourceOverdue(&serverapi.SourceStatus{SchedulingPolicy: hourly}, now))
 }

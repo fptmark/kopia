@@ -334,19 +334,19 @@ func withIgnoredFailures(rules *ignoreerr.Store, source string, sum *fs.Director
 		return sum
 	}
 
+	fails := make([]ignoreerr.Failure, len(sum.FailedEntries))
+	for i, e := range sum.FailedEntries {
+		fails[i] = ignoreerr.Failure{Path: e.EntryPath, Error: e.Error}
+	}
+
+	covered, n := rules.Covered(source, fails)
+
 	out := *sum
 	out.FailedEntries = make([]*fs.EntryWithError, len(sum.FailedEntries))
 
-	n := 0
-
 	for i, e := range sum.FailedEntries {
 		c := *e
-		c.Ignored = rules.Ignored(source, e.EntryPath, e.Error)
-
-		if c.Ignored {
-			n++
-		}
-
+		c.Ignored = covered[i]
 		out.FailedEntries[i] = &c
 	}
 

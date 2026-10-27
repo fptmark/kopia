@@ -277,15 +277,25 @@ func (s *Store) Ignored(source, p, msg string) bool {
 	return false
 }
 
-// CountIgnored says how many of the failures are hidden.
-func (s *Store) CountIgnored(source string, fs []Failure) int {
+// Covered says, for each failure, whether a rule hides it, and how many are hidden. It is the one place that
+// decides what counts as ignored, for every view and check that reports failed files.
+func (s *Store) Covered(source string, fs []Failure) ([]bool, int) {
+	out := make([]bool, len(fs))
 	n := 0
 
-	for _, f := range fs {
+	for i, f := range fs {
 		if s.Ignored(source, f.Path, f.Error) {
+			out[i] = true
 			n++
 		}
 	}
+
+	return out, n
+}
+
+// CountIgnored says how many of the failures are hidden.
+func (s *Store) CountIgnored(source string, fs []Failure) int {
+	_, n := s.Covered(source, fs)
 
 	return n
 }

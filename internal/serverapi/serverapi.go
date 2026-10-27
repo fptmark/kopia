@@ -73,6 +73,9 @@ type SourceStatus struct {
 	NextSnapshotTime *time.Time              `json:"nextSnapshotTime,omitempty"`
 	UploadCounters   *upload.Counters        `json:"upload,omitempty"`
 	CurrentTask      string                  `json:"currentTask,omitempty"`
+	// Overdue is set when the newest snapshot is older than the source's schedule allows (the limit the backup
+	// health check uses); paused sources are never overdue.
+	Overdue bool `json:"overdue,omitempty"`
 }
 
 // PolicyListEntry describes single policy.

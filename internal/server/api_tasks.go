@@ -117,13 +117,12 @@ func hideIgnoredFailures(rc requestContext, t *uitask.Info) {
 		return
 	}
 
-	n := 0
-
-	for _, e := range errs {
-		if srv.ignored.Ignored(sourcePath(src), e.Path, e.Error) {
-			n++
-		}
+	fails := make([]ignoreerr.Failure, len(errs))
+	for i, e := range errs {
+		fails[i] = ignoreerr.Failure{Path: e.Path, Error: e.Error}
 	}
+
+	n := srv.ignored.CountIgnored(sourcePath(src), fails)
 
 	n = min(n, t.FailedFiles)
 	t.FailedFiles -= n

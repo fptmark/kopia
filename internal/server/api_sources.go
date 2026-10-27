@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"sort"
+	"time"
 
 	"github.com/pkg/errors"
 
+	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/ospath"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/repo"
@@ -28,6 +30,7 @@ func handleSourcesList(_ context.Context, rc requestContext) (any, *apiError) {
 	for src, v := range rc.srv.snapshotAllSourceManagers() {
 		if sourceMatchesURLFilter(src, rc.req.URL.Query()) {
 			st := v.Status()
+			st.Overdue = sourceOverdue(st, clock.Now())
 			markSourceIgnoredFailures(rc, st)
 			resp.Sources = append(resp.Sources, st)
 		}
@@ -112,4 +115,14 @@ func markSourceIgnoredFailures(rc requestContext, st *serverapi.SourceStatus) {
 	re.DirSummary = sum
 	m.RootEntry = &re
 	st.LastSnapshot = &m
+}
+
+// sourceOverdue says whether the newest snapshot of the source is older than its schedule allows. It uses the
+// same limit as the backup health check, so the two always agree.
+func sourceOverdue(st *serverapi.SourceStatus, now time.Time) bool {
+	if st.Status == "PAUSED" || st.LastSnapshot == nil {
+		return false
+	}
+
+	return now.Sub(st.LastSnapshot.StartTime.ToTime()) > freshnessLimit(st.SchedulingPolicy)
 }
