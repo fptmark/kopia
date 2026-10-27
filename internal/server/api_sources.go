@@ -27,7 +27,9 @@ func handleSourcesList(_ context.Context, rc requestContext) (any, *apiError) {
 
 	for src, v := range rc.srv.snapshotAllSourceManagers() {
 		if sourceMatchesURLFilter(src, rc.req.URL.Query()) {
-			resp.Sources = append(resp.Sources, v.Status())
+			st := v.Status()
+			markSourceIgnoredFailures(rc, st)
+			resp.Sources = append(resp.Sources, st)
 		}
 	}
 
@@ -90,4 +92,24 @@ func handleSourcesCreate(ctx context.Context, rc requestContext) (any, *apiError
 	}
 
 	return resp, nil
+}
+
+// markSourceIgnoredFailures applies the ignore rules to the failed files of the source's newest snapshot, on a
+// copy, as the snapshot list does.
+func markSourceIgnoredFailures(rc requestContext, st *serverapi.SourceStatus) {
+	srv, ok := rc.srv.(*Server)
+	if !ok || st.LastSnapshot == nil || st.LastSnapshot.RootEntry == nil {
+		return
+	}
+
+	sum := withIgnoredFailures(srv.ignored, st.Source.Path, st.LastSnapshot.RootEntry.DirSummary)
+	if sum == st.LastSnapshot.RootEntry.DirSummary {
+		return
+	}
+
+	m := *st.LastSnapshot
+	re := *m.RootEntry
+	re.DirSummary = sum
+	m.RootEntry = &re
+	st.LastSnapshot = &m
 }

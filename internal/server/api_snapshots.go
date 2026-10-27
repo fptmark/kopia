@@ -7,6 +7,8 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/manifest"
@@ -41,6 +43,10 @@ func handleListSnapshots(ctx context.Context, rc requestContext) (any, *apiError
 
 	for _, m := range manifests {
 		resp.Snapshots = append(resp.Snapshots, convertSnapshotManifest(m))
+	}
+
+	if srv, ok := rc.srv.(*Server); ok {
+		markIgnoredFailures(srv.ignored, si.Path, resp.Snapshots)
 	}
 
 	resp.UnfilteredCount = len(resp.Snapshots)
@@ -310,4 +316,42 @@ func convertSnapshotManifest(m *snapshot.Manifest) *serverapi.Snapshot {
 	}
 
 	return e
+}
+
+// markIgnoredFailures flags the failed files of each snapshot that an ignore rule covers and takes them out of
+// the failed count, so a covered failure no longer shows as one. The snapshot records themselves are untouched:
+// the summaries are copied.
+func markIgnoredFailures(rules *ignoreerr.Store, source string, snaps []*serverapi.Snapshot) {
+	for _, snap := range snaps {
+		snap.Summary = withIgnoredFailures(rules, source, snap.Summary)
+	}
+}
+
+// withIgnoredFailures returns a copy of the summary with the failures that ignore rules cover flagged and taken
+// out of the failed count; the summary itself when there is nothing to change.
+func withIgnoredFailures(rules *ignoreerr.Store, source string, sum *fs.DirectorySummary) *fs.DirectorySummary {
+	if rules == nil || sum == nil || len(sum.FailedEntries) == 0 || len(rules.Rules()) == 0 {
+		return sum
+	}
+
+	out := *sum
+	out.FailedEntries = make([]*fs.EntryWithError, len(sum.FailedEntries))
+
+	n := 0
+
+	for i, e := range sum.FailedEntries {
+		c := *e
+		c.Ignored = rules.Ignored(source, e.EntryPath, e.Error)
+
+		if c.Ignored {
+			n++
+		}
+
+		out.FailedEntries[i] = &c
+	}
+
+	out.FatalErrorCount = max(0, out.FatalErrorCount-n)
+	out.IgnoredByRule = n
+
+	return &out
 }

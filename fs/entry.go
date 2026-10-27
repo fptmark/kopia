@@ -176,6 +176,8 @@ const MaxFailedEntriesPerDirectorySummary = 1000
 type EntryWithError struct {
 	EntryPath string `json:"path"`
 	Error     string `json:"error"`
+	// Ignored is set only in API answers: an ignore rule covers this failure.
+	Ignored bool `json:"ignored,omitempty"`
 }
 
 // DirectorySummary represents summary information about a directory.
@@ -190,6 +192,8 @@ type DirectorySummary struct {
 	// number of failed files
 	FatalErrorCount   int `json:"numFailed"`
 	IgnoredErrorCount int `json:"numIgnoredErrors,omitempty"`
+	// IgnoredByRule is set only in API answers: how many failures ignore rules took out of FatalErrorCount.
+	IgnoredByRule int `json:"ignored,omitempty"`
 
 	// first 10 failed entries
 	FailedEntries []*EntryWithError `json:"errors,omitempty"`
