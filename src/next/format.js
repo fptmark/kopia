@@ -123,6 +123,17 @@ export function formatSizeChange(n, base2 = false) {
 }
 
 /** Plural by count: plural(1, "file") is "1 file", plural(3, "file") is "3 files". */
+/** Whether the text contains the search words typed in a filter box (ignoring case and surrounding spaces). */
+export function includesText(text, query) {
+  const needle = (query ?? "").trim().toLowerCase();
+  return !needle || String(text).toLowerCase().includes(needle);
+}
+
+/** Copies text to the clipboard; a browser that refuses is not an error worth showing. */
+export function copyText(text) {
+  return navigator.clipboard?.writeText(text).catch(() => {});
+}
+
 /** A whole count with thousands separators, the same everywhere. */
 export function formatCount(n) {
   return Number(n).toLocaleString("en-US");

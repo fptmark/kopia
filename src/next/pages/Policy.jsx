@@ -5,6 +5,7 @@ import { PolicyTypeName } from "../../utils/policyutil";
 import { errorMessage } from "../api";
 import { PolicyFields } from "../policy/PolicyFields";
 import { usePolicy } from "../policy/usePolicy";
+import { sourceString } from "../snapshots";
 import { CliCommand, ConfirmDialog, Loading, Notice, Page } from "../ui";
 
 function targetFromSearch(search) {
@@ -88,7 +89,7 @@ export function Policy() {
           <PolicyFields target={target} policyState={state} />
         </>
       )}
-      <CliCommand command={`policy set "${target.userName}@${target.host}:${target.path}"`} />
+      <CliCommand command={`policy set "${sourceString(target)}"`} />
 
       <ConfirmDialog
         show={confirmDelete}

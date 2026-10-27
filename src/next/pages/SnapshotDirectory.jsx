@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { copyText } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { Link, useLocation, useParams } from "react-router";
@@ -86,7 +87,7 @@ export function SnapshotDirectory() {
       .finally(() => setBusy(false));
   };
 
-  const copy = () => navigator.clipboard?.writeText(mount.data.path).catch(() => {});
+  const copy = () => copyText(mount.data.path);
 
   const columns = [
     {

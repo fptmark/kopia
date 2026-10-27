@@ -1,9 +1,4 @@
-import { faBan, faCheck, faExclamationCircle, faXmark } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import axios from "axios";
-import React from "react";
-import Spinner from "react-bootstrap/Spinner";
-import { formatDuration } from "./formatutils";
 
 export function cancelTask(tid) {
   axios
@@ -62,56 +57,5 @@ export function taskDescription(task) {
       return d.replace(/^Backup health check \((.+)\)$/, "Backup health check ($1)");
     default:
       return d;
-  }
-}
-
-/**
- * The status of a task as an icon and text. wrapIcon lets the caller make the icon itself interactive; the icon of a
- * failed task, or of a snapshot that skipped files, is the way to its details.
- */
-export function taskStatusSymbol(task, wrapIcon = (icon) => icon) {
-  const st = task.status;
-  const dur = formatDuration(task.startTime, task.endTime, true);
-
-  switch (st) {
-    case "RUNNING":
-      return (
-        <>
-          <Spinner animation="border" variant="primary" size="sm" /> Running for {dur}
-          <button className="btn btn-sm btn-link" type="button" onClick={() => cancelTask(task.id)}>
-            <FontAwesomeIcon color="red" size="lg" title="Cancel task" icon={faXmark} />
-          </button>
-        </>
-      );
-    case "SUCCESS":
-      if (task.failedFiles > 0) {
-        return (
-          <span>
-            {wrapIcon(<FontAwesomeIcon icon={faExclamationCircle} color="#d98e04" />)} Finished in {dur}
-          </span>
-        );
-      }
-      return (
-        <span>
-          <FontAwesomeIcon icon={faCheck} color="green" /> Finished in {dur}
-        </span>
-      );
-
-    case "FAILED":
-      return (
-        <span>
-          {wrapIcon(<FontAwesomeIcon icon={faExclamationCircle} color="red" />)} Failed after {dur}
-        </span>
-      );
-
-    case "CANCELED":
-      return (
-        <span>
-          <FontAwesomeIcon icon={faBan} /> Canceled after {dur}
-        </span>
-      );
-
-    default:
-      return st;
   }
 }

@@ -1,4 +1,5 @@
 // Reading and changing a policy as plain data, by dotted path ("retention.keepLatest").
+import { ownerName } from "../snapshots";
 
 export function getPath(obj, path) {
   return path.split(".").reduce((o, k) => (o === undefined || o === null ? undefined : o[k]), obj);
@@ -133,7 +134,7 @@ export function definedBy(def, target) {
     return "host " + def.host;
   }
   if (!def.path) {
-    return "user " + def.userName + "@" + def.host;
+    return "user " + ownerName(def);
   }
   return def.path;
 }

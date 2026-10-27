@@ -8,6 +8,7 @@ import {
   setSummaryDateFormat,
   formatSizeChange,
   formatSpan,
+  includesText,
   plural,
 } from "../../src/next/format";
 
@@ -69,5 +70,14 @@ describe("format", () => {
     expect(baseName("Projects/a/node_modules")).toBe("node_modules");
     expect(baseName("Projects/a/")).toBe("a");
     expect(baseName("x")).toBe("x");
+  });
+});
+
+describe("includesText", () => {
+  it("matches ignoring case and surrounding spaces, and an empty search matches everything", () => {
+    expect(includesText("Library/Accounts", "  accounts ")).toBe(true);
+    expect(includesText("Library/Accounts", "docs")).toBe(false);
+    expect(includesText("anything", "")).toBe(true);
+    expect(includesText("anything", undefined)).toBe(true);
   });
 });

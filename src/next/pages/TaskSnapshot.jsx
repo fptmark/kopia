@@ -1,8 +1,7 @@
 import React from "react";
 import { Navigate, useParams } from "react-router";
-import { snapshotBrowse } from "../browse";
+import { loadSnapshotBrowse } from "../browse";
 import { useLoad } from "../hooks";
-import { loadHistory } from "../snapshots";
 import { loadTaskErrors } from "../tasks";
 
 /**
@@ -16,12 +15,7 @@ export function TaskSnapshot() {
     if (!t.snapshotId || !t.source) {
       return null;
     }
-    const source = { host: t.host, userName: t.userName, path: t.source };
-    const list = [...((await loadHistory(source, true)).snapshots ?? [])].sort(
-      (a, b) => new Date(b.startTime) - new Date(a.startTime),
-    );
-    const i = list.findIndex((s) => s.id === t.snapshotId);
-    return i < 0 ? null : snapshotBrowse(source, list[i], list[i + 1]?.id);
+    return loadSnapshotBrowse({ host: t.host, userName: t.userName, path: t.source }, t.snapshotId);
   }, [tid]);
 
   if (found.loading) {

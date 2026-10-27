@@ -42,6 +42,11 @@ export function ownerName(source) {
   return source.userName + "@" + source.host;
 }
 
+/** A source as Kopia writes it, user@host:/path: its name on the command line and its identity in a list. */
+export function sourceString(source) {
+  return ownerName(source) + ":" + source.path;
+}
+
 /** The failed-files summary of a source's newest snapshot, with what the dialog needs to act on it. */
 export function failedSummary(row) {
   const summ = row.lastSnapshot?.rootEntry?.summ;
@@ -55,6 +60,11 @@ export function failedSummary(row) {
 export function sourceFromSearch(search) {
   const q = new URLSearchParams(search);
   return { host: q.get("host") ?? "", userName: q.get("userName") ?? "", path: q.get("path") ?? "" };
+}
+
+/** Snapshots newest first: the order every list and "the one before it" is worked out in. */
+export function newestFirst(snapshots) {
+  return [...(snapshots ?? [])].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
 }
 
 export function loadHistory(source, all) {

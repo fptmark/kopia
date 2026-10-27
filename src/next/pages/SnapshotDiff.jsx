@@ -5,7 +5,7 @@ import { useLocation } from "react-router";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 import { errorMessage } from "../api";
 import { addExclusions } from "../exclusions";
-import { baseName, formatLongDateTime, formatSizeChange, plural, formatCount } from "../format";
+import { baseName, formatLongDateTime, formatSizeChange, plural, formatCount, includesText } from "../format";
 import { useLoad } from "../hooks";
 import { historyUrl, loadDiff } from "../snapshots";
 import {
@@ -55,8 +55,7 @@ export function SnapshotDiff() {
 
   const entries = useMemo(() => state.data?.entries ?? [], [state.data]);
   const rows = useMemo(() => {
-    const needle = text.trim().toLowerCase();
-    return entries.filter((e) => shown[e.change] && (!needle || e.path.toLowerCase().includes(needle)));
+    return entries.filter((e) => shown[e.change] && includesText(e.path, text));
   }, [entries, shown, text]);
 
   const canExclude = (e) => e.change !== "removed";

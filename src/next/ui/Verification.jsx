@@ -225,10 +225,10 @@ export function VerifyFailuresDialog({ verification, onClose }) {
         <p className="small">
           Read back {describeCovered(verification)} on <DateTimeText long value={verification.finishedAt} />;{" "}
           <CountText n={verification.files} /> checked, <SizeText bytes={verification.readBytes} /> read.
-          {verification.taskSeq > 0 && (
+          {verification.taskId && (
             <>
               {" "}
-              <FromLink to={"/tasks/" + verification.taskSeq.toString(16)} onClick={onClose}>
+              <FromLink to={"/tasks/" + verification.taskId} onClick={onClose}>
                 Task log
               </FromLink>
             </>

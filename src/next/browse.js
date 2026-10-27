@@ -1,6 +1,6 @@
 import { api } from "./api";
 import { formatDateTime } from "./format";
-import { historyUrl } from "./snapshots";
+import { historyUrl, loadHistory, newestFirst } from "./snapshots";
 import { objectLink } from "../utils/formatutils";
 
 /** A folder of a snapshot; with the path of its source the failures that ignore rules cover are left out of its counts. */
@@ -21,6 +21,16 @@ export const snapshotBrowse = (source, snapshot, previousId) => ({
   to: objectLink(snapshot.rootID),
   state: { label: formatDateTime(snapshot.startTime), snapshot: { ...snapshot, source, previousId } },
 });
+
+/**
+ * The link that opens one snapshot of a source in the browser, found by its ID, or null when it is no longer
+ * there. Used wherever only the ID is known (a task, a notification).
+ */
+export async function loadSnapshotBrowse(source, snapshotId) {
+  const list = newestFirst((await loadHistory(source, true)).snapshots);
+  const i = list.findIndex((s) => s.id === snapshotId);
+  return i < 0 ? null : snapshotBrowse(source, list[i], list[i + 1]?.id);
+}
 
 export const startRestore = (req) => api.post("/api/v1/restore", req).then((r) => r.data);
 

@@ -7,7 +7,7 @@ import { FromLink } from "./FromLink";
 import { api, errorMessage } from "../api";
 import { addExclusions, coveredPaths } from "../exclusions";
 import { addIgnoredError, EXPIRY_CHOICES, KIND_LABELS } from "../../utils/ignoredErrors";
-import { groupFailures } from "../../utils/uiutil";
+import { groupFailures } from "../failures";
 import { shortTaskError, taskErrorHint } from "../../utils/taskutil";
 import { PathText, StatusBadge } from "./Cells";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -17,7 +17,7 @@ import { Notice } from "./Feedback";
  * The choices for ignoring an error at a place: target is {path, kind, file}. A file offers itself first;
  * a folder offers the kind of error it has, then every error under it.
  */
-function ignoreChoices(target) {
+export function ignoreChoices(target) {
   const where = target.path ? "this folder" : "this source";
   if (target.file) {
     return [

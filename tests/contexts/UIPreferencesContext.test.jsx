@@ -36,7 +36,10 @@ describe("UIPreferencesContext saving", () => {
       () =>
         new Promise((resolve) => {
           release = () =>
-            resolve([200, { theme: "dark", fontSize: "fs-5", pageSize: 20, keepAwake: "ac", verifierIMessageTo: "+15551234567" }]);
+            resolve([
+              200,
+              { theme: "dark", fontSize: "fs-5", pageSize: 20, keepAwake: "ac", verifierIMessageTo: "+15551234567" },
+            ]);
         }),
     );
 

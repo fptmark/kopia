@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { copyText } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import InputGroup from "react-bootstrap/InputGroup";
@@ -29,7 +30,7 @@ export function CliCommand({ command }) {
       {open && (
         <InputGroup size="sm">
           <Form.Control readOnly aria-label="Command" value={text} className="nx-path" />
-          <Button variant="secondary" onClick={() => navigator.clipboard?.writeText(text).catch(() => {})}>
+          <Button variant="secondary" onClick={() => copyText(text)}>
             Copy
           </Button>
         </InputGroup>

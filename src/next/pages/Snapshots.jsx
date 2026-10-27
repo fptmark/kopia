@@ -13,6 +13,7 @@ import {
   failedSummary,
   loadSources,
   ownerName,
+  sourceString,
   sourceQueryStringParams,
   startSnapshot,
   syncRepository,
@@ -211,7 +212,7 @@ export function Snapshots() {
                 label="snapshot sources"
                 data={rows}
                 columns={columns}
-                getRowId={(r) => ownerName(r.source) + ":" + r.source.path}
+                getRowId={(r) => sourceString(r.source)}
                 initialSort={{ id: "path", desc: false }}
                 emptyText="Nothing is backed up yet."
               />

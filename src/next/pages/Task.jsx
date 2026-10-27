@@ -3,9 +3,8 @@ import { formatCount } from "../format";
 import Button from "react-bootstrap/Button";
 import Spinner from "react-bootstrap/Spinner";
 import { Link, useParams } from "react-router";
-import { snapshotBrowse } from "../browse";
+import { loadSnapshotBrowse } from "../browse";
 import { useLoad } from "../hooks";
-import { loadHistory } from "../snapshots";
 import {
   cancelTask,
   isRunning,
@@ -93,13 +92,11 @@ export function Task({ taskID }) {
     }
   }, [id, isSnapshot, done]);
 
-  // a snapshot task links to the snapshot it made and to the history of its source
+  // a snapshot task links to the snapshot it made
   const source = failed.source ? { host: failed.host, userName: failed.userName, path: failed.source } : null;
-  const history = useLoad(() => loadHistory(source, true), [id, failed.snapshotId], {
+  const made = useLoad(() => loadSnapshotBrowse(source, failed.snapshotId), [id, failed.snapshotId], {
     enabled: !!(source && failed.snapshotId),
   });
-  const made = [...(history.data?.snapshots ?? [])].sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
-  const madeIndex = made.findIndex((s) => s.id === failed.snapshotId);
 
   const errors = failed.errors || [];
   const unignored = errors.filter((e) => !e.ignored);
@@ -113,12 +110,8 @@ export function Task({ taskID }) {
           crumb="Details"
           actions={
             <>
-              {madeIndex >= 0 && (
-                <Button
-                  as={Link}
-                  variant="secondary"
-                  {...snapshotBrowse(source, made[madeIndex], made[madeIndex + 1]?.id)}
-                >
+              {made.data && (
+                <Button as={Link} variant="secondary" {...made.data}>
                   View snapshot
                 </Button>
               )}

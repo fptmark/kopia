@@ -13,7 +13,7 @@ import {
   reconcileExclusions,
   removeExclusion,
 } from "../exclusions";
-import { formatDateTime, formatCount } from "../format";
+import { formatDateTime, formatCount, includesText } from "../format";
 import {
   ConfirmDialog,
   CountText,
@@ -225,10 +225,7 @@ const ADDED_COLUMN = {
 
 function RulesTable({ rules, showSource, onRemove, emptyText }) {
   const [filter, setFilter] = useState("");
-  const rows = useMemo(
-    () => rules.filter((r) => (r.pattern + " " + r.source).toLowerCase().includes(filter.trim().toLowerCase())),
-    [rules, filter],
-  );
+  const rows = useMemo(() => rules.filter((r) => includesText(r.pattern + " " + r.source, filter)), [rules, filter]);
 
   const columns = [
     PATTERN_COLUMN,

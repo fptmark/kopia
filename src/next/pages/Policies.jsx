@@ -1,10 +1,12 @@
 import React, { useState } from "react";
+import { includesText } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { Link, useNavigate } from "react-router";
 import { checkPolicyPath, policyEditorURL } from "../../utils/policyutil";
 import { api } from "../api";
 import { useLoad } from "../hooks";
+import { ownerName } from "../snapshots";
 import { CliCommand, DataTable, Loaded, Notice, Page, SearchBox, StatusBadge, Toolbar } from "../ui";
 
 const VIEWS = [
@@ -16,8 +18,6 @@ const VIEWS = [
   ["hosts", "Per-host policies"],
 ];
 
-const owner = (t) => t.userName + "@" + t.host;
-
 function describe(t) {
   if (!t.host && !t.userName) {
     return "Global";
@@ -26,7 +26,7 @@ function describe(t) {
     return "Host " + t.host;
   }
   if (!t.path) {
-    return "User " + owner(t);
+    return "User " + ownerName(t);
   }
   return t.path;
 }
@@ -71,18 +71,15 @@ export function Policies() {
           const isGlobal = (t) => !t.userName && !t.host && !t.path;
           const isMyHost = (t) => !t.userName && t.host === sources.localHost && !t.path;
           const pick = {
-            applicable: (t) => owner(t) === me || isMyHost(t) || isGlobal(t),
-            local: (t) => owner(t) === me,
+            applicable: (t) => ownerName(t) === me || isMyHost(t) || isGlobal(t),
+            local: (t) => ownerName(t) === me,
             all: () => true,
             global: isGlobal,
             users: (t) => !!t.userName && !!t.host && !t.path,
             hosts: (t) => !t.userName && !!t.host && !t.path,
           }[view];
 
-          const needle = filter.trim().toLowerCase();
-          const rows = policies.filter(
-            (p) => pick(p.target) && (!needle || describe(p.target).toLowerCase().includes(needle)),
-          );
+          const rows = policies.filter((p) => pick(p.target) && includesText(describe(p.target), filter));
 
           return (
             <>
@@ -131,7 +128,11 @@ export function Policies() {
                     cell: (p) =>
                       p.target.path ? <span className="nx-path">{p.target.path}</span> : describe(p.target),
                   },
-                  { id: "owner", header: "User", accessor: (p) => (p.target.userName ? owner(p.target) : "everyone") },
+                  {
+                    id: "owner",
+                    header: "User",
+                    accessor: (p) => (p.target.userName ? ownerName(p.target) : "everyone"),
+                  },
                   {
                     id: "defined",
                     header: "Sets",

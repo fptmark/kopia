@@ -4,7 +4,7 @@ import "@testing-library/jest-dom";
 import { MemoryRouter } from "react-router";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { FailedFilesDialog } from "../../../src/next/ui/FailedFiles";
+import { FailedFilesDialog, ignoreChoices } from "../../../src/next/ui/FailedFiles";
 
 vi.mock("axios");
 
@@ -72,5 +72,21 @@ describe("FailedFilesDialog excluded paths", () => {
     show();
     await waitFor(() => expect(axios.post).toHaveBeenCalled());
     expect(document.querySelectorAll("button:disabled")).toHaveLength(0);
+  });
+});
+
+describe("ignoreChoices", () => {
+  it("offers the kind of error under a folder first, then any error", () => {
+    expect(ignoreChoices({ path: "Library/a", kind: "permission", file: false }).map((c) => c.rule)).toEqual([
+      { path: "Library/a", scope: "folder", kind: "permission" },
+      { path: "Library/a", scope: "folder" },
+    ]);
+  });
+
+  it("offers a file by itself first", () => {
+    expect(ignoreChoices({ path: "a/b", kind: "permission", file: true }).map((c) => c.rule)).toEqual([
+      { path: "a/b", scope: "file" },
+      { path: "a/b", scope: "folder" },
+    ]);
   });
 });

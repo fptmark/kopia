@@ -12,6 +12,7 @@ import {
   editSnapshots,
   loadHistory,
   loadStorageStats,
+  newestFirst,
   sizeJump,
   sourceFromSearch,
 } from "../snapshots";
@@ -77,10 +78,7 @@ export function SnapshotHistory() {
   const state = useLoad(() => loadHistory(source, showAll), [source, showAll]);
   const stats = useLoad(() => loadStorageStats(source), [source, state.data]);
 
-  const snapshots = useMemo(
-    () => [...(state.data?.snapshots ?? [])].sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
-    [state.data],
-  );
+  const snapshots = useMemo(() => newestFirst(state.data?.snapshots), [state.data]);
   const ids = useMemo(() => snapshots.map((s) => s.id), [snapshots]);
   // checked every two seconds so a verification that is running shows its progress and its result
   const verif = useLoad(() => loadVerifications(ids), [ids.join(",")], { enabled: ids.length > 0, refreshMs: 2000 });

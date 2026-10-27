@@ -54,4 +54,11 @@ describe("layout stays in the shared components", () => {
       scan(/["'](?:RUNNING|CANCELING|SUCCESS|FAILED|CANCELED)["']/g).filter((x) => !x.startsWith("tasks.js")),
     ).toEqual([]);
   });
+  it("copies and filters through format.js, so every page behaves the same", () => {
+    expect(scan(/navigator\.clipboard|\.toLowerCase\(\)\.includes\(/g)).toEqual([]);
+  });
+
+  it("writes a source as user@host:/path in one place", () => {
+    expect(scan(/\.userName\s*\+\s*"@"|\$\{[\w.]*userName\}@/g)).toEqual([]);
+  });
 });

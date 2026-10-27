@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { includesText } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import {
@@ -44,7 +45,7 @@ export function Spec() {
   const [filter, setFilter] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [on, setOn] = useState(true);
-  const rows = SAMPLE.filter((r) => r.path.toLowerCase().includes(filter.toLowerCase()));
+  const rows = SAMPLE.filter((r) => includesText(r.path, filter));
 
   const columns = [
     { id: "change", header: "Change", accessor: (r) => r.change, cell: (r) => <StatusBadge kind={r.change} /> },

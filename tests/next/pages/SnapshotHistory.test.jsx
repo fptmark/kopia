@@ -265,7 +265,7 @@ describe("SnapshotHistory", () => {
       readFiles: 1200,
       readBytes: 1e9,
       errorCount: 0,
-      taskSeq: 205,
+      taskId: "cd",
       ...over,
     });
 
