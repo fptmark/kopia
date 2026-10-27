@@ -245,6 +245,25 @@ describe("Task page", () => {
     expect(screen.getByTestId("snapshot-errors")).toBeInTheDocument();
   });
 
+  it("lists the ignored failures when every one is ignored, instead of an empty dialog", async () => {
+    serve(task("t1"), {
+      errors: {
+        source: "/Users/me",
+        errors: [
+          { path: "Library/Duet/a", error: "unable to open file: operation not permitted", ignored: true },
+          { path: "Library/Duet/b", error: "unable to open file: operation not permitted", ignored: true },
+        ],
+      },
+    });
+    renderTask();
+    await waitFor(() => expect(screen.getByTestId("failed-files-summary")).toHaveTextContent("2 ignored."));
+    expect(screen.getByTestId("failed-files-summary")).not.toHaveTextContent("could not be backed up");
+    fireEvent.click(screen.getByTestId("show-failed-files"));
+    expect(screen.getByText("2 errors ignored")).toBeInTheDocument();
+    expect(screen.getByTestId("ignored-errors")).toHaveTextContent("Library/Duet");
+    expect(screen.queryByText("Ignore")).not.toBeInTheDocument();
+  });
+
   it("links a snapshot task to the snapshot it made", async () => {
     serve(task("t1"), {
       errors: { errors: [], source: "/Users/me", userName: "me", host: "mac", snapshotId: "s2" },

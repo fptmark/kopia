@@ -132,16 +132,26 @@ export function Task({ taskID }) {
         >
           <Summary task={task} />
           {errors.length > 0 && (
-            <Notice kind="warning">
-              <span data-testid="failed-files-summary">
-                {formatCount(unignored.length)} {unignored.length === 1 ? "file" : "files"} could not be backed up.
-                {errors.length - unignored.length > 0 && (
-                  <span className="nx-muted"> {formatCount(errors.length - unignored.length)} ignored.</span>
-                )}
-              </span>{" "}
-              <Button size="sm" variant="primary" data-testid="show-failed-files" onClick={() => setOpen(true)}>
-                Show details
-              </Button>
+            <Notice kind={unignored.length ? "warning" : "info"}>
+              <span className="nx-inline">
+                <span data-testid="failed-files-summary">
+                  {unignored.length > 0 && (
+                    <>
+                      {formatCount(unignored.length)} {unignored.length === 1 ? "file" : "files"} could not be backed
+                      up.
+                    </>
+                  )}
+                  {errors.length - unignored.length > 0 && (
+                    <span className={unignored.length ? "nx-muted" : undefined}>
+                      {unignored.length > 0 ? " " : ""}
+                      {formatCount(errors.length - unignored.length)} ignored.
+                    </span>
+                  )}
+                </span>
+                <Button size="sm" variant="primary" data-testid="show-failed-files" onClick={() => setOpen(true)}>
+                  Show details
+                </Button>
+              </span>
             </Notice>
           )}
           <Panel>

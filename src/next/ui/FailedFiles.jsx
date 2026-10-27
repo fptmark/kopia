@@ -241,6 +241,7 @@ export function FailedFilesDialog({ summ, onClose }) {
 
   const canAct = !!summ.source;
   const shown = errors.filter((e) => !e.ignored);
+  const ignoredErrors = errors.filter((e) => e.ignored);
 
   // which failed paths the rules already leave out; a failed lookup just leaves the buttons active
   const [recheck, setRecheck] = useState(0);
@@ -272,7 +273,9 @@ export function FailedFilesDialog({ summ, onClose }) {
     <Modal show onHide={onClose} size="lg" scrollable>
       <Modal.Header closeButton>
         <Modal.Title as="h2" className="fs-5">
-          {numFailed === 1 ? "1 file" : numFailed + " files"} could not be backed up
+          {numFailed === 0 && ignoredErrors.length > 0
+            ? `${ignoredErrors.length} ${ignoredErrors.length === 1 ? "error" : "errors"} ignored`
+            : `${numFailed === 1 ? "1 file" : numFailed + " files"} could not be backed up`}
         </Modal.Title>
       </Modal.Header>
       <Modal.Body data-testid="snapshot-errors">
@@ -286,14 +289,18 @@ export function FailedFilesDialog({ summ, onClose }) {
             onExclude={canAct ? (t) => setDialog({ type: "exclude", target: t }) : null}
           />
         ))}
-        {errors.length - shown.length > 0 && (
-          <div className="nx-muted small" data-testid="ignored-count">
-            {errors.length - shown.length} more {errors.length - shown.length === 1 ? "error is" : "errors are"}{" "}
-            ignored. Manage them under{" "}
-            <Link to="/preferences" onClick={onClose}>
-              Preferences
-            </Link>
-            , Ignored errors.
+        {ignoredErrors.length > 0 && (
+          <div data-testid="ignored-errors">
+            <div className="nx-muted small" data-testid="ignored-count">
+              {ignoredErrors.length} {ignoredErrors.length === 1 ? "error is" : "errors are"} ignored (they do not count
+              as failures or cause alerts).{" "}
+              <Link to="/preferences" onClick={onClose}>
+                Manage ignored errors
+              </Link>
+            </div>
+            {groupFailures(ignoredErrors).map((g) => (
+              <Group key={"ignored " + g.reason + g.label} group={g} covered={{}} />
+            ))}
           </div>
         )}
         {errors.length < summ.numFailed + (summ.ignored || 0) && (
