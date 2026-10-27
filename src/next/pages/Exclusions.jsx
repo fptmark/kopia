@@ -204,6 +204,25 @@ function AddRule({ source, sources, onAdded, label }) {
   );
 }
 
+const PATTERN_COLUMN = {
+  id: "pattern",
+  header: "Pattern",
+  accessor: (r) => r.pattern,
+  cell: (r) => <PathText>{r.pattern}</PathText>,
+};
+const KIND_COLUMN = {
+  id: "kind",
+  header: "Matches",
+  accessor: (r) => describePattern(r.pattern).scope,
+  cell: (r) => <PatternKind pattern={r.pattern} />,
+};
+const ADDED_COLUMN = {
+  id: "added",
+  header: "Added",
+  accessor: (r) => r.addedAt || "",
+  cell: (r) => <AddedCell rule={r} />,
+};
+
 function RulesTable({ rules, showSource, onRemove, emptyText }) {
   const [filter, setFilter] = useState("");
   const rows = useMemo(
@@ -212,13 +231,8 @@ function RulesTable({ rules, showSource, onRemove, emptyText }) {
   );
 
   const columns = [
-    { id: "pattern", header: "Pattern", accessor: (r) => r.pattern, cell: (r) => <PathText>{r.pattern}</PathText> },
-    {
-      id: "kind",
-      header: "Matches",
-      accessor: (r) => describePattern(r.pattern).scope,
-      cell: (r) => <PatternKind pattern={r.pattern} />,
-    },
+    PATTERN_COLUMN,
+    KIND_COLUMN,
     ...(showSource
       ? [
           {
@@ -230,7 +244,7 @@ function RulesTable({ rules, showSource, onRemove, emptyText }) {
           },
         ]
       : []),
-    { id: "added", header: "Added", accessor: (r) => r.addedAt || "", cell: (r) => <AddedCell rule={r} /> },
+    ADDED_COLUMN,
     { id: "by", header: "How", accessor: (r) => r.addedBy, cell: (r) => ADDED_BY[r.addedBy] ?? r.addedBy },
     {
       id: "remove",
@@ -307,18 +321,8 @@ function NetRules({ sources }) {
             initialSort={{ id: "pattern", desc: false }}
             emptyText="Nothing is excluded for this source."
             columns={[
-              {
-                id: "pattern",
-                header: "Pattern",
-                accessor: (r) => r.pattern,
-                cell: (r) => <PathText>{r.pattern}</PathText>,
-              },
-              {
-                id: "kind",
-                header: "Matches",
-                accessor: (r) => describePattern(r.pattern).scope,
-                cell: (r) => <PatternKind pattern={r.pattern} />,
-              },
+              PATTERN_COLUMN,
+              KIND_COLUMN,
               {
                 id: "from",
                 header: "From",
@@ -329,7 +333,7 @@ function NetRules({ sources }) {
                   </StatusBadge>
                 ),
               },
-              { id: "added", header: "Added", accessor: (r) => r.addedAt || "", cell: (r) => <AddedCell rule={r} /> },
+              ADDED_COLUMN,
             ]}
           />
         )}
@@ -496,12 +500,7 @@ export function Exclusions() {
                       cell: (r) =>
                         r.source ? <PathText>{r.source}</PathText> : <StatusBadge kind="info">Everything</StatusBadge>,
                     },
-                    {
-                      id: "added",
-                      header: "Added",
-                      accessor: (r) => r.addedAt || "",
-                      cell: (r) => <AddedCell rule={r} />,
-                    },
+                    ADDED_COLUMN,
                     {
                       id: "removed",
                       header: "Removed",
