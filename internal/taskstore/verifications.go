@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+
+	"github.com/kopia/kopia/internal/uitask"
 )
 
 // Verification modes: "full" reads every file back, "sample" a share of them, "new" every piece of data a
@@ -23,22 +25,24 @@ type VerificationFailure struct {
 
 // Verification is the outcome of reading back one snapshot.
 type Verification struct {
-	ID          int64     `json:"id"`
-	SnapshotID  string    `json:"snapshotId"`
-	Source      string    `json:"source"`
-	Mode        string    `json:"mode"`
-	Percent     float64   `json:"percent"`
-	StartedAt   time.Time `json:"startedAt"`
-	FinishedAt  time.Time `json:"finishedAt"`
-	OK          bool      `json:"ok"`
-	Files       int64     `json:"files"`
-	Bytes       int64     `json:"bytes"`
-	ReadFiles   int64     `json:"readFiles"`
-	ReadBytes   int64     `json:"readBytes"`
-	ErrorCount  int64     `json:"errorCount"`
-	Error       string    `json:"error,omitempty"`
-	TaskSeq     int       `json:"taskSeq,omitempty"`
-	FailureKept int64     `json:"failuresKept"`
+	ID         int64     `json:"id"`
+	SnapshotID string    `json:"snapshotId"`
+	Source     string    `json:"source"`
+	Mode       string    `json:"mode"`
+	Percent    float64   `json:"percent"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	OK         bool      `json:"ok"`
+	Files      int64     `json:"files"`
+	Bytes      int64     `json:"bytes"`
+	ReadFiles  int64     `json:"readFiles"`
+	ReadBytes  int64     `json:"readBytes"`
+	ErrorCount int64     `json:"errorCount"`
+	Error      string    `json:"error,omitempty"`
+	TaskSeq    int       `json:"taskSeq,omitempty"`
+	// TaskID is TaskSeq as the task is named in the UI and the API.
+	TaskID      string `json:"taskId,omitempty"`
+	FailureKept int64  `json:"failuresKept"`
 }
 
 // RecordVerification keeps a finished verification and its failures, and returns its ID.
@@ -112,6 +116,10 @@ func scanVerification(row rowScanner) (Verification, error) {
 	v.StartedAt = time.Unix(0, start).UTC()
 	v.FinishedAt = time.Unix(0, end).UTC()
 	v.OK = ok == 1
+
+	if v.TaskSeq > 0 {
+		v.TaskID = uitask.FormatTaskID(v.TaskSeq)
+	}
 
 	return v, nil
 }

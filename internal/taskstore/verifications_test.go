@@ -98,3 +98,29 @@ func TestNewDataVerificationCountsOnlyRecentOnes(t *testing.T) {
 	require.EqualValues(t, 3, total)
 	require.EqualValues(t, 2, failed)
 }
+
+func TestVerificationNamesItsTaskTheWayTheUIDoes(t *testing.T) {
+	s, _ := openStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	_, err := s.RecordVerification(taskstore.Verification{
+		SnapshotID: "s1", Source: "u@h:/home", Mode: "full", StartedAt: now, FinishedAt: now, OK: true, TaskSeq: 205,
+	}, nil)
+	require.NoError(t, err)
+
+	_, err = s.RecordVerification(taskstore.Verification{
+		SnapshotID: "s2", Source: "u@h:/home", Mode: "full", StartedAt: now, FinishedAt: now, OK: true,
+	}, nil)
+	require.NoError(t, err)
+
+	got, err := s.LatestVerifications([]string{"s1", "s2"})
+	require.NoError(t, err)
+
+	ids := map[string]string{}
+	for _, v := range got {
+		ids[v.SnapshotID] = v.TaskID
+	}
+
+	require.Equal(t, "cd", ids["s1"], "205 is cd in hexadecimal, as the task is named in the UI")
+	require.Empty(t, ids["s2"])
+}

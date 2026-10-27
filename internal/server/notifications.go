@@ -12,6 +12,7 @@ import (
 	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/notifyhub"
 	"github.com/kopia/kopia/internal/taskstore"
+	"github.com/kopia/kopia/snapshot"
 )
 
 // repoUnreachableAfter is how long the repository may fail to open before it is reported: a failed first
@@ -101,25 +102,27 @@ func (s *Server) emitSnapshotOutcome(ctx context.Context, path string, err error
 	}
 }
 
-// sourcePath is the folder of a source written as user@host:/path.
-func sourcePath(src string) string {
-	if i := strings.Index(src, ":"); i >= 0 && strings.Contains(src[:i], "@") {
-		return src[i+1:]
+// parseSource reads a source written as user@host:/path (the form task history keeps) with Kopia's own parser, so
+// there is one definition of what such a string means.
+func parseSource(src string) snapshot.SourceInfo {
+	si, err := snapshot.ParseSourceInfo(src, "", "")
+	if err != nil {
+		return snapshot.SourceInfo{Path: src}
 	}
 
-	return src
+	return si
+}
+
+// sourcePath is the folder of a source written as user@host:/path, or the text itself when it has no user and host.
+func sourcePath(src string) string {
+	return parseSource(src).Path
 }
 
 // sourceUserHost is the user and host of a source written as user@host:/path.
 func sourceUserHost(src string) (user, host string) {
-	i := strings.Index(src, ":")
-	if i < 0 {
-		return "", ""
-	}
+	si := parseSource(src)
 
-	user, host, _ = strings.Cut(src[:i], "@")
-
-	return user, host
+	return si.UserName, si.Host
 }
 
 // buildSummary collects what happened between from and to for a periodic summary, from the task history.
