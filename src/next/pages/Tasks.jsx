@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { formatCount } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { Link } from "react-router";
@@ -45,11 +46,11 @@ function StatusCell({ task, onDetails, onCancel }) {
           title={
             hasError
               ? shortTaskError(task.errorMessage)
-              : `${task.failedFiles.toLocaleString("en-US")} files could not be backed up`
+              : `${formatCount(task.failedFiles)} files could not be backed up`
           }
           onClick={() => onDetails(task)}
         >
-          {hasError ? "Why" : `${task.failedFiles.toLocaleString("en-US")} failed`}
+          {hasError ? "Why" : `${formatCount(task.failedFiles)} failed`}
         </Button>
       )}
       {task.status === "RUNNING" && (
@@ -221,7 +222,7 @@ export function Tasks() {
               <div className="nx-meta" data-testid="tasks-summary">
                 <span>
                   {history
-                    ? `Showing ${Math.min(shown.length, total).toLocaleString("en-US")} of ${total.toLocaleString("en-US")} tasks`
+                    ? `Showing ${formatCount(Math.min(shown.length, total))} of ${formatCount(total)} tasks`
                     : "Recent tasks only"}
                 </span>
                 {history && shown.length < total && (

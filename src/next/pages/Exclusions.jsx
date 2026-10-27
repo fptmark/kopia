@@ -13,7 +13,7 @@ import {
   reconcileExclusions,
   removeExclusion,
 } from "../exclusions";
-import { formatDateTime } from "../format";
+import { formatDateTime, formatCount } from "../format";
 import {
   ConfirmDialog,
   CountText,
@@ -67,7 +67,7 @@ function PreviewResult({ result, snapshot }) {
   return (
     <div>
       <Notice kind="info">
-        <PathText>{result.pattern}</PathText> would leave out {result.matches.toLocaleString("en-US")}{" "}
+        <PathText>{result.pattern}</PathText> would leave out {formatCount(result.matches)}{" "}
         {result.matches === 1 ? "item" : "items"}: <CountText n={result.files} /> files,{" "}
         <SizeText bytes={result.bytes} /> in the newest snapshot. Earlier snapshots keep their copies until retention
         removes them.

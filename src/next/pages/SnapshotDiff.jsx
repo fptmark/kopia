@@ -5,7 +5,7 @@ import { useLocation } from "react-router";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 import { errorMessage } from "../api";
 import { addExclusions } from "../exclusions";
-import { baseName, formatLongDateTime, formatSizeChange, plural } from "../format";
+import { baseName, formatLongDateTime, formatSizeChange, plural, formatCount } from "../format";
 import { useLoad } from "../hooks";
 import { historyUrl, loadDiff } from "../snapshots";
 import {
@@ -147,7 +147,7 @@ export function SnapshotDiff() {
         ) : (
           <span
             className={"nx-num " + (d > 0 ? "text-danger" : "text-success")}
-            title={Number(d).toLocaleString("en-US") + " bytes"}
+            title={formatCount(Number(d)) + " bytes"}
           >
             {formatSizeChange(d, !!prefs.bytesStringBase2)}
           </span>
@@ -230,8 +230,8 @@ export function SnapshotDiff() {
               )}
               {d.truncated && (
                 <Notice kind="info" data-testid="diff-truncated">
-                  Only the first {entries.length.toLocaleString("en-US")} differences are listed; the totals above count
-                  all of them.
+                  Only the first {formatCount(entries.length)} differences are listed; the totals above count all of
+                  them.
                 </Notice>
               )}
 
@@ -274,7 +274,7 @@ export function SnapshotDiff() {
                         setSelected((cur) => ({ ...cur, ...Object.fromEntries(listed.map((x) => [x.path, true])) }))
                       }
                     >
-                      Select all {listed.length.toLocaleString("en-US")} listed
+                      Select all {formatCount(listed.length)} listed
                     </Button>
                   )}
                   {chosen.length > 0 && (

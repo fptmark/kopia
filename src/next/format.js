@@ -123,6 +123,11 @@ export function formatSizeChange(n, base2 = false) {
 }
 
 /** Plural by count: plural(1, "file") is "1 file", plural(3, "file") is "3 files". */
+/** A whole count with thousands separators, the same everywhere. */
+export function formatCount(n) {
+  return Number(n).toLocaleString("en-US");
+}
+
 export function plural(n, word, pluralWord = word + "s") {
   return `${compactCount(n)} ${n === 1 ? word : pluralWord}`;
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { formatCount } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import InputGroup from "react-bootstrap/InputGroup";
@@ -66,21 +67,13 @@ function Estimate({ taskId }) {
             </>
           }
         />
-        <Stat
-          label="Files"
-          value={c("Files").toLocaleString("en-US")}
-          note={`${c("Excluded Files").toLocaleString("en-US")} excluded`}
-        />
+        <Stat label="Files" value={formatCount(c("Files"))} note={`${formatCount(c("Excluded Files"))} excluded`} />
         <Stat
           label="Folders"
-          value={c("Directories").toLocaleString("en-US")}
-          note={`${c("Excluded Directories").toLocaleString("en-US")} excluded`}
+          value={formatCount(c("Directories"))}
+          note={`${formatCount(c("Excluded Directories"))} excluded`}
         />
-        <Stat
-          label="Errors"
-          value={c("Errors").toLocaleString("en-US")}
-          note={`${c("Ignored Errors").toLocaleString("en-US")} ignored`}
-        />
+        <Stat label="Errors" value={formatCount(c("Errors"))} note={`${formatCount(c("Ignored Errors"))} ignored`} />
       </Stats>
     </Panel>
   );

@@ -11,7 +11,6 @@ import { useLoad } from "../hooks";
 import {
   cancelSnapshot,
   failedSummary,
-  isOverdue,
   loadSources,
   ownerName,
   sourceQueryStringParams,
@@ -168,9 +167,7 @@ export function Snapshots() {
                   <span className="nx-inline">
                     {t ? <DateTimeText value={t} ago /> : <span className="nx-muted">none yet</span>}
                     {paused && <StatusBadge kind="warning">paused</StatusBadge>}
-                    {!paused && isOverdue(t, r.schedule?.intervalSeconds) && (
-                      <StatusBadge kind="error">overdue</StatusBadge>
-                    )}
+                    {!paused && r.overdue && <StatusBadge kind="error">overdue</StatusBadge>}
                   </span>
                 );
               },

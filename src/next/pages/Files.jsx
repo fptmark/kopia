@@ -4,7 +4,7 @@ import Form from "react-bootstrap/Form";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Spinner from "react-bootstrap/Spinner";
 import { errorMessage } from "../api";
-import { formatDate, formatDateTime } from "../format";
+import { formatDate, formatDateTime, formatCount } from "../format";
 import {
   availableRanges,
   cancelSearch,
@@ -356,7 +356,7 @@ export function Files() {
           {running ? (
             <>
               <Spinner animation="border" size="sm" /> Searching: snapshot {p.snapshotsDone} of {p.snapshotsTotal},{" "}
-              {p.directories.toLocaleString("en-US")} folders read, {results.length.toLocaleString("en-US")} found
+              {formatCount(p.directories)} folders read, {formatCount(results.length)} found
               <ProgressBar
                 now={p.snapshotsTotal ? (100 * p.snapshotsDone) / p.snapshotsTotal : 0}
                 style={{ height: 6 }}
@@ -365,8 +365,8 @@ export function Files() {
           ) : (
             <>
               {status.canceled ? "Search canceled. " : ""}
-              {results.length.toLocaleString("en-US")} {results.length === 1 ? "result" : "results"} in{" "}
-              {p.snapshotsDone} of {p.snapshotsTotal} snapshots ({p.directories.toLocaleString("en-US")} folders read).{" "}
+              {formatCount(results.length)} {results.length === 1 ? "result" : "results"} in {p.snapshotsDone} of{" "}
+              {p.snapshotsTotal} snapshots ({formatCount(p.directories)} folders read).{" "}
               <Button size="sm" variant="secondary" onClick={clear} data-testid="clear-results">
                 Clear
               </Button>
@@ -377,8 +377,7 @@ export function Files() {
       {status?.error && <Notice kind="error">{status.error}</Notice>}
       {status?.truncated && (
         <Notice kind="warning">
-          Too many matches, showing the first {results.length.toLocaleString("en-US")}. Narrow the name or the date
-          range.
+          Too many matches, showing the first {formatCount(results.length)}. Narrow the name or the date range.
         </Notice>
       )}
       {status && !running && results.length === 0 && !status.error && (

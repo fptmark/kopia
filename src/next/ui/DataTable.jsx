@@ -1,4 +1,5 @@
 import React, { use, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { formatCount } from "../format";
 import { getCoreRowModel, getPaginationRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
@@ -31,7 +32,7 @@ function Pager({ index, pageCount, setPageIndex }) {
         {"‹"}
       </Button>
       <span>
-        Page {index + 1} of {pageCount.toLocaleString("en-US")}
+        Page {index + 1} of {formatCount(pageCount)}
       </span>
       <Button
         size="sm"
@@ -280,7 +281,7 @@ export function DataTable({
           <span data-testid="range">
             {first}
             {"–"}
-            {last} of {total.toLocaleString("en-US")}
+            {last} of {formatCount(total)}
           </span>
           <label className="nx-row">
             Rows per page

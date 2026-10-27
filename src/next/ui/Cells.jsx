@@ -1,5 +1,5 @@
 import React from "react";
-import { compactCount, formatAgo, formatDateTime, formatLongDateTime, sizeDisplayName } from "../format";
+import { compactCount, formatAgo, formatCount, formatDateTime, formatLongDateTime, sizeDisplayName } from "../format";
 import { use } from "react";
 import { UIPreferencesContext } from "../../contexts/UIPreferencesContext";
 
@@ -19,7 +19,7 @@ export function SizeText({ bytes, ...rest }) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
-    <span className="nx-num" title={Number(bytes).toLocaleString("en-US") + " bytes"} {...rest}>
+    <span className="nx-num" title={formatCount(bytes) + " bytes"} {...rest}>
       {sizeDisplayName(bytes, !!bytesStringBase2)}
     </span>
   );
@@ -31,7 +31,7 @@ export function CountText({ n, ...rest }) {
     return <span className="nx-muted">{"—"}</span>;
   }
   return (
-    <span className="nx-num" title={Number(n).toLocaleString("en-US")} {...rest}>
+    <span className="nx-num" title={formatCount(n)} {...rest}>
       {compactCount(n)}
     </span>
   );

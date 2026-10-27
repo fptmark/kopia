@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { formatCount } from "../format";
 import Button from "react-bootstrap/Button";
 import Spinner from "react-bootstrap/Spinner";
 import { Link, useParams } from "react-router";
@@ -131,13 +132,9 @@ export function Task({ taskID }) {
           {errors.length > 0 && (
             <Notice kind="warning">
               <span data-testid="failed-files-summary">
-                {unignored.length.toLocaleString("en-US")} {unignored.length === 1 ? "file" : "files"} could not be
-                backed up.
+                {formatCount(unignored.length)} {unignored.length === 1 ? "file" : "files"} could not be backed up.
                 {errors.length - unignored.length > 0 && (
-                  <span className="nx-muted">
-                    {" "}
-                    {(errors.length - unignored.length).toLocaleString("en-US")} ignored.
-                  </span>
+                  <span className="nx-muted"> {formatCount(errors.length - unignored.length)} ignored.</span>
                 )}
               </span>{" "}
               <Button size="sm" variant="primary" data-testid="show-failed-files" onClick={() => setOpen(true)}>
@@ -168,7 +165,7 @@ export function Task({ taskID }) {
                   header: "Value",
                   align: "end",
                   accessor: (r) => r.value,
-                  cell: (r) => (r.units === "bytes" ? <SizeText bytes={r.value} /> : r.value.toLocaleString("en-US")),
+                  cell: (r) => (r.units === "bytes" ? <SizeText bytes={r.value} /> : formatCount(r.value)),
                 },
               ]}
             />

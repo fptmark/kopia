@@ -4,21 +4,6 @@ import { sourceQueryStringParams } from "../utils/policyutil";
 
 export { sourceQueryStringParams };
 
-const HOUR = 3600;
-
-/**
- * A snapshot is overdue when the newest one is older than twice the schedule's interval plus half an hour
- * (never less than 3 hours): the same limit the backup health check uses. Sources without an interval are
- * never called overdue.
- */
-export function isOverdue(lastSnapshotTime, intervalSeconds, now = Date.now()) {
-  if (!lastSnapshotTime || !intervalSeconds) {
-    return false;
-  }
-  const limit = Math.max(3 * HOUR, 2 * intervalSeconds + HOUR / 2);
-  return (now - new Date(lastSnapshotTime).getTime()) / 1000 > limit;
-}
-
 /** "12 GB / 40 GB 30%" for a running upload; the total is only known when Kopia could estimate it. */
 export function uploadProgress(u, base2) {
   if (!u) {

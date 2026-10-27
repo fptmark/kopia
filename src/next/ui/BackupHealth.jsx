@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import Button from "react-bootstrap/Button";
 import { FromLink } from "./FromLink";
 import { errorMessage } from "../api";
-import { formatDateTime } from "../format";
+import { formatDateTime, formatCount } from "../format";
 import { loadHealth, runHealthCheck } from "../health";
 import { useLoad } from "../hooks";
 import { loadVerificationFailures } from "../verification";
@@ -25,7 +25,7 @@ function CheckFailures({ check }) {
   return (
     <details data-testid="check-failures">
       <summary>
-        {check.failureCount.toLocaleString("en-US")} {check.failureCount === 1 ? "file" : "files"} failed
+        {formatCount(check.failureCount)} {check.failureCount === 1 ? "file" : "files"} failed
       </summary>
       <ul className="small">
         {list.map((f) => (
@@ -37,7 +37,7 @@ function CheckFailures({ check }) {
       </ul>
       {more > 0 && check.verificationId > 0 && (
         <Button size="sm" variant="secondary" onClick={showAll}>
-          Show all {check.failureCount.toLocaleString("en-US")}
+          Show all {formatCount(check.failureCount)}
         </Button>
       )}
       {more > 0 && !check.verificationId && <div className="nx-muted small">Showing the first {list.length}.</div>}

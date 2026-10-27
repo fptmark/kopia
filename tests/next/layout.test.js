@@ -39,4 +39,14 @@ describe("layout stays in the shared components", () => {
   it("sets no inline margins or padding", () => {
     expect(scan(/style=\{\{[^}]*\b(?:margin|padding)\w*:/g)).toEqual([]);
   });
+  it("formats counts and dates through format.js, not toLocaleString", () => {
+    const bad = files(SRC)
+      .filter((f) => !f.endsWith("format.js"))
+      .flatMap((f) =>
+        [...fs.readFileSync(f, "utf8").matchAll(/\.toLocale\w*String\(/g)].map(
+          (m) => `${path.relative(SRC, f)}: ${m[0]}`,
+        ),
+      );
+    expect(bad).toEqual([]);
+  });
 });

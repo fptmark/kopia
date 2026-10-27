@@ -5,7 +5,7 @@ import Modal from "react-bootstrap/Modal";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
 import { FromLink } from "./FromLink";
-import { formatLongDateTime } from "../format";
+import { formatLongDateTime, formatCount } from "../format";
 import { useLoad } from "../hooks";
 import { describeCovered, loadVerificationFailures } from "../verification";
 import { CountText, DateTimeText, PathText, SizeText, StatusBadge } from "./Cells";
@@ -23,7 +23,7 @@ function VerifiedBadge({ v, onShowFailures, label, when }) {
       <OverlayTrigger
         placement="top"
         delay={TIP_DELAY}
-        overlay={tip(`${at}Read back ${describeCovered(v)}; ${v.files.toLocaleString("en-US")} checked, no problems.`)}
+        overlay={tip(`${at}Read back ${describeCovered(v)}; ${formatCount(v.files)} checked, no problems.`)}
       >
         <span>
           <StatusBadge kind="ok">{label}</StatusBadge>
@@ -36,7 +36,7 @@ function VerifiedBadge({ v, onShowFailures, label, when }) {
       placement="top"
       delay={TIP_DELAY}
       overlay={tip(
-        `${at}${v.errorCount.toLocaleString("en-US")} failed when reading back ${describeCovered(v)}. Click for the list.`,
+        `${at}${formatCount(v.errorCount)} failed when reading back ${describeCovered(v)}. Click for the list.`,
       )}
     >
       <button
@@ -45,7 +45,7 @@ function VerifiedBadge({ v, onShowFailures, label, when }) {
         onClick={() => onShowFailures(v)}
         data-testid="verify-failed"
       >
-        <StatusBadge kind="error">{v.errorCount.toLocaleString("en-US")} failed</StatusBadge>
+        <StatusBadge kind="error">{formatCount(v.errorCount)} failed</StatusBadge>
       </button>
     </OverlayTrigger>
   );
@@ -64,7 +64,7 @@ const idleText = (r) => idleMinutes(r) + " min";
 
 /** A verification that is queued or running: a bar of files checked out of the files to check, and what it is doing. */
 function VerifyProgress({ r }) {
-  const n = (x) => x.toLocaleString("en-US");
+  const n = (x) => formatCount(x);
   if (r.state === "queued") {
     return (
       <span className="nx-muted small" data-testid="verify-running">
@@ -218,8 +218,7 @@ export function VerifyFailuresDialog({ verification, onClose }) {
     <Modal show onHide={onClose} size="lg" scrollable>
       <Modal.Header closeButton>
         <Modal.Title as="h2" className="fs-5">
-          {verification.errorCount.toLocaleString("en-US")} {verification.errorCount === 1 ? "file" : "files"} failed to
-          read back
+          {formatCount(verification.errorCount)} {verification.errorCount === 1 ? "file" : "files"} failed to read back
         </Modal.Title>
       </Modal.Header>
       <Modal.Body data-testid="verify-failures">
@@ -248,8 +247,7 @@ export function VerifyFailuresDialog({ verification, onClose }) {
               </ul>
               {d.failures.length < verification.errorCount && (
                 <p className="nx-muted small">
-                  Showing the first {d.failures.length.toLocaleString("en-US")} of{" "}
-                  {verification.errorCount.toLocaleString("en-US")}.
+                  Showing the first {formatCount(d.failures.length)} of {formatCount(verification.errorCount)}.
                 </p>
               )}
             </>

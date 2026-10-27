@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { formatLongDateTime } from "../format";
 
 function time(ts) {
   const d = new Date(ts * 1000);
@@ -34,7 +35,7 @@ export function LogView({ logs, maxHeight = "28rem" }) {
         <div
           key={i + ":" + l.ts}
           className={"nx-log-line " + (LEVEL_CLASS[l.level] ?? "")}
-          title={new Date(l.ts * 1000).toLocaleString()}
+          title={formatLongDateTime(l.ts * 1000)}
         >
           <span className="nx-muted">{time(l.ts)}</span> {l.msg} {extras(l) && <code>{extras(l)}</code>}
         </div>

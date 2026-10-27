@@ -6,7 +6,7 @@ import axios from "axios";
 import { MemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { Snapshots } from "../../../src/next/pages/Snapshots";
-import { isOverdue, sizeJump, uploadProgress } from "../../../src/next/snapshots";
+import { sizeJump, uploadProgress } from "../../../src/next/snapshots";
 
 vi.mock("axios");
 vi.mock("../../../src/components/SnapshotFrequency", () => ({ SnapshotFrequency: () => <span>frequency</span> }));
@@ -30,6 +30,7 @@ const sources = (over = {}) => ({
     {
       source: src("/Applications"),
       status: "IDLE",
+      overdue: true,
       lastSnapshot: { startTime: new Date(Date.now() - 40 * 3600e3).toISOString(), stats: { totalSize: 47e9 } },
       schedule: { intervalSeconds: 3600 },
     },
@@ -147,17 +148,6 @@ describe("Snapshots page", () => {
 });
 
 describe("snapshot helpers", () => {
-  it("overdue is more than twice the interval plus half an hour, never under 3 hours", () => {
-    const now = Date.parse("2026-10-23T12:00:00Z");
-    const ago = (h) => new Date(now - h * 3600e3).toISOString();
-    expect(isOverdue(ago(2), 3600, now)).toBe(false);
-    expect(isOverdue(ago(3.1), 3600, now)).toBe(true);
-    expect(isOverdue(ago(4), 7200, now)).toBe(false);
-    expect(isOverdue(ago(5), 7200, now)).toBe(true);
-    expect(isOverdue(ago(5), 0, now)).toBe(false);
-    expect(isOverdue(undefined, 3600, now)).toBe(false);
-  });
-
   it("formats upload progress, with a percentage only when the total is known and sensible", () => {
     expect(uploadProgress({ hashedBytes: 1e9, cachedBytes: 0 })).toBe("1 GB");
     expect(uploadProgress({ hashedBytes: 1e9, cachedBytes: 0, estimatedBytes: 4e9 })).toBe("1 GB / 4 GB 25%");
