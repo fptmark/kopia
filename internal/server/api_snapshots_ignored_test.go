@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/serverapi"
+	"github.com/kopia/kopia/notification/notifydata"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
 )
@@ -92,4 +94,54 @@ func TestSourceOverdueUsesTheHealthCheckLimit(t *testing.T) {
 	require.False(t, sourceOverdue(status(7*24*time.Hour, policy.SchedulingPolicy{Manual: true}, "IDLE"), now))
 
 	require.False(t, sourceOverdue(&serverapi.SourceStatus{SchedulingPolicy: hourly}, now))
+}
+
+func TestReportSeesNoFailuresWhenEveryOneIsIgnored(t *testing.T) {
+	rules, err := ignoreerr.Open(filepath.Join(t.TempDir(), "ignored-errors.json"), time.Now)
+	require.NoError(t, err)
+
+	_, err = rules.Add(ignoreerr.Rule{Source: "/Users/me", Path: "Library/Duet", Scope: "folder"})
+	require.NoError(t, err)
+
+	mwe := &notifydata.ManifestWithError{Manifest: snapshot.Manifest{RootEntry: &snapshot.DirEntry{DirSummary: &fs.DirectorySummary{
+		FatalErrorCount: 1,
+		FailedEntries:   []*fs.EntryWithError{{EntryPath: "Library/Duet/a", Error: "operation not permitted"}},
+	}}}}
+
+	require.Equal(t, notifydata.StatusCodeFatal, mwe.StatusCode())
+
+	got := withoutIgnoredFailures(rules, "/Users/me", mwe)
+	require.Equal(t, notifydata.StatusCodeSuccess, got.StatusCode())
+
+	// the stored result is not changed
+	require.Equal(t, notifydata.StatusCodeFatal, mwe.StatusCode())
+
+	// a failure no rule covers still makes it a failure
+	mwe.Manifest.RootEntry.DirSummary.FailedEntries[0].EntryPath = "Library/Other/a"
+	require.Equal(t, notifydata.StatusCodeFatal, withoutIgnoredFailures(rules, "/Users/me", mwe).StatusCode())
+}
+
+func TestDirectoryListingCountsOnlyTheFailuresNoRuleCovers(t *testing.T) {
+	rules, err := ignoreerr.Open(filepath.Join(t.TempDir(), "ignored-errors.json"), time.Now)
+	require.NoError(t, err)
+
+	_, err = rules.Add(ignoreerr.Rule{Source: "/Users/me", Path: "Library/Duet", Scope: "folder"})
+	require.NoError(t, err)
+
+	listing := []byte(`{"stream":"kopia:directory","entries":[` +
+		`{"name":"Library","type":"d","summ":{"numFailed":2,"errors":[` +
+		`{"path":"Library/Duet/a","error":"operation not permitted"},{"path":"Library/Other/b","error":"operation not permitted"}]}},` +
+		`{"name":"Docs","type":"d","summ":{"numFailed":0}}]}`)
+
+	var got snapshot.DirManifest
+	require.NoError(t, json.Unmarshal(withIgnoredDirectoryFailures(rules, "/Users/me", listing), &got))
+	require.Len(t, got.Entries, 2)
+	require.Equal(t, 1, got.Entries[0].DirSummary.FatalErrorCount)
+	require.Equal(t, 1, got.Entries[0].DirSummary.IgnoredByRule)
+	require.True(t, got.Entries[0].DirSummary.FailedEntries[0].Ignored)
+	require.Zero(t, got.Entries[1].DirSummary.FatalErrorCount)
+
+	// an unreadable listing, or no rules, comes back untouched
+	require.Equal(t, []byte("nope"), withIgnoredDirectoryFailures(rules, "/Users/me", []byte("nope")))
+	require.Equal(t, listing, withIgnoredDirectoryFailures(nil, "/Users/me", listing))
 }

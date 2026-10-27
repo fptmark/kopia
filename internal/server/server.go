@@ -599,6 +599,8 @@ func (s *Server) endUpload(ctx context.Context, src snapshot.SourceInfo, mwe *no
 
 	userLog(ctx).Debugf("finished uploading %v", src)
 
+	mwe = withoutIgnoredFailures(s.ignored, src.Path, mwe)
+
 	s.currentParallelSnapshots--
 
 	s.pendingMultiSnapshotStatus.Snapshots = append(s.pendingMultiSnapshotStatus.Snapshots, mwe)

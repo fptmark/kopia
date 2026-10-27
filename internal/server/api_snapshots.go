@@ -10,6 +10,7 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/ignoreerr"
 	"github.com/kopia/kopia/internal/serverapi"
+	"github.com/kopia/kopia/notification/notifydata"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/snapshot"
@@ -352,6 +353,27 @@ func withIgnoredFailures(rules *ignoreerr.Store, source string, sum *fs.Director
 
 	out.FatalErrorCount = max(0, out.FatalErrorCount-n)
 	out.IgnoredByRule = n
+
+	return &out
+}
+
+// withoutIgnoredFailures returns the snapshot result as a report should see it: the failures that ignore rules
+// cover are not counted, so a snapshot whose only failures are ignored is reported as a success.
+func withoutIgnoredFailures(rules *ignoreerr.Store, source string, mwe *notifydata.ManifestWithError) *notifydata.ManifestWithError {
+	re := mwe.Manifest.RootEntry
+	if re == nil {
+		return mwe
+	}
+
+	sum := withIgnoredFailures(rules, source, re.DirSummary)
+	if sum == re.DirSummary {
+		return mwe
+	}
+
+	out := *mwe
+	root := *re
+	root.DirSummary = sum
+	out.Manifest.RootEntry = &root
 
 	return &out
 }
