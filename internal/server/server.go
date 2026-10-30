@@ -210,6 +210,7 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 
 	m.HandleFunc("/api/v1/tasks-summary", s.handleUIPossiblyNotConnected(handleTaskSummary)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks", s.handleUIPossiblyNotConnected(handleTaskList)).Methods(http.MethodGet)
+	m.HandleFunc("/api/v1/tasks/upcoming", s.handleUI(handleTasksUpcoming)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks/{taskID}", s.handleUIPossiblyNotConnected(handleTaskInfo)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/tasks/{taskID}/errors", s.handleUIPossiblyNotConnected(handleTaskErrors)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/repo/storage-usage-history", s.handleUI(handleStorageUsageHistory)).Methods(http.MethodGet)

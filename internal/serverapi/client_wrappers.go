@@ -232,6 +232,22 @@ func ListTasks(ctx context.Context, c *apiclient.KopiaAPIClient) (*TaskListRespo
 	return resp, nil
 }
 
+// UpcomingTasks returns the next scheduled snapshots and verifies across every source, soonest first.
+func UpcomingTasks(ctx context.Context, c *apiclient.KopiaAPIClient, limit int) (*UpcomingTasksResponse, error) {
+	resp := &UpcomingTasksResponse{}
+
+	u := "tasks/upcoming"
+	if limit > 0 {
+		u += fmt.Sprintf("?limit=%v", limit)
+	}
+
+	if err := c.Get(ctx, u, nil, resp); err != nil {
+		return nil, errors.Wrap(err, "UpcomingTasks")
+	}
+
+	return resp, nil
+}
+
 // GetObject returns the object payload.
 func GetObject(ctx context.Context, c *apiclient.KopiaAPIClient, objectID string) ([]byte, error) {
 	var b []byte
