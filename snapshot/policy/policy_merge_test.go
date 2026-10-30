@@ -348,3 +348,23 @@ func TestPolicyMergeTimesOfDayIncludingParents(t *testing.T) {
 
 	require.Equal(t, want.String(), result.String())
 }
+
+func TestPolicyMergeScheduleChoiceWinsOverParent(t *testing.T) {
+	// a more specific policy that picks times of day does not also inherit a parent's interval, and a more
+	// specific policy that picks an interval does not also inherit a parent's times of day -- otherwise the
+	// two compete for whichever fires sooner instead of the more specific choice simply winning.
+	withTimesOfDay := &policy.Policy{
+		SchedulingPolicy: policy.SchedulingPolicy{TimesOfDay: []policy.TimeOfDay{{Hour: 9, Minute: 30}}},
+	}
+	withInterval := &policy.Policy{
+		SchedulingPolicy: policy.SchedulingPolicy{IntervalSeconds: 3600},
+	}
+
+	result, _ := policy.MergePolicies([]*policy.Policy{withTimesOfDay, withInterval}, withTimesOfDay.Target())
+	require.Equal(t, []policy.TimeOfDay{{Hour: 9, Minute: 30}}, result.SchedulingPolicy.TimesOfDay)
+	require.Zero(t, result.SchedulingPolicy.IntervalSeconds)
+
+	result, _ = policy.MergePolicies([]*policy.Policy{withInterval, withTimesOfDay}, withInterval.Target())
+	require.Equal(t, int64(3600), result.SchedulingPolicy.IntervalSeconds)
+	require.Empty(t, result.SchedulingPolicy.TimesOfDay)
+}

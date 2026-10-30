@@ -237,3 +237,47 @@ func TestPolicyResolveVerifyScheduling(t *testing.T) {
 	require.Contains(t, res.VerifySchedulingError, "bogus")
 	require.Empty(t, res.SchedulingError)
 }
+
+// Reproduces the GUI's "When" picker scenario end to end: the global policy has a repeating interval,
+// and this source picks times of day instead. The source's choice should win outright, not combine with
+// the inherited interval.
+func TestPolicyResolveScheduleChoiceWinsOverParent(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+	srvInfo := servertesting.StartServer(t, env, false)
+
+	cli, err := apiclient.NewKopiaAPIClient(apiclient.Options{
+		BaseURL:                             srvInfo.BaseURL,
+		TrustedServerCertificateFingerprint: srvInfo.TrustedServerCertificateFingerprint,
+		Username:                            servertesting.TestUIUsername,
+		Password:                            servertesting.TestUIPassword,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cli.FetchCSRFTokenForTesting(ctx))
+
+	dir := testutil.TempDirectory(t)
+	si := env.LocalPathSourceInfo(dir)
+
+	mustSetPolicy(t, cli, policy.GlobalPolicySourceInfo, &policy.Policy{
+		SchedulingPolicy: policy.SchedulingPolicy{IntervalSeconds: 3600},
+	})
+
+	res, err := serverapi.ResolvePolicy(ctx, cli, si, &serverapi.ResolvePolicyRequest{
+		Updates: &policy.Policy{
+			SchedulingPolicy: policy.SchedulingPolicy{TimesOfDay: []policy.TimeOfDay{{Hour: 9, Minute: 30}}},
+		},
+		NumUpcomingSnapshotTimes: 3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []policy.TimeOfDay{{Hour: 9, Minute: 30}}, res.Effective.SchedulingPolicy.TimesOfDay)
+	require.Zero(t, res.Effective.SchedulingPolicy.IntervalSeconds, "the global interval must not also apply")
+	require.Len(t, res.UpcomingSnapshotTimes, 3)
+
+	// once a day at 9:30, not hourly -- checked by wall-clock time of day, not by the elapsed gap:
+	// a DST transition makes one real day 23 or 25 hours, so "exactly 24h apart" is not a safe check
+	// here even for a correct schedule.
+	for _, ust := range res.UpcomingSnapshotTimes {
+		local := ust.Local()
+		require.Equal(t, 9, local.Hour())
+		require.Equal(t, 30, local.Minute())
+	}
+}

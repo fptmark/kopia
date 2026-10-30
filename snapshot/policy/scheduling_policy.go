@@ -142,8 +142,6 @@ func (p *SchedulingPolicy) NextSnapshotTime(previousSnapshotTime, now time.Time)
 
 // Get next ToD snapshot.
 func (p *SchedulingPolicy) getNextTimeOfDaySnapshot(now time.Time) (time.Time, bool) {
-	const oneDay = 24 * time.Hour
-
 	var nextSnapshotTime time.Time
 
 	ok := false
@@ -153,7 +151,10 @@ func (p *SchedulingPolicy) getNextTimeOfDaySnapshot(now time.Time) (time.Time, b
 		localSnapshotTime := time.Date(nowLocalTime.Year(), nowLocalTime.Month(), nowLocalTime.Day(), tod.Hour, tod.Minute, 0, 0, time.Local)
 
 		if now.After(localSnapshotTime) {
-			localSnapshotTime = localSnapshotTime.Add(oneDay)
+			// AddDate, not Add(24*time.Hour): on the day a DST transition lands, that calendar day is
+			// 23 or 25 real hours, so adding a flat 24 hours lands on the wrong wall-clock hour (9:30
+			// becomes 8:30 or 10:30) instead of the same time of day tomorrow.
+			localSnapshotTime = localSnapshotTime.AddDate(0, 0, 1)
 		}
 
 		if !ok || localSnapshotTime.Before(nextSnapshotTime) {
@@ -223,11 +224,19 @@ func (p *SchedulingPolicy) checkMissedSnapshot(now, previousSnapshotTime, nextSn
 	return nextSnapshot.Before(now) && nextSnapshotTime.After(now.Add(halfhour))
 }
 
-// Merge applies default values from the provided policy.
+// Merge applies default values from the provided policy. IntervalSeconds and TimesOfDay are two different ways
+// to say when to run, so whichever a more specific policy already picked wins outright -- a parent that picked
+// the other way is not also merged in, or its schedule would silently combine with this one (two competing
+// schedules, sharing whichever fires sooner) instead of being replaced by it.
 func (p *SchedulingPolicy) Merge(src SchedulingPolicy, def *SchedulingPolicyDefinition, si snapshot.SourceInfo) {
-	mergeInt64(&p.IntervalSeconds, src.IntervalSeconds, &def.IntervalSeconds, si)
+	hadInterval := p.IntervalSeconds != 0
+	hadTimesOfDay := len(p.TimesOfDay) > 0
 
-	if len(src.TimesOfDay) > 0 {
+	if !hadTimesOfDay {
+		mergeInt64(&p.IntervalSeconds, src.IntervalSeconds, &def.IntervalSeconds, si)
+	}
+
+	if !hadInterval && len(src.TimesOfDay) > 0 {
 		def.TimesOfDay = si
 
 		if !p.NoParentTimesOfDay {
