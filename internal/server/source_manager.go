@@ -79,6 +79,12 @@ type sourceManager struct {
 	lastAttemptedSnapshotTime fs.UTCTimestamp
 	// +checklocks:sourceMutex
 	isReadOnly bool
+	// +checklocks:sourceMutex
+	// snapshotInProgress is set for the duration of an actual upload, so a refreshStatus() landing in
+	// that window (the periodic one, not the one this very upload triggers when it finishes) leaves
+	// the schedule alone instead of judging this source overdue off a manifest that predates the
+	// upload in flight, and arming another run before this one even finishes.
+	snapshotInProgress bool
 
 	progress *upload.CountingUploadProgress
 }
@@ -111,6 +117,13 @@ func (s *sourceManager) setStatus(stat string) {
 	defer s.sourceMutex.Unlock()
 
 	s.state = stat
+}
+
+func (s *sourceManager) setSnapshotInProgress(v bool) {
+	s.sourceMutex.Lock()
+	defer s.sourceMutex.Unlock()
+
+	s.snapshotInProgress = v
 }
 
 func (s *sourceManager) isPaused() bool {
@@ -236,7 +249,11 @@ func (s *sourceManager) runLocal(ctx context.Context) {
 
 			userLog(ctx).Debugw("snapshotting", "source", s.src)
 
-			if err := s.server.runSnapshotTask(ctx, s.src, s.snapshotInternal); err != nil {
+			s.setSnapshotInProgress(true)
+			err := s.server.runSnapshotTask(ctx, s.src, s.snapshotInternal)
+			s.setSnapshotInProgress(false)
+
+			if err != nil {
 				userLog(ctx).Errorf("snapshot error: %v", err)
 
 				s.backoffBeforeNextSnapshot()
@@ -527,10 +544,17 @@ func (s *sourceManager) refreshStatus(ctx context.Context) {
 		s.lastSnapshot = nil
 	}
 
-	if s.paused {
+	switch {
+	case s.paused:
 		s.nextSnapshotTime = nil
 		s.nextVerifyTime = nil
-	} else {
+	case s.snapshotInProgress:
+		// leave the schedule as it is (nil: scheduleSnapshotNow already cleared it for this run).
+		// Recomputing here would judge this source overdue off lastCompleteSnapshot, which still
+		// predates the upload that is actually running right now, and arm another one before this
+		// one even finishes. The refreshStatus() this very upload calls when it completes is not
+		// skipped: snapshotInProgress is cleared before that call.
+	default:
 		s.nextSnapshotTime = s.findClosestNextSnapshotTimeReadLocked()
 		s.nextVerifyTime = s.findClosestNextVerifyTimeReadLocked()
 	}
