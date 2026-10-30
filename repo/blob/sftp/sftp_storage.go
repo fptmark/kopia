@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
@@ -37,6 +39,24 @@ const (
 	tempFileRandomSuffixLen = 8
 
 	packetSize = 1 << 15
+
+	// sshDialTimeout bounds the initial TCP+handshake, which otherwise has no timeout of its own and
+	// can hang indefinitely against a host that never responds.
+	sshDialTimeout = 30 * time.Second
+
+)
+
+// A read or write on this connection has no timeout of its own: pkg/sftp and the ssh transport
+// below it just wait on the channel, so a connection that goes quiet without actually closing (the
+// network drops packets with no reset, a sleeping machine's socket never torn down) leaves whatever
+// call is in flight blocked forever, with nothing to retry or reconnect. These two vars drive a
+// periodic keepalive that pings the connection on its own and closes it when a ping doesn't come
+// back in time -- which unblocks any read or write stuck on it, surfacing as the same "connection
+// closed" error the reconnector already retries against a fresh connection. Vars, not consts, so a
+// test can shorten them instead of running for real minutes.
+var (
+	sshKeepaliveInterval = 30 * time.Second
+	sshKeepaliveTimeout  = 15 * time.Second
 )
 
 // sftpStorage implements blob.Storage on top of sftp.
@@ -55,6 +75,9 @@ type sftpConnection struct {
 	closeFunc     func() error
 	currentClient *sftp.Client
 	closed        bool
+	// stopKeepalive stops this connection's keepalive goroutine, if it has one (the internal SSH
+	// client does; the external-SSH-subprocess one has no ssh.Client of its own to ping).
+	stopKeepalive func()
 }
 
 func (c *sftpConnection) String() string {
@@ -62,6 +85,10 @@ func (c *sftpConnection) String() string {
 }
 
 func (c *sftpConnection) Close() error {
+	if c.stopKeepalive != nil {
+		c.stopKeepalive()
+	}
+
 	if err := c.currentClient.Close(); err != nil {
 		return errors.Wrap(err, "error closing SFTP client")
 	}
@@ -148,6 +175,11 @@ func (s *sftpImpl) GetBlobFromPath(ctx context.Context, dirPath, fullPath string
 		if _, err = r.Seek(offset, io.SeekStart); err != nil {
 			return errors.Wrapf(blob.ErrInvalidRange, "seek error: %v", err)
 		}
+
+		// a retry (after a dropped connection) reuses this output buffer; without resetting it here,
+		// bytes written by an earlier, interrupted attempt stay in the buffer and the retry's bytes
+		// are appended on top, so EnsureLengthExactly below sees more bytes than requested.
+		output.Reset()
 
 		if err := iocopy.JustCopy(output, io.LimitReader(r, length)); err != nil {
 			var se *sftp.StatusError
@@ -444,7 +476,49 @@ func createSSHConfig(ctx context.Context, opt *Options) (*ssh.ClientConfig, erro
 		User:            opt.Username,
 		Auth:            auth,
 		HostKeyCallback: hostKeyCallback,
+		Timeout:         sshDialTimeout,
 	}, nil
+}
+
+// sshKeepalive pings conn every sshKeepaliveInterval and closes it if a ping doesn't come back
+// within sshKeepaliveTimeout, so a connection that has gone quiet without actually closing doesn't
+// leave a blocked read or write stuck on it forever. Stops when done is closed.
+func sshKeepalive(conn *ssh.Client, done <-chan struct{}) {
+	ticker := time.NewTicker(sshKeepaliveInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return
+
+		case <-ticker.C:
+			// SendRequest itself has no timeout, so it runs on its own goroutine: if the connection
+			// really is dead, this call may never return, but the select below still times out and
+			// closes conn either way, which then unblocks SendRequest too.
+			reply := make(chan error, 1)
+
+			go func() {
+				_, _, err := conn.SendRequest("keepalive@kopia.io", true, nil)
+				reply <- err
+			}()
+
+			select {
+			case err := <-reply:
+				if err != nil {
+					conn.Close() //nolint:errcheck
+
+					return
+				}
+			case <-time.After(sshKeepaliveTimeout):
+				conn.Close() //nolint:errcheck
+
+				return
+			case <-done:
+				return
+			}
+		}
+	}
 }
 
 func getSFTPClientExternal(ctx context.Context, opt *Options) (*sftpConnection, error) {
@@ -537,9 +611,13 @@ func getSFTPClient(ctx context.Context, opt *Options) (*sftpConnection, error) {
 		return nil, errors.Wrapf(err, "unable to create sftp client")
 	}
 
+	done := make(chan struct{})
+	go sshKeepalive(conn, done)
+
 	return &sftpConnection{
 		currentClient: c,
 		closeFunc:     conn.Close,
+		stopKeepalive: sync.OnceFunc(func() { close(done) }),
 	}, nil
 }
 
