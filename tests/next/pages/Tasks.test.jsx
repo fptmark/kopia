@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { Tasks } from "../../../src/next/pages/Tasks";
 import { Task } from "../../../src/next/pages/Task";
@@ -24,14 +24,14 @@ const task = (id, over = {}) => ({
 
 const prefs = { pageSize: 25, bytesStringBase2: false };
 
-const renderTasks = () =>
-  render(
-    <MemoryRouter>
-      <UIPreferencesContext.Provider value={prefs}>
-        <Tasks />
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderTasks = () => {
+  const router = createMemoryRouter([{ path: "*", element: <Tasks /> }]);
+  return render(
+    <UIPreferencesContext.Provider value={prefs}>
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
   );
+};
 
 describe("Tasks page", () => {
   beforeEach(() => {
@@ -116,6 +116,36 @@ describe("Tasks page", () => {
     expect(screen.getByText("operation not permitted")).toBeInTheDocument();
   });
 
+  it("marks a passing Verify task that cleared a previous failure", async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === "/api/v1/verify/status") {
+        return Promise.resolve({ data: { state: "ok", clearedTaskIds: ["a"] } });
+      }
+      return Promise.resolve({
+        data: {
+          history: true,
+          total: 2,
+          kinds: [],
+          tasks: [
+            task("a", {
+              kind: "Verify",
+              description: "Verify snapshot of /Applications from 2026-10-26 21:00 (30% of files)",
+            }),
+            task("b", {
+              kind: "Verify",
+              description: "Verify snapshot of /Users/me from 2026-10-27 09:00 (data it added)",
+            }),
+          ],
+        },
+      });
+    });
+    renderTasks();
+    await waitFor(() => expect(screen.getByTestId("task-cleared-inline")).toBeInTheDocument());
+    expect(screen.getByTestId("task-cleared-inline")).toHaveTextContent("cleared a previous failure");
+    // only the task named in clearedTaskIds gets the note, not every passing Verify task
+    expect(screen.getAllByTestId("task-cleared-inline")).toHaveLength(1);
+  });
+
   it("asks the server for matches when a filter changes", async () => {
     axios.get.mockResolvedValue({ data: { history: true, total: 1, tasks: [task("a")] } });
     renderTasks();
@@ -133,13 +163,16 @@ describe("Tasks page", () => {
   });
 
   it("shows older tasks on request", async () => {
-    axios.get.mockImplementation((url, opts) =>
-      Promise.resolve({
+    axios.get.mockImplementation((url, opts) => {
+      if (url !== "/api/v1/tasks") {
+        return Promise.resolve({ data: {} });
+      }
+      return Promise.resolve({
         data: opts.params.before
           ? { tasks: [task("old", { description: "me@mac:/Old at 2026-10-01T10:00:00Z" })] }
           : { history: true, total: 2, tasks: [task("a")] },
-      }),
-    );
+      });
+    });
     renderTasks();
     await waitFor(() => expect(screen.getByTestId("load-older-tasks")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("load-older-tasks"));
@@ -158,6 +191,75 @@ describe("Tasks page", () => {
     await waitFor(() => expect(screen.getByText("Stop")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Stop"));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/tasks/r/cancel", {}));
+  });
+
+  it("shows a running verify's progress, the same bar as the Snapshots page", async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        tasks: [
+          task("v", {
+            kind: "Verify",
+            status: "RUNNING",
+            endTime: undefined,
+            progressInfo: "reading the snapshot back",
+            counters: { "Files checked": { value: 25 }, "Total files": { value: 100 } },
+          }),
+        ],
+      },
+    });
+    renderTasks();
+    await waitFor(() => expect(screen.getByTestId("task-verify-progress")).toBeInTheDocument());
+    expect(screen.getByTestId("task-verify-progress")).toHaveTextContent("reading the snapshot back");
+    expect(screen.getByLabelText("Verification progress")).toHaveAttribute("aria-valuenow", "25");
+  });
+});
+
+describe("Future tasks tab", () => {
+  const upcoming = (over = {}) => ({
+    time: "2026-10-30T09:00:00Z",
+    kind: "Snapshot",
+    source: { userName: "me", host: "mac", path: "/Users/me" },
+    ...over,
+  });
+
+  beforeEach(() => {
+    axios.get.mockReset().mockImplementation((url, opts) => {
+      if (url === "/api/v1/tasks/upcoming") {
+        return Promise.resolve({ data: { tasks: [upcoming()], limit: opts?.params?.limit } });
+      }
+      return Promise.resolve({ data: { tasks: [] } });
+    });
+  });
+
+  it("asks for the next 10 by default, and links each row to its source's policy", async () => {
+    renderTasks();
+    fireEvent.click(screen.getByTestId("tab-future"));
+    await waitFor(() => expect(screen.getByTestId("future-task-source")).toBeInTheDocument());
+    expect(axios.get).toHaveBeenCalledWith("/api/v1/tasks/upcoming", { params: { limit: 10 } });
+    expect(screen.getByText("Snapshot")).toBeInTheDocument();
+    expect(screen.getByTestId("future-task-source")).toHaveAttribute(
+      "href",
+      "/policies/edit?userName=me&host=mac&path=%2FUsers%2Fme",
+    );
+  });
+
+  it("re-asks with a bigger limit when Show changes", async () => {
+    renderTasks();
+    fireEvent.click(screen.getByTestId("tab-future"));
+    await waitFor(() => expect(screen.getByTestId("future-task-source")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("How many upcoming tasks to show"), { target: { value: "50" } });
+    await waitFor(() =>
+      expect(axios.get).toHaveBeenCalledWith("/api/v1/tasks/upcoming", { params: { limit: 50 } }),
+    );
+  });
+
+  it("says so when nothing is scheduled", async () => {
+    axios.get.mockReset().mockImplementation((url) =>
+      Promise.resolve({ data: url === "/api/v1/tasks/upcoming" ? { tasks: [] } : { tasks: [] } }),
+    );
+    renderTasks();
+    fireEvent.click(screen.getByTestId("tab-future"));
+    await waitFor(() => expect(screen.getByText(/Nothing is scheduled/)).toBeInTheDocument());
   });
 });
 
@@ -179,16 +281,16 @@ describe("task helpers", () => {
 });
 
 describe("Task page", () => {
-  const renderTask = () =>
-    render(
-      <MemoryRouter initialEntries={["/tasks/t1"]}>
-        <UIPreferencesContext.Provider value={prefs}>
-          <Routes>
-            <Route path="/tasks/:tid" element={<Task />} />
-          </Routes>
-        </UIPreferencesContext.Provider>
-      </MemoryRouter>,
+  const renderTask = () => {
+    const router = createMemoryRouter([{ path: "/tasks/:tid", element: <Task /> }], {
+      initialEntries: ["/tasks/t1"],
+    });
+    return render(
+      <UIPreferencesContext.Provider value={prefs}>
+        <RouterProvider router={router} />
+      </UIPreferencesContext.Provider>,
     );
+  };
 
   const serve = (t, extra = {}) =>
     axios.get.mockImplementation((url) => {

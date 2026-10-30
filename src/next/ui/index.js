@@ -15,5 +15,5 @@ export { Breadcrumbs } from "./Breadcrumbs";
 export { FromLink } from "./FromLink";
 export { CliCommand } from "./CliCommand";
 export { HealthBanner } from "./HealthBanner";
-export { VerifiedCell, VerifyDialog, VerifyModePicker, VerifyFailuresDialog } from "./Verification";
+export { VerifiedCell, VerifyDialog, VerifyModePicker, VerifyFailuresDialog, ProgressBit } from "./Verification";
 export { BackupHealth } from "./BackupHealth";

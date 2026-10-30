@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { SnapshotHistory } from "../../../src/next/pages/SnapshotHistory";
 
@@ -46,17 +46,20 @@ function serve({ list = history(THREE), stats = { snapshots: [] } } = {}) {
   });
 }
 
-const renderPage = () =>
-  render(
-    <MemoryRouter initialEntries={["/snapshots/single-source?userName=me&host=mac&path=%2FUsers%2Fme"]}>
-      <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
-        <Routes>
-          <Route path="/snapshots/single-source" element={<SnapshotHistory />} />
-          <Route path="*" element={<Where />} />
-        </Routes>
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderPage = () => {
+  const router = createMemoryRouter(
+    [
+      { path: "/snapshots/single-source", element: <SnapshotHistory /> },
+      { path: "*", element: <Where /> },
+    ],
+    { initialEntries: ["/snapshots/single-source?userName=me&host=mac&path=%2FUsers%2Fme"] },
   );
+  return render(
+    <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
+  );
+};
 
 const box = (id) => screen.getByLabelText("Select row " + id);
 
@@ -317,6 +320,25 @@ describe("SnapshotHistory", () => {
       expect(within(queued).queryByRole("progressbar")).toBeNull();
     });
 
+    it("stays indeterminate while listing even once the server already knows the file count", async () => {
+      // the server fills in total from the snapshot's own file count before listing starts, well before it
+      // knows how many of those still need reading -- a real percent (and the Tasks page's identical bar)
+      // only appears once listing is done.
+      serve();
+      answer({
+        verifications: [],
+        running: [
+          { snapshotId: "s1", mode: "full", percent: 100, state: "running", phase: "listing", files: 0, total: 9000 },
+        ],
+      });
+      renderPage();
+      await waitFor(() => expect(screen.getByTestId("verify-running")).toBeInTheDocument());
+      const bar = screen.getByRole("progressbar");
+      expect(bar).not.toHaveAttribute("aria-valuenow", "0");
+      expect(bar.className).toMatch(/progress-bar-animated/);
+      expect(screen.getByTestId("verify-running")).toHaveTextContent("Listing stored data");
+    });
+
     it("lists the files that failed when the failed badge is clicked", async () => {
       serve();
       answer({ verifications: [verification({ ok: false, errorCount: 2 })], running: [] });
@@ -354,7 +376,7 @@ describe("SnapshotHistory", () => {
       fireEvent.click(box("s3"));
       fireEvent.click(box("s2"));
       fireEvent.click(screen.getByRole("button", { name: "Verify" }));
-      fireEvent.click(screen.getByLabelText("A sample of the files"));
+      fireEvent.click(screen.getByLabelText("Verify files"));
       fireEvent.change(screen.getByLabelText("Percent of files"), { target: { value: "25" } });
       fireEvent.click(screen.getByTestId("confirm"));
 
@@ -367,15 +389,34 @@ describe("SnapshotHistory", () => {
       await waitFor(() => expect(screen.getByText(/Verifying 1 snapshot/)).toBeInTheDocument());
     });
 
-    it("does not start a sample of 0 or 100 percent", async () => {
+    it("treats 100 percent as verifying every file, not an error", async () => {
       serve();
       answer({ verifications: [], running: [] });
       renderPage();
       await waitFor(() => expect(screen.getByText("Compare")).toBeInTheDocument());
       fireEvent.click(box("s3"));
       fireEvent.click(screen.getByRole("button", { name: "Verify" }));
-      fireEvent.click(screen.getByLabelText("A sample of the files"));
+      fireEvent.click(screen.getByLabelText("Verify files"));
       fireEvent.change(screen.getByLabelText("Percent of files"), { target: { value: "100" } });
+      fireEvent.click(screen.getByTestId("confirm"));
+
+      await waitFor(() =>
+        expect(changes()).toContainEqual([
+          "/api/v1/snapshots/verify",
+          { snapshotIds: ["s3"], mode: "full", percent: 100 },
+        ]),
+      );
+    });
+
+    it("does not start a sample of 0 percent", async () => {
+      serve();
+      answer({ verifications: [], running: [] });
+      renderPage();
+      await waitFor(() => expect(screen.getByText("Compare")).toBeInTheDocument());
+      fireEvent.click(box("s3"));
+      fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+      fireEvent.click(screen.getByLabelText("Verify files"));
+      fireEvent.change(screen.getByLabelText("Percent of files"), { target: { value: "0" } });
       expect(screen.getByTestId("confirm")).toBeDisabled();
     });
   });

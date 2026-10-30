@@ -47,6 +47,13 @@ export function sourceString(source) {
   return ownerName(source) + ":" + source.path;
 }
 
+/** The path out of a source string the server already wrote as user@host:/path (the inverse of sourceString,
+ * for the few places -- a failing verification -- that get the string instead of {userName, host, path}). */
+export function sourcePathFromString(s) {
+  const i = s.indexOf(":");
+  return i < 0 ? s : s.slice(i + 1);
+}
+
 /** The failed-files summary of a source's newest snapshot, with what the dialog needs to act on it. */
 export function failedSummary(row) {
   const summ = row.lastSnapshot?.rootEntry?.summ;

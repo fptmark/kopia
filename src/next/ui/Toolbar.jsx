@@ -4,7 +4,8 @@ import { PagerSlotContext } from "./PagerSlot";
 /**
  * The row above a table. Related controls go in one Group, which is drawn as a bordered box with a small
  * label, so what belongs together reads as together. end pushes a group to the right; grow lets it take the
- * free width; center puts it in the middle of the row.
+ * free width; center puts it in the middle of the row; nowrap keeps its own controls on one line, shrinking
+ * them instead of dropping to a second line.
  * Only a group with a label is boxed; buttons and a lone checkbox sit unboxed.
  */
 export function Toolbar({ children, ...rest }) {
@@ -17,7 +18,7 @@ export function Toolbar({ children, ...rest }) {
   );
 }
 
-function Group({ label, grow = false, end = false, center = false, children, ...rest }) {
+function Group({ label, grow = false, end = false, center = false, nowrap = false, children, ...rest }) {
   return (
     <div
       className={
@@ -25,6 +26,7 @@ function Group({ label, grow = false, end = false, center = false, children, ...
         (grow ? " grow" : "") +
         (end ? " end" : "") +
         (center ? " center" : "") +
+        (nowrap ? " nowrap" : "") +
         (label ? "" : " plain")
       }
       {...rest}

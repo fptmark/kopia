@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Form from "react-bootstrap/Form";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Modal from "react-bootstrap/Modal";
@@ -13,7 +13,7 @@ import { Loaded } from "./Feedback";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 // the browser's own tooltip waits over a second; this one shows after half a second
-const TIP_DELAY = { show: 500, hide: 0 };
+export const TIP_DELAY = { show: 500, hide: 0 };
 
 function VerifiedBadge({ v, onShowFailures, label, when }) {
   const at = when ? formatLongDateTime(when) + ". " : "";
@@ -51,6 +51,21 @@ function VerifiedBadge({ v, onShowFailures, label, when }) {
   );
 }
 
+/** A slim bar at a known percent, or animated/striped while the total isn't known yet. The same bar everywhere
+ * something is read back or checked: a running verify here, and a running task on the Tasks page. */
+export function ProgressBit({ percent, ariaLabel }) {
+  return (
+    <ProgressBar
+      now={percent ?? 100}
+      animated={percent === null}
+      striped={percent === null}
+      style={{ height: "0.5rem", width: "6rem" }}
+      aria-label={ariaLabel}
+      {...(percent === null ? {} : { "aria-valuenow": percent })}
+    />
+  );
+}
+
 const whatIsRead = (r) =>
   r.mode === "new" ? "added data" : r.mode === "sample" ? r.percent + "% sample" : "every file";
 
@@ -63,7 +78,7 @@ const elapsedText = (r) => {
 const idleText = (r) => idleMinutes(r) + " min";
 
 /** A verification that is queued or running: a bar of files checked out of the files to check, and what it is doing. */
-function VerifyProgress({ r }) {
+export function VerifyProgress({ r }) {
   const n = (x) => formatCount(x);
   if (r.state === "queued") {
     return (
@@ -72,18 +87,14 @@ function VerifyProgress({ r }) {
       </span>
     );
   }
-  const known = r.total > 0;
+  // the server fills in r.total (the snapshot's own file count) before it starts listing, well before it
+  // knows how many of those files still need a read back, so a real percent only means something once listing
+  // is done -- until then this stays indeterminate, same as a running task's bar with no counters yet.
+  const known = r.total > 0 && r.phase !== "listing";
   const percent = known ? Math.min(100, Math.floor((r.files * 100) / r.total)) : null;
   return (
     <span className="nx-inline" data-testid="verify-running">
-      <ProgressBar
-        now={percent ?? 100}
-        animated={percent === null}
-        striped={percent === null}
-        style={{ height: "0.5rem", width: "6rem" }}
-        aria-label="Verification progress"
-        {...(percent === null ? {} : { "aria-valuenow": percent })}
-      />
+      <ProgressBit percent={percent} ariaLabel="Verification progress" />
       <span className="nx-muted small">
         {r.phase === "listing"
           ? "Listing stored data · " + elapsedText(r)
@@ -133,54 +144,75 @@ export function VerifiedCell({ info, onShowFailures }) {
   );
 }
 
-const MODES = [
-  {
-    id: "new",
-    label: "Data this snapshot added",
-    help: "Quick.",
-  },
-  {
-    id: "sample",
-    label: "A sample of the files",
-    help: "A random share of the files.",
-  },
-  {
-    id: "full",
-    label: "Every file",
-    help: "Thorough but slow.",
-  },
-];
-
-/** The choice of what to read back: the data a snapshot added, a sample, or every file. */
+/**
+ * The choice of what to read back: the data a snapshot added, or a percent of its files (100% is every file --
+ * there's no separate "full" choice to pick between, since that's all the "full" mode ever meant). mode comes
+ * out of onChange as "new", "sample" or "full" -- "full" exactly when the percent reaches 100 -- so callers
+ * that already speak that three-way mode (the verify API, the per-snapshot-verify preference) don't change.
+ */
 export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode" }) {
-  return MODES.map((m) => (
-    <div key={m.id}>
-      <Form.Check
-        type="radio"
-        id={name + "-" + m.id}
-        name={name}
-        label={m.label}
-        checked={mode === m.id}
-        onChange={() => onChange(m.id, percent)}
-      />
-      <div className="nx-help">{m.help}</div>
-      {m.id === "sample" && mode === "sample" && (
-        <div className="nx-row">
-          <Form.Control
-            size="sm"
-            type="number"
-            min={1}
-            max={99}
-            style={{ width: "6rem" }}
-            aria-label="Percent of files"
-            value={percent}
-            onChange={(e) => onChange(mode, e.target.value)}
-          />
-          <span>% of the files</span>
-        </div>
-      )}
-    </div>
-  ));
+  const isNew = mode === "new";
+  const shownPercent = mode === "full" ? 100 : percent;
+
+  const setPercent = (p) => onChange(p >= 100 ? "full" : "sample", p);
+
+  // its own buffer, not read straight from shownPercent: an unrelated re-render elsewhere in the app (the
+  // health banner polls every few seconds) would otherwise snap a mid-edit, momentarily-empty box back to the
+  // last committed number before the next keystroke could land.
+  const [text, setText] = useState(String(shownPercent));
+  useEffect(() => setText(String(shownPercent)), [shownPercent]);
+
+  const typePercent = (raw) => {
+    setText(raw);
+    if (raw === "") {
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isNaN(n)) {
+      setPercent(n);
+    }
+  };
+
+  return (
+    <>
+      <div>
+        <Form.Check
+          type="radio"
+          id={name + "-new"}
+          name={name}
+          label="Data added"
+          checked={isNew}
+          onChange={() => onChange("new", percent)}
+        />
+        <div className="nx-help">Quick.</div>
+      </div>
+      <div>
+        <Form.Check
+          type="radio"
+          id={name + "-sample"}
+          name={name}
+          label="Verify files"
+          checked={!isNew}
+          onChange={() => setPercent(shownPercent || 10)}
+        />
+        {!isNew && (
+          <div className="nx-row">
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              max={100}
+              style={{ width: "6rem" }}
+              aria-label="Percent of files"
+              value={text}
+              onChange={(e) => typePercent(e.target.value)}
+            />
+            <span>% of the files</span>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 /** Asks what to read back for the selected snapshots. onStart gets (mode, percent). */

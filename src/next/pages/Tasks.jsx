@@ -3,8 +3,11 @@ import { formatCount } from "../format";
 import Button from "react-bootstrap/Button";
 import Form from "react-bootstrap/Form";
 import { Link } from "react-router";
+import { policyEditorURL } from "../../utils/policyutil";
 import { errorMessage } from "../api";
+import { loadHealth } from "../health";
 import { useDebounced, useLoad } from "../hooks";
+import { sourceString } from "../snapshots";
 import {
   cancelTask,
   failedWithMessage,
@@ -12,10 +15,12 @@ import {
   isSuccess,
   loadTaskErrors,
   loadTasks,
+  loadUpcomingTasks,
   shortTaskError,
   TASK_STATUSES,
   taskDescription,
   taskStatus,
+  verifyTaskPercent,
 } from "../tasks";
 import {
   DataTable,
@@ -25,21 +30,31 @@ import {
   Loaded,
   Notice,
   Page,
+  ProgressBit,
   SearchBox,
   StatusBadge,
+  TabNav,
   TaskErrorDialog,
   Toolbar,
 } from "../ui";
 
-/** The status of a task and, for one that failed or skipped files, the button that explains it. */
+/** The status of a task: its badge, a running Verify's progress bar, and, for one that failed or skipped
+ * files, the button that explains it. */
 function StatusCell({ task, onDetails, onCancel }) {
   const s = taskStatus(task);
   const hasError = failedWithMessage(task);
   const skipped = task.failedFiles > 0;
+  const verifying = isRunning(task) && task.kind === "Verify";
 
   return (
     <span className="nx-inline">
       <StatusBadge kind={s.kind}>{s.text}</StatusBadge>
+      {verifying && (
+        <span className="nx-inline" data-testid="task-verify-progress">
+          <ProgressBit percent={verifyTaskPercent(task)} ariaLabel="Verification progress" />
+          <span className="nx-muted small">{task.progressInfo}</span>
+        </span>
+      )}
       {(hasError || skipped) && (
         <Button
           size="sm"
@@ -65,7 +80,73 @@ function StatusCell({ task, onDetails, onCancel }) {
   );
 }
 
-export function Tasks() {
+const UPCOMING_LIMITS = [10, 25, 50, 100];
+
+/** What's scheduled next across every source, soonest first; "Show" picks how many to ask the server for. */
+function FutureTasks() {
+  const [limit, setLimit] = useState(UPCOMING_LIMITS[0]);
+  const state = useLoad(() => loadUpcomingTasks(limit), [limit], { refreshMs: 60000 });
+  const tasks = state.data?.tasks ?? [];
+
+  const columns = [
+    {
+      id: "time",
+      header: "Scheduled for",
+      accessor: (t) => t.time,
+      cell: (t) => <DateTimeText long value={t.time} />,
+    },
+    { id: "kind", header: "Kind", accessor: (t) => t.kind },
+    {
+      id: "source",
+      header: "Source",
+      accessor: (t) => sourceString(t.source),
+      cell: (t) => (
+        <Link to={policyEditorURL(t.source)} data-testid="future-task-source">
+          {sourceString(t.source)}
+        </Link>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <Toolbar>
+        <Toolbar.Group label="Show">
+          <Form.Select
+            size="sm"
+            aria-label="How many upcoming tasks to show"
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+          >
+            {UPCOMING_LIMITS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </Form.Select>
+        </Toolbar.Group>
+      </Toolbar>
+      <Loaded state={state}>
+        {() =>
+          tasks.length === 0 ? (
+            <EmptyState>Nothing is scheduled: every source is manual, or has no schedule set.</EmptyState>
+          ) : (
+            <DataTable
+              label="upcoming tasks"
+              data={tasks}
+              columns={columns}
+              getRowId={(t) => t.kind + "/" + sourceString(t.source) + "/" + t.time}
+              initialSort={{ id: "time", desc: false }}
+              emptyText="Nothing is scheduled."
+            />
+          )
+        }
+      </Loaded>
+    </>
+  );
+}
+
+function TaskHistory() {
   const [status, setStatus] = useState("All");
   const [kind, setKind] = useState("All");
   const [from, setFrom] = useState("");
@@ -81,6 +162,10 @@ export function Tasks() {
 
   const state = useLoad(() => loadTasks(filters), [filters], { refreshMs: 3000 });
   const key = JSON.stringify(filters);
+
+  // Verify tasks whose result found a previous failure of the same source and mode passing again
+  const health = useLoad(loadHealth, [], { refreshMs: 60000 });
+  const clearedIds = useMemo(() => new Set(health.data?.clearedTaskIds ?? []), [health.data]);
 
   const first = state.data?.tasks ?? [];
   const olderTasks = older.key === key ? older.tasks.filter((t) => !first.some((f) => f.id === t.id)) : [];
@@ -162,13 +247,19 @@ export function Tasks() {
               · {shortTaskError(t.errorMessage)}
             </span>
           )}
+          {isSuccess(t) && clearedIds.has(t.id) && (
+            <span className="text-success" data-testid="task-cleared-inline">
+              {" "}
+              · cleared a previous failure
+            </span>
+          )}
         </span>
       ),
     },
   ];
 
   return (
-    <Page title="Tasks">
+    <>
       {message && (
         <Notice kind="error" onClose={() => setMessage(null)}>
           {message}
@@ -255,6 +346,22 @@ export function Tasks() {
 
       {dialog?.error && <TaskErrorDialog info={dialog.error} onClose={() => setDialog(null)} />}
       {dialog?.failures && <FailedFilesDialog summ={dialog.failures} onClose={() => setDialog(null)} />}
+    </>
+  );
+}
+
+const TASK_TABS = [
+  { id: "history", label: "History" },
+  { id: "future", label: "Future" },
+];
+
+export function Tasks() {
+  const [tab, setTab] = useState("history");
+
+  return (
+    <Page title="Tasks">
+      <TabNav tabs={TASK_TABS} active={tab} onChange={setTab} />
+      {tab === "history" ? <TaskHistory /> : <FutureTasks />}
     </Page>
   );
 }

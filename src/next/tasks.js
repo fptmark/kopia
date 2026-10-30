@@ -35,6 +35,11 @@ export function loadTasks(filters, before) {
   return api.get("/api/v1/tasks", { params }).then((r) => r.data);
 }
 
+/** The next scheduled snapshots and verifies across every source, soonest first. */
+export function loadUpcomingTasks(limit) {
+  return api.get("/api/v1/tasks/upcoming", { params: { limit } }).then((r) => r.data);
+}
+
 export function loadTask(id) {
   return api.get("/api/v1/tasks/" + encodeURIComponent(id)).then((r) => r.data);
 }
@@ -69,6 +74,13 @@ export const failedWithMessage = (t) => t.status === TaskStatus.FAILED && !!t.er
 export function taskDuration(t, now = Date.now()) {
   const end = t.endTime ? new Date(t.endTime).getTime() : now;
   return formatSpan(Math.max(0, end - new Date(t.startTime).getTime()));
+}
+
+/** How far a running Verify task has gotten, 0-100, or null while the total isn't known yet. */
+export function verifyTaskPercent(t) {
+  const files = t.counters?.["Files checked"]?.value ?? 0;
+  const total = t.counters?.["Total files"]?.value;
+  return total ? Math.min(100, Math.floor((files * 100) / total)) : null;
 }
 
 /** The kind of badge and the words for a task's status. */
