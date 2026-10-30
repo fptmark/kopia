@@ -136,7 +136,7 @@ func TestAFailedSampleCheckClearsOnceTheNewestSnapshotsAreVerified(t *testing.T)
 	}
 
 	record := func(ok bool, ago time.Duration, mode string) {
-		_, err := h.RecordVerification(taskstore.Verification{
+		_, _, err := h.RecordVerification(taskstore.Verification{
 			SnapshotID: string(m.ID), Source: m.Source.String(), Mode: mode, Percent: 100,
 			StartedAt: time.Now().Add(-ago), FinishedAt: time.Now().Add(-ago), OK: ok,
 		}, nil)

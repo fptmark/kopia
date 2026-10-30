@@ -22,6 +22,7 @@ func MergePolicies(policies []*Policy, si snapshot.SourceInfo) (*Policy, *Defini
 		merged.FilesPolicy.Merge(p.FilesPolicy, &def.FilesPolicy, p.Target())
 		merged.ErrorHandlingPolicy.Merge(p.ErrorHandlingPolicy, &def.ErrorHandlingPolicy, p.Target())
 		merged.SchedulingPolicy.Merge(p.SchedulingPolicy, &def.SchedulingPolicy, p.Target())
+		merged.VerifySchedulingPolicy.Merge(p.VerifySchedulingPolicy, &def.VerifySchedulingPolicy, p.Target())
 		merged.UploadPolicy.Merge(p.UploadPolicy, &def.UploadPolicy, p.Target())
 		merged.CompressionPolicy.Merge(p.CompressionPolicy, &def.CompressionPolicy, p.Target())
 		merged.MetadataCompressionPolicy.Merge(p.MetadataCompressionPolicy, &def.MetadataCompressionPolicy, p.Target())
@@ -40,6 +41,7 @@ func MergePolicies(policies []*Policy, si snapshot.SourceInfo) (*Policy, *Defini
 	merged.FilesPolicy.Merge(defaultFilesPolicy, &def.FilesPolicy, GlobalPolicySourceInfo)
 	merged.ErrorHandlingPolicy.Merge(defaultErrorHandlingPolicy, &def.ErrorHandlingPolicy, GlobalPolicySourceInfo)
 	merged.SchedulingPolicy.Merge(defaultSchedulingPolicy, &def.SchedulingPolicy, GlobalPolicySourceInfo)
+	merged.VerifySchedulingPolicy.Merge(defaultVerifySchedulingPolicy, &def.VerifySchedulingPolicy, GlobalPolicySourceInfo)
 	merged.UploadPolicy.Merge(defaultUploadPolicy, &def.UploadPolicy, GlobalPolicySourceInfo)
 	merged.CompressionPolicy.Merge(defaultCompressionPolicy, &def.CompressionPolicy, GlobalPolicySourceInfo)
 	merged.MetadataCompressionPolicy.Merge(defaultMetadataCompressionPolicy, &def.MetadataCompressionPolicy, GlobalPolicySourceInfo)
@@ -136,6 +138,13 @@ func mergeCompressionName(target *compression.Name, src compression.Name, def *s
 }
 
 func mergeInt64(target *int64, src int64, def *snapshot.SourceInfo, si snapshot.SourceInfo) {
+	if *target == 0 && src != 0 {
+		*target = src
+		*def = si
+	}
+}
+
+func mergeFloat64(target *float64, src float64, def *snapshot.SourceInfo, si snapshot.SourceInfo) {
 	if *target == 0 && src != 0 {
 		*target = src
 		*def = si

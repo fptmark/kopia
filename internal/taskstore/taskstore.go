@@ -197,8 +197,18 @@ CREATE TABLE verification_failures (
 CREATE INDEX verification_failures_by_verification ON verification_failures (verification_seq);
 `
 
+const schemaV6 = `
+CREATE TABLE dismissed_verifications (
+	verification_seq INTEGER PRIMARY KEY REFERENCES snapshot_verifications (seq) ON DELETE CASCADE
+);
+`
+
+const schemaV7 = `
+ALTER TABLE snapshot_verifications ADD COLUMN cleared_seq INTEGER NOT NULL DEFAULT 0;
+`
+
 // migrations are applied in order; the database version is the number applied.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5} //nolint:gochecknoglobals
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7} //nolint:gochecknoglobals
 
 func (s *Store) migrate() error {
 	var v int

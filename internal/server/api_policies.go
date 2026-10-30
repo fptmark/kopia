@@ -88,9 +88,14 @@ func handlePolicyResolve(ctx context.Context, rc requestContext) (any, *apiError
 
 	resp.Effective, resp.Definition = policy.MergePolicies(policies, target)
 	resp.UpcomingSnapshotTimes = []time.Time{}
+	resp.UpcomingVerifyTimes = []time.Time{}
 
 	if err := policy.ValidateSchedulingPolicy(policies[0].SchedulingPolicy); err != nil {
 		resp.SchedulingError = err.Error()
+	}
+
+	if err := policy.ValidateVerifySchedulingPolicy(policies[0].VerifySchedulingPolicy); err != nil {
+		resp.VerifySchedulingError = err.Error()
 	}
 
 	now := clock.Now().Local()
@@ -103,6 +108,18 @@ func handlePolicyResolve(ctx context.Context, rc requestContext) (any, *apiError
 
 		resp.UpcomingSnapshotTimes = append(resp.UpcomingSnapshotTimes, st)
 		now = st.Add(1 * time.Second)
+	}
+
+	now = clock.Now().Local()
+
+	for range req.NumUpcomingSnapshotTimes {
+		vt, ok := resp.Effective.VerifySchedulingPolicy.NextVerifyTime(now, now)
+		if !ok {
+			break
+		}
+
+		resp.UpcomingVerifyTimes = append(resp.UpcomingVerifyTimes, vt)
+		now = vt.Add(1 * time.Second)
 	}
 
 	return resp, nil

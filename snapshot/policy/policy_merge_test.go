@@ -163,6 +163,11 @@ func testPolicyMergeSingleField(t *testing.T, fieldName string, typ reflect.Type
 		v1 = reflect.ValueOf("FIXED-2M")
 		v2 = reflect.ValueOf("FIXED-4M")
 
+	case "float64":
+		v0 = reflect.ValueOf(float64(0))
+		v1 = reflect.ValueOf(float64(10))
+		v2 = reflect.ValueOf(float64(25))
+
 	default:
 		t.Fatalf("unhandled case: %v - %v - please update test", fieldName, typ)
 	}
@@ -231,6 +236,7 @@ func disableParentMerging(p *policy.Policy) {
 	p.CompressionPolicy.NoParentNeverCompress = true
 	p.CompressionPolicy.NoParentOnlyCompress = true
 	p.SchedulingPolicy.NoParentTimesOfDay = true
+	p.VerifySchedulingPolicy.SchedulingPolicy.NoParentTimesOfDay = true
 }
 
 func TestPolicyMergeOnlyCompressIncludingParents(t *testing.T) {

@@ -389,3 +389,19 @@ func TestVerifierStateSurvivesARestartWithoutRepeatingAlerts(t *testing.T) {
 	v3.loadState(ctx)
 	require.Empty(t, v3.getStatus().Checks)
 }
+
+func TestTaskErrorSummaryIsNamesOnlyUnlikeFailedSummary(t *testing.T) {
+	checks := []verifyCheck{
+		passed(checkReadable, "48 snapshots"),
+		failed(checkSample, "7 of 557085 files failed to read back; first: /a: bad"),
+		failed(checkNewData, "1 of 53 read-backs in the last 24 hours found data that does not read back: /Applications (Oct 26, 9:00 PM)"),
+	}
+
+	require.Equal(t,
+		"Sample of stored data verifies: 7 of 557085 files failed to read back; first: /a: bad; "+
+			"Data added by recent snapshots reads back: 1 of 53 read-backs in the last 24 hours found data that does not read back: /Applications (Oct 26, 9:00 PM)",
+		failedSummary(checks), "the full signature keeps every detail, so a notification still reflects a worsening failure")
+
+	require.Equal(t, "Sample of stored data verifies; Data added by recent snapshots reads back", taskErrorSummary(checks),
+		"the task's own error is just the names, so it reads well in the Tasks list; the detail is already in the task's log lines")
+}

@@ -167,6 +167,7 @@ func (s *Server) SetupHTMLUIAPIHandlers(m *mux.Router) {
 	m.HandleFunc("/api/v1/repo/storage-usage", s.handleUI(handleRepoStorageUsage)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/verify/status", s.handleUIPossiblyNotConnected(handleVerifyStatus)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/verify/run", s.handleUI(handleVerifyRun)).Methods(http.MethodPost)
+	m.HandleFunc("/api/v1/verify/failing/dismiss", s.handleUI(handleVerifyDismiss)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/verify/test-notification", s.handleUI(handleVerifyTestNotification)).Methods(http.MethodPost)
 	m.HandleFunc("/api/v1/exclusions", s.handleUI(handleExclusionsList)).Methods(http.MethodGet)
 	m.HandleFunc("/api/v1/exclusions", s.handleUI(handleExclusionsAdd)).Methods(http.MethodPost)
@@ -1233,6 +1234,14 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 		} else {
 			userLog(ctx).Debugf("no snapshot scheduled for %v %v %v", sm.src, nst, now)
 		}
+
+		if nvt, ok := sm.getNextVerifyTime(); ok {
+			result = append(result, scheduler.Item{
+				Description: fmt.Sprintf("verify %q", sm.src.Path),
+				Trigger:     func() { s.triggerScheduledVerify(ctx, sm) },
+				NextTime:    nvt,
+			})
+		}
 	}
 
 	return result
@@ -1243,6 +1252,38 @@ func (s *Server) refreshScheduler(reason string) {
 	case s.schedulerRefresh <- reason:
 	default:
 	}
+}
+
+func (s *Server) lastVerificationTime(src snapshot.SourceInfo, mode string) (time.Time, bool) {
+	if s.options.TaskHistory == nil {
+		return time.Time{}, false
+	}
+
+	t, ok, err := s.options.TaskHistory.LastVerificationOfSource(src.String(), mode)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	return t, ok
+}
+
+// triggerScheduledVerify starts a source's periodic verify, against its latest complete snapshot, in the
+// mode and percent its own policy asks for -- the same path a manual Verify click uses.
+func (s *Server) triggerScheduledVerify(ctx context.Context, sm *sourceManager) {
+	m, mode, percent, ok := sm.verifyTriggerArgs()
+	if !ok {
+		return
+	}
+
+	s.serverMutex.RLock()
+	rep := s.rep
+	s.serverMutex.RUnlock()
+
+	if rep == nil {
+		return
+	}
+
+	s.startSnapshotVerify(ctx, rep, m, mode, percent)
 }
 
 // New creates a Server.

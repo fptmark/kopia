@@ -523,6 +523,8 @@ func TestDatabaseFromVersionOneGainsEveryLaterTable(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec("DROP TABLE snapshot_verifications")
 	require.NoError(t, err)
+	_, err = db.Exec("DROP TABLE dismissed_verifications")
+	require.NoError(t, err)
 	_, err = db.Exec("PRAGMA user_version = 1")
 	require.NoError(t, err)
 	require.NoError(t, db.Close())

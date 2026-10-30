@@ -780,7 +780,7 @@ func (v *verifier) runDeep(ctx context.Context, why string) {
 			}
 		}
 
-		if bad := failedSummary(checks); bad != "" {
+		if bad := taskErrorSummary(checks); bad != "" {
 			return errors.New(bad)
 		}
 
@@ -831,8 +831,9 @@ func (v *verifier) newDataCheck() (verifyCheck, bool) {
 	}
 
 	prefs, _ := getUIPreferencesOrEmpty(v.srv)
+	since := clock.Now().Add(-verifyNewDataWindow)
 
-	total, bad, err := h.NewDataVerificationCounts(clock.Now().Add(-verifyNewDataWindow))
+	total, bad, err := h.NewDataVerificationCounts(since)
 	if err != nil {
 		return failed(checkNewData, "unable to read the results: "+err.Error()), true
 	}
@@ -841,12 +842,52 @@ func (v *verifier) newDataCheck() (verifyCheck, bool) {
 	case !prefs.VerifyNewData && total == 0:
 		return verifyCheck{}, false
 	case bad > 0:
-		return failed(checkNewData, fmt.Sprintf("%d of %d read-backs in the last 24 hours found data that does not read back (History page, Verified column)", bad, total)), true
+		return v.newDataFailure(h, since, bad, total), true
 	case total == 0:
 		return passed(checkNewData, "no snapshot has finished in the last 24 hours"), true
 	default:
 		return passed(checkNewData, fmt.Sprintf("%d snapshots in the last 24 hours, all the data they added reads back", total)), true
 	}
+}
+
+// newDataFailure names the source(s) and snapshot(s) behind a failing newDataCheck instead of only counting
+// them, and -- when there's exactly one -- links to its failure list the same way the Sample check does.
+func (v *verifier) newDataFailure(h *taskstore.Store, since time.Time, bad, total int64) verifyCheck {
+	detail := fmt.Sprintf("%d of %d read-backs in the last 24 hours found data that does not read back", bad, total)
+
+	failing, err := h.FailingNewDataVerifications(since)
+	if err != nil || len(failing) == 0 {
+		return failed(checkNewData, detail+" (History page, Verified column)")
+	}
+
+	named := make([]string, 0, len(failing))
+	for _, f := range failing {
+		named = append(named, fmt.Sprintf("%v (%v)", shortSourcePath(f.Source), f.FinishedAt.Local().Format("Jan 2, 3:04 PM")))
+	}
+
+	check := failed(checkNewData, detail+": "+strings.Join(named, ", "))
+
+	if len(failing) == 1 {
+		check.VerificationID = failing[0].ID
+		check.FailureCount = int(failing[0].ErrorCount)
+
+		if fs, err := h.VerificationFailures(failing[0].ID, verifyCheckFailuresListed); err == nil {
+			for _, f := range fs {
+				check.Failures = append(check.Failures, serverapi.VerifyFailure{Path: f.Path, Error: f.Error})
+			}
+		}
+	}
+
+	return check
+}
+
+// shortSourcePath is the path out of a source written as user@host:/path.
+func shortSourcePath(s string) string {
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		return s[i+1:]
+	}
+
+	return s
 }
 
 // sampleCheck reads a sample of each source's newest snapshot back and records one verification per
@@ -884,10 +925,12 @@ func (v *verifier) sampleCheck(ctx context.Context, ctrl uitask.Controller, late
 			Files: r.Files, Bytes: r.Bytes, ReadFiles: r.ReadFiles, ReadBytes: r.ReadBytes, ErrorCount: r.Errors,
 		}
 
-		if id, err := h.RecordVerification(rec, r.Failures); err != nil {
+		if id, clearedSeq, err := h.RecordVerification(rec, r.Failures); err != nil {
 			userLog(ctx).Errorf("unable to record the sample verification: %v", err)
 		} else if r.Errors > 0 {
 			lastID = id
+		} else if clearedSeq != 0 {
+			userLog(ctx).Infof("cleared: %v's previous sample verification (#%d) failed; this one found everything reads back fine", e.Manifest.Source.Path, clearedSeq)
 		}
 	}
 
@@ -969,6 +1012,20 @@ func failedSummary(checks []verifyCheck) string {
 	}
 
 	return strings.Join(bad, "; ")
+}
+
+// taskErrorSummary is what a Verify task's own error says: the failing checks by name only, so it stays
+// short and reads well in the Tasks list. The full detail for each is already in the task's log lines.
+func taskErrorSummary(checks []verifyCheck) string {
+	var names []string
+
+	for _, c := range checks {
+		if !c.OK {
+			names = append(names, c.Name)
+		}
+	}
+
+	return strings.Join(names, "; ")
 }
 
 // finish stores the outcome and sends notifications when it changed (or as a reminder while it persists).
@@ -1074,7 +1131,7 @@ func (v *verifier) finish(ctx context.Context, checks []verifyCheck, deep bool) 
 					}
 				}
 
-				return errors.New(bad)
+				return errors.New(taskErrorSummary(checks))
 			})
 		}
 
@@ -1161,6 +1218,7 @@ func (v *verifier) getStatus() serverapi.VerifyStatus {
 
 	st := v.status
 	st.Checks = append([]verifyCheck(nil), st.Checks...)
+	st.DeepRunning = v.deepRunning
 
 	return st
 }

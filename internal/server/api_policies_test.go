@@ -180,3 +180,60 @@ func TestPolicies(t *testing.T) {
 		})
 	}
 }
+
+func TestPolicyResolveVerifyScheduling(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+	srvInfo := servertesting.StartServer(t, env, false)
+
+	cli, err := apiclient.NewKopiaAPIClient(apiclient.Options{
+		BaseURL:                             srvInfo.BaseURL,
+		TrustedServerCertificateFingerprint: srvInfo.TrustedServerCertificateFingerprint,
+		Username:                            servertesting.TestUIUsername,
+		Password:                            servertesting.TestUIPassword,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cli.FetchCSRFTokenForTesting(ctx))
+
+	dir := testutil.TempDirectory(t)
+	si := env.LocalPathSourceInfo(dir)
+
+	// unconfigured: no verify schedule, same as no snapshot schedule
+	res, err := serverapi.ResolvePolicy(ctx, cli, si, &serverapi.ResolvePolicyRequest{NumUpcomingSnapshotTimes: 3})
+	require.NoError(t, err)
+	require.Empty(t, res.UpcomingVerifyTimes)
+	require.Empty(t, res.VerifySchedulingError)
+
+	// a daily interval, independent of (and not requiring) a snapshot schedule
+	mustSetPolicy(t, cli, si, &policy.Policy{
+		VerifySchedulingPolicy: policy.VerifySchedulingPolicy{
+			SchedulingPolicy: policy.SchedulingPolicy{IntervalSeconds: 60},
+			Mode:             policy.VerifyModeSample,
+			Percent:          25,
+		},
+	})
+
+	res, err = serverapi.ResolvePolicy(ctx, cli, si, &serverapi.ResolvePolicyRequest{NumUpcomingSnapshotTimes: 3})
+	require.NoError(t, err)
+	require.Empty(t, res.UpcomingSnapshotTimes, "setting a verify schedule does not imply a snapshot schedule")
+	require.Len(t, res.UpcomingVerifyTimes, 3)
+	require.Equal(t, policy.VerifyModeSample, res.Effective.VerifySchedulingPolicy.Mode)
+	require.InDelta(t, 25, res.Effective.VerifySchedulingPolicy.Percent, 0.01)
+
+	for j, vt := range res.UpcomingVerifyTimes {
+		require.Equal(t, vt.Truncate(60*time.Second), vt)
+
+		if j > 0 {
+			require.Equal(t, 60*time.Second, vt.Sub(res.UpcomingVerifyTimes[j-1]))
+		}
+	}
+
+	// an invalid verify schedule reports its own error, separate from the snapshot one
+	res, err = serverapi.ResolvePolicy(ctx, cli, si, &serverapi.ResolvePolicyRequest{
+		Updates: &policy.Policy{
+			VerifySchedulingPolicy: policy.VerifySchedulingPolicy{Mode: "bogus"},
+		},
+	})
+	require.NoError(t, err)
+	require.Contains(t, res.VerifySchedulingError, "bogus")
+	require.Empty(t, res.SchedulingError)
+}

@@ -364,6 +364,20 @@ type ResolvePolicyResponse struct {
 	Defined               *policy.Policy     `json:"defined"`
 	UpcomingSnapshotTimes []time.Time        `json:"upcomingSnapshotTimes"`
 	SchedulingError       string             `json:"schedulingError,omitempty"`
+	UpcomingVerifyTimes   []time.Time        `json:"upcomingVerifyTimes"`
+	VerifySchedulingError string             `json:"verifySchedulingError,omitempty"`
+}
+
+// UpcomingTask is one scheduled snapshot or verify that has not run yet.
+type UpcomingTask struct {
+	Time   time.Time           `json:"time"`
+	Kind   string              `json:"kind"` // Snapshot or Verify
+	Source snapshot.SourceInfo `json:"source"`
+}
+
+// UpcomingTasksResponse lists the next scheduled tasks across every source, soonest first.
+type UpcomingTasksResponse struct {
+	Tasks []UpcomingTask `json:"tasks"`
 }
 
 // ResolvePathRequest contains request to resolve a particular path to ResolvePathResponse.
@@ -417,6 +431,24 @@ type VerifyCheck struct {
 	VerificationID int64           `json:"verificationId,omitempty"`
 }
 
+// FailingSnapshot is one snapshot whose latest verification (of one mode) currently fails: one row in the
+// health banner, with its own Verify and Details.
+type FailingSnapshot struct {
+	// ID is the verification's own id (not the snapshot's): pass it to POST /api/v1/verify/failing/dismiss.
+	ID         int64     `json:"id"`
+	SnapshotID string    `json:"snapshotId"`
+	Source     string    `json:"source"`
+	Mode       string    `json:"mode"` // "new", "sample" or "full" -- what Verify should re-run
+	Percent    float64   `json:"percent"`
+	FinishedAt time.Time `json:"finishedAt"`
+	Files      int64     `json:"files"`
+	ReadBytes  int64     `json:"readBytes"`
+	ErrorCount int64     `json:"errorCount"`
+	TaskID     string    `json:"taskId,omitempty"`
+	Badge      string    `json:"badge"`  // short label for the row, e.g. "7 failed" or "New data"
+	Detail     string    `json:"detail"` // the full reason, for a tooltip
+}
+
 // VerifyStatus is the current result of the backup health checks.
 type VerifyStatus struct {
 	Enabled        bool          `json:"enabled"`
@@ -425,7 +457,14 @@ type VerifyStatus struct {
 	LastRun        *time.Time    `json:"lastRun,omitempty"`
 	LastDeep       *time.Time    `json:"lastDeepRun,omitempty"`
 	LastDeepTaskID string        `json:"lastDeepTaskId,omitempty"`
+	DeepRunning    bool          `json:"deepRunning"` // the full check (Run full check now, or the daily one) is running right now
 	Checks         []VerifyCheck `json:"checks"`
+	// FailingSnapshots are the snapshots backing the failure, one row per broken (source, mode); empty when
+	// the failure (if any) comes only from a check with no single snapshot to verify, such as freshness.
+	FailingSnapshots []FailingSnapshot `json:"failingSnapshots"`
+	// ClearedTaskIDs are recent Verify tasks whose result found a previous failure of the same source and
+	// mode passing again, so the Tasks list can mark them as having resolved a problem.
+	ClearedTaskIDs []string `json:"clearedTaskIds"`
 }
 
 // SearchRequest describes a search for files and directories across snapshots.

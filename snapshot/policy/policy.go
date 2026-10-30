@@ -26,6 +26,7 @@ type Policy struct {
 	FilesPolicy               FilesPolicy               `json:"files,omitempty"`
 	ErrorHandlingPolicy       ErrorHandlingPolicy       `json:"errorHandling,omitempty"`
 	SchedulingPolicy          SchedulingPolicy          `json:"scheduling,omitempty"`
+	VerifySchedulingPolicy    VerifySchedulingPolicy    `json:"verifyScheduling,omitempty"`
 	CompressionPolicy         CompressionPolicy         `json:"compression,omitempty"`
 	MetadataCompressionPolicy MetadataCompressionPolicy `json:"metadataCompression,omitempty"`
 	SplitterPolicy            SplitterPolicy            `json:"splitter,omitempty"`
@@ -43,6 +44,7 @@ type Definition struct {
 	FilesPolicy               FilesPolicyDefinition               `json:"files,omitempty"`
 	ErrorHandlingPolicy       ErrorHandlingPolicyDefinition       `json:"errorHandling,omitempty"`
 	SchedulingPolicy          SchedulingPolicyDefinition          `json:"scheduling,omitempty"`
+	VerifySchedulingPolicy    VerifySchedulingPolicyDefinition    `json:"verifyScheduling,omitempty"`
 	CompressionPolicy         CompressionPolicyDefinition         `json:"compression,omitempty"`
 	MetadataCompressionPolicy MetadataCompressionPolicyDefinition `json:"metadataCompression,omitempty"`
 	SplitterPolicy            SplitterPolicyDefinition            `json:"splitter,omitempty"`
@@ -84,6 +86,10 @@ func (p *Policy) Target() snapshot.SourceInfo {
 func ValidatePolicy(si snapshot.SourceInfo, pol *Policy) error {
 	if err := ValidateSchedulingPolicy(pol.SchedulingPolicy); err != nil {
 		return errors.Wrap(err, "invalid scheduling policy")
+	}
+
+	if err := ValidateVerifySchedulingPolicy(pol.VerifySchedulingPolicy); err != nil {
+		return errors.Wrap(err, "invalid verify scheduling policy")
 	}
 
 	if err := ValidateUploadPolicy(si, pol.UploadPolicy); err != nil {

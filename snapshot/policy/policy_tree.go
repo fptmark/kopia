@@ -58,6 +58,10 @@ var (
 		RunMissed: NewOptionalBool(defaultRunMissed),
 	}
 
+	// off by default (the zero value): like SchedulingPolicy, no interval/times/cron means NextVerifyTime
+	// never becomes due, so a periodic verify is opt-in per source without needing an explicit Manual flag.
+	defaultVerifySchedulingPolicy = VerifySchedulingPolicy{}
+
 	defaultOSSnapshotPolicy = OSSnapshotPolicy{
 		VolumeShadowCopy: VolumeShadowCopyPolicy{
 			Enable: NewOSSnapshotMode(OSSnapshotNever),
@@ -80,6 +84,7 @@ var (
 		MetadataCompressionPolicy: defaultMetadataCompressionPolicy,
 		ErrorHandlingPolicy:       defaultErrorHandlingPolicy,
 		SchedulingPolicy:          defaultSchedulingPolicy,
+		VerifySchedulingPolicy:    defaultVerifySchedulingPolicy,
 		LoggingPolicy:             defaultLoggingPolicy,
 		Actions:                   defaultActionsPolicy,
 		OSSnapshotPolicy:          defaultOSSnapshotPolicy,

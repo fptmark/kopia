@@ -28,6 +28,9 @@ const (
 type sourceManagerServerInterface interface {
 	runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, inner func(ctx context.Context, ctrl uitask.Controller, result *notifydata.ManifestWithError) error) error
 	refreshScheduler(reason string)
+	// lastVerificationTime returns when src was last verified in mode's bucket ("new" is its own bucket,
+	// sample and full share one), so a periodic verify schedule knows whether it's due.
+	lastVerificationTime(src snapshot.SourceInfo, mode string) (time.Time, bool)
 }
 
 // sourceManager manages the state machine of each source
@@ -55,9 +58,13 @@ type sourceManager struct {
 	// +checklocks:sourceMutex
 	pol policy.SchedulingPolicy
 	// +checklocks:sourceMutex
+	verifyPol policy.VerifySchedulingPolicy
+	// +checklocks:sourceMutex
 	state string
 	// +checklocks:sourceMutex
 	nextSnapshotTime *time.Time
+	// +checklocks:sourceMutex
+	nextVerifyTime *time.Time
 	// +checklocks:sourceMutex
 	lastSnapshot *snapshot.Manifest
 	// +checklocks:sourceMutex
@@ -122,6 +129,37 @@ func (s *sourceManager) getNextSnapshotTime() (time.Time, bool) {
 	}
 
 	return *s.nextSnapshotTime, true
+}
+
+func (s *sourceManager) getNextVerifyTime() (time.Time, bool) {
+	s.sourceMutex.RLock()
+	defer s.sourceMutex.RUnlock()
+
+	if s.nextVerifyTime == nil {
+		return time.Time{}, false
+	}
+
+	return *s.nextVerifyTime, true
+}
+
+// verifyTriggerArgs is what a scheduled verify of this source needs to run: its latest complete snapshot and
+// the mode/percent its policy asks for. ok is false when there is no complete snapshot to verify yet. It also
+// clears nextVerifyTime, the same way scheduleSnapshotNow clears nextSnapshotTime: the actual verify runs in
+// its own goroutine and only writes its result (and so only moves the source's last-verify time) once it
+// finishes, so without this the scheduler would see the same due time on its next pass and fire again
+// immediately, in a tight loop, for as long as the verify takes to complete. refreshStatus() recomputes a
+// real next time once it runs again.
+func (s *sourceManager) verifyTriggerArgs() (m *snapshot.Manifest, mode string, percent float64, ok bool) {
+	s.sourceMutex.Lock()
+	defer s.sourceMutex.Unlock()
+
+	s.nextVerifyTime = nil
+
+	if s.lastCompleteSnapshot == nil {
+		return nil, "", 0, false
+	}
+
+	return s.lastCompleteSnapshot, s.verifyPol.EffectiveMode(), s.verifyPol.EffectivePercent(), true
 }
 
 func (s *sourceManager) setCurrentTaskID(taskID string) {
@@ -433,6 +471,22 @@ func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
 	return &t
 }
 
+// +checklocksread:s.sourceMutex
+func (s *sourceManager) findClosestNextVerifyTimeReadLocked() *time.Time {
+	if s.verifyPol.SchedulingPolicy.Manual {
+		return nil
+	}
+
+	previousVerifyTime, _ := s.server.lastVerificationTime(s.src, s.verifyPol.EffectiveMode())
+
+	t, ok := s.verifyPol.NextVerifyTime(previousVerifyTime, clock.Now())
+	if !ok {
+		return nil
+	}
+
+	return &t
+}
+
 func (s *sourceManager) refreshStatus(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
@@ -453,6 +507,7 @@ func (s *sourceManager) refreshStatus(ctx context.Context) {
 	defer s.sourceMutex.Unlock()
 
 	s.pol = pol.SchedulingPolicy
+	s.verifyPol = pol.VerifySchedulingPolicy
 	s.manifestsSinceLastCompleteSnapshot = nil
 	s.lastCompleteSnapshot = nil
 
@@ -474,8 +529,10 @@ func (s *sourceManager) refreshStatus(ctx context.Context) {
 
 	if s.paused {
 		s.nextSnapshotTime = nil
+		s.nextVerifyTime = nil
 	} else {
 		s.nextSnapshotTime = s.findClosestNextSnapshotTimeReadLocked()
+		s.nextVerifyTime = s.findClosestNextVerifyTimeReadLocked()
 	}
 }
 

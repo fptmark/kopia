@@ -17,6 +17,7 @@ import (
 	"github.com/kopia/kopia/internal/gather"
 	"github.com/kopia/kopia/internal/mockfs"
 	"github.com/kopia/kopia/internal/repotesting"
+	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/taskstore"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
@@ -314,7 +315,7 @@ func TestNewDataHealthCheckFailsForADayAfterABadReadBack(t *testing.T) {
 	require.Contains(t, c.Detail, "no snapshot")
 
 	rec := func(good bool) {
-		_, err := h.RecordVerification(taskstore.Verification{
+		_, _, err := h.RecordVerification(taskstore.Verification{
 			SnapshotID: "s", Source: "u@h:/x", Mode: taskstore.VerifyModeNew, StartedAt: time.Now(), FinishedAt: time.Now(), OK: good,
 		}, nil)
 		require.NoError(t, err)
@@ -338,4 +339,38 @@ func TestNewDataHealthCheckFailsForADayAfterABadReadBack(t *testing.T) {
 	c, ok = v.newDataCheck()
 	require.True(t, ok)
 	require.False(t, c.OK)
+}
+
+func TestNewDataHealthCheckNamesTheFailingSourceAndLinksItsFailures(t *testing.T) {
+	s, h, _ := newHistoryServer(t)
+	v := &verifier{srv: s}
+
+	writePrefs(t, s, `{"verifyNewData":true}`)
+
+	id, _, err := h.RecordVerification(taskstore.Verification{
+		SnapshotID: "s1", Source: "u@h:/Applications", Mode: taskstore.VerifyModeNew,
+		StartedAt: time.Now(), FinishedAt: time.Now(), OK: false, ErrorCount: 3, Files: 10,
+	}, []taskstore.VerificationFailure{{Path: "/a", Error: "bad"}})
+	require.NoError(t, err)
+
+	c, ok := v.newDataCheck()
+	require.True(t, ok)
+	require.False(t, c.OK)
+	require.Contains(t, c.Detail, "/Applications", "names the source, not just a count")
+	require.Equal(t, id, c.VerificationID, "links the one failure for drill-down, the same way the Sample check does")
+	require.EqualValues(t, 3, c.FailureCount)
+	require.Equal(t, []serverapi.VerifyFailure{{Path: "/a", Error: "bad"}}, c.Failures)
+
+	// a second failing source: still named, but no single verification to link to
+	_, _, err = h.RecordVerification(taskstore.Verification{
+		SnapshotID: "s2", Source: "u@h:/Users/mark", Mode: taskstore.VerifyModeNew,
+		StartedAt: time.Now(), FinishedAt: time.Now(), OK: false, ErrorCount: 1,
+	}, nil)
+	require.NoError(t, err)
+
+	c, ok = v.newDataCheck()
+	require.True(t, ok)
+	require.Contains(t, c.Detail, "/Applications")
+	require.Contains(t, c.Detail, "/Users/mark")
+	require.Zero(t, c.VerificationID, "no single source to link to with two failing")
 }

@@ -181,6 +181,7 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 		})
 		ctrl.ReportCounters(map[string]uitask.CounterValue{
 			"Files checked": uitask.SimpleCounter(st.Files),
+			"Total files":   uitask.SimpleCounter(st.Total),
 			"Data read":     uitask.BytesCounter(st.ReadBytes),
 			"Failures":      uitask.ErrorCounter(st.Errors),
 		})
@@ -248,8 +249,10 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 	}
 
 	if h := s.options.TaskHistory; h != nil {
-		if _, err := h.RecordVerification(v, res.Failures); err != nil {
+		if _, clearedSeq, err := h.RecordVerification(v, res.Failures); err != nil {
 			userLog(ctx).Errorf("unable to record the verification result: %v", err)
+		} else if clearedSeq != 0 {
+			userLog(ctx).Infof("cleared: %v's previous verification (#%d, %v) failed; this one found everything reads back fine", m.Source.Path, clearedSeq, describeVerifyMode(rv.Mode, rv.Percent))
 		}
 	}
 
