@@ -17,6 +17,12 @@ export function loadVerificationFailures(id, limit = 2000) {
     .then((r) => r.data);
 }
 
+/** Hides these failing verifications from the health banner until a newer one of the same source and mode
+ * replaces them; it does not change the stored result itself (the History page still shows it). */
+export function dismissVerifications(ids) {
+  return api.post("/api/v1/verify/failing/dismiss", { ids }).then((r) => r.data);
+}
+
 /**
  * Groups the answer by snapshot: {[snapshotId]: {latest, running}} where latest is the most recent finished
  * verification, whether the daily check, a snapshot's own check or a manual Verify made it, and running is what

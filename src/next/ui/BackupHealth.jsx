@@ -48,7 +48,7 @@ function CheckFailures({ check }) {
 
 /** The health checks with their latest result, and a button to run the full check now. */
 export function BackupHealth() {
-  const state = useLoad(loadHealth, [], { refreshMs: 10000 });
+  const state = useLoad(loadHealth, [], { refreshMs: 5000 });
   const [message, setMessage] = useState("");
 
   const run = () =>
@@ -70,6 +70,7 @@ export function BackupHealth() {
                 {s === "ok" && <StatusBadge kind="ok">Healthy</StatusBadge>}
                 {s === "failing" && <StatusBadge kind="error">Problem</StatusBadge>}
                 {(!s || s === "unknown") && <StatusBadge kind="neutral">Not checked yet</StatusBadge>}
+                {status.deepRunning && <StatusBadge kind="running">Checking…</StatusBadge>}
                 <span className="nx-muted">
                   {(s === "ok" || s === "failing") && <>since {formatDateTime(status.since)}</>}
                   {status.lastDeepRun && (
@@ -88,8 +89,8 @@ export function BackupHealth() {
               </div>
               <div className="nx-row">
                 {message && <span className="nx-muted small">{message}</span>}
-                <Button variant="primary" onClick={run}>
-                  Run full check now
+                <Button variant="primary" disabled={status.deepRunning} onClick={run}>
+                  {status.deepRunning ? "Checking…" : "Run full check now"}
                 </Button>
               </div>
             </div>
