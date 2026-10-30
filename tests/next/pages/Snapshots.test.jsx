@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { Snapshots } from "../../../src/next/pages/Snapshots";
 import { sizeJump, uploadProgress } from "../../../src/next/snapshots";
@@ -39,16 +39,16 @@ const sources = (over = {}) => ({
   ...over,
 });
 
-const renderPage = (prefs = {}) =>
-  render(
-    <MemoryRouter>
-      <UIPreferencesContext.Provider
-        value={{ pageSize: 25, bytesStringBase2: false, setDefaultSnapshotViewAll: vi.fn(), ...prefs }}
-      >
-        <Snapshots />
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderPage = (prefs = {}) => {
+  const router = createMemoryRouter([{ path: "*", element: <Snapshots /> }]);
+  return render(
+    <UIPreferencesContext.Provider
+      value={{ pageSize: 25, bytesStringBase2: false, setDefaultSnapshotViewAll: vi.fn(), ...prefs }}
+    >
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
   );
+};
 
 describe("Snapshots page", () => {
   beforeEach(() => {

@@ -1,7 +1,7 @@
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./next.css";
 import React, { use, useCallback, useEffect, useMemo, useState } from "react";
-import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router";
+import { Link, Navigate, NavLink, Outlet, RouterProvider, createBrowserRouter } from "react-router";
 import { api, setupApi } from "./api";
 import { NextContext } from "./context";
 import { TaskStatus } from "./tasks";
@@ -43,10 +43,17 @@ function bsTheme(theme) {
   return theme === "dark" ? "dark" : "light";
 }
 
-function Shell({ children }) {
+function Shell() {
   const { theme } = use(UIPreferencesContext);
   const [repo, setRepo] = useState({ connected: false, description: "" });
   const [running, setRunning] = useState(0);
+
+  // Bootstrap's own [data-bs-theme] rules are what color a Modal, but a Modal portals to document.body,
+  // outside the .nx div -- so the theme has to live on <html> too, or every dialog renders light.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-bs-theme", bsTheme(theme));
+    return () => document.documentElement.removeAttribute("data-bs-theme");
+  }, [theme]);
 
   const refreshRepo = useCallback(() => {
     api
@@ -112,41 +119,46 @@ function Shell({ children }) {
         </nav>
         <main className="nx-shell">
           <HealthBanner />
-          {children}
+          <Outlet />
         </main>
       </div>
     </NextContext>
   );
 }
 
+// A data router (rather than plain BrowserRouter) so Page can use useBlocker to guard navigation away
+// from unsaved changes.
+const router = createBrowserRouter([
+  {
+    element: <Shell />,
+    children: [
+      { path: "spec", element: <Spec /> },
+      { path: "snapshots", element: <Snapshots /> },
+      { path: "snapshots/single-source", element: <SnapshotHistory /> },
+      { path: "snapshots/diff", element: <SnapshotDiff /> },
+      { path: "exclusions", element: <Exclusions /> },
+      { path: "files", element: <Files /> },
+      { path: "preferences", element: <Preferences /> },
+      { path: "about", element: <About /> },
+      { path: "repo", element: <Repository /> },
+      { path: "policies", element: <Policies /> },
+      { path: "policies/edit", element: <Policy /> },
+      { path: "snapshots/new", element: <SnapshotCreate /> },
+      { path: "snapshots/dir/:oid", element: <SnapshotDirectory /> },
+      { path: "snapshots/dir/:oid/restore", element: <SnapshotRestore /> },
+      { path: "tasks", element: <Tasks /> },
+      { path: "tasks/:tid", element: <Task /> },
+      { path: "snapshots/of-task/:tid", element: <TaskSnapshot /> },
+      { path: "/", element: <Navigate to="/snapshots" replace /> },
+      { path: "*", element: <div className="nx-empty">Not built yet.</div> },
+    ],
+  },
+]);
+
 export default function NextApp() {
   return (
-    <BrowserRouter>
-      <UIPreferenceProvider>
-        <Shell>
-          <Routes>
-            <Route path="spec" element={<Spec />} />
-            <Route path="snapshots" element={<Snapshots />} />
-            <Route path="snapshots/single-source" element={<SnapshotHistory />} />
-            <Route path="snapshots/diff" element={<SnapshotDiff />} />
-            <Route path="exclusions" element={<Exclusions />} />
-            <Route path="files" element={<Files />} />
-            <Route path="preferences" element={<Preferences />} />
-            <Route path="about" element={<About />} />
-            <Route path="repo" element={<Repository />} />
-            <Route path="policies" element={<Policies />} />
-            <Route path="policies/edit" element={<Policy />} />
-            <Route path="snapshots/new" element={<SnapshotCreate />} />
-            <Route path="snapshots/dir/:oid" element={<SnapshotDirectory />} />
-            <Route path="snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
-            <Route path="tasks" element={<Tasks />} />
-            <Route path="tasks/:tid" element={<Task />} />
-            <Route path="snapshots/of-task/:tid" element={<TaskSnapshot />} />
-            <Route path="/" element={<Navigate to="/snapshots" replace />} />
-            <Route path="*" element={<div className="nx-empty">Not built yet.</div>} />
-          </Routes>
-        </Shell>
-      </UIPreferenceProvider>
-    </BrowserRouter>
+    <UIPreferenceProvider>
+      <RouterProvider router={router} />
+    </UIPreferenceProvider>
   );
 }

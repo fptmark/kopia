@@ -1,30 +1,17 @@
-import React, { use } from "react";
+import React from "react";
 import Form from "react-bootstrap/Form";
-import { PAGE_SIZES, UIPreferencesContext } from "../../contexts/UIPreferencesContext";
+import { PAGE_SIZES } from "../../contexts/UIPreferencesContext";
 import { DATE_FORMATS } from "../format";
 import { Field, FormSection, Panel, SwitchField, VerifyModePicker } from "../ui";
 
-/** How the pages look, how the Mac behaves while backing up, and how much checking each snapshot gets. */
-export function Settings() {
-  const {
-    theme,
-    fontSize,
-    bytesStringBase2,
-    pageSize,
-    keepAwake,
-    dateFormat,
-    verifyNewData,
-    verifyEachMode,
-    verifyEachPercent,
-    setTheme,
-    setFontSize,
-    setByteStringBase,
-    setPageSize,
-    setKeepAwake,
-    setDateFormat,
-    setVerifyNewData,
-    setVerifyEach,
-  } = use(UIPreferencesContext);
+/**
+ * How the pages look, how the Mac behaves while backing up, and how much checking each snapshot gets.
+ * draft/change come from useSettingsDraft -- nothing here reaches the server until the page's Save is
+ * clicked.
+ */
+export function Settings({ draft, change }) {
+  const { theme, fontSize, bytesStringBase2, pageSize, keepAwake, dateFormat, verifyNewData, verifyEachMode, verifyEachPercent } =
+    draft;
 
   return (
     <Panel>
@@ -33,11 +20,7 @@ export function Settings() {
           <div className="col-md-6 col-lg-3">
             <Field label="Theme">
               {(id) => (
-                <Form.Select
-                  id={id}
-                  value={theme === "dark" ? "dark" : "light"}
-                  onChange={(e) => setTheme(e.target.value)}
-                >
+                <Form.Select id={id} value={theme} onChange={(e) => change({ theme: e.target.value })}>
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
                 </Form.Select>
@@ -47,7 +30,7 @@ export function Settings() {
           <div className="col-md-6 col-lg-3">
             <Field label="Text size">
               {(id) => (
-                <Form.Select id={id} value={fontSize} onChange={(e) => setFontSize(e.target.value)}>
+                <Form.Select id={id} value={fontSize} onChange={(e) => change({ fontSize: e.target.value })}>
                   <option value="fs-6">Small</option>
                   <option value="fs-5">Medium</option>
                   <option value="fs-4">Large</option>
@@ -60,8 +43,8 @@ export function Settings() {
               {(id) => (
                 <Form.Select
                   id={id}
-                  value={String(!!bytesStringBase2)}
-                  onChange={(e) => setByteStringBase(e.target.value)}
+                  value={String(bytesStringBase2)}
+                  onChange={(e) => change({ bytesStringBase2: e.target.value === "true" })}
                 >
                   <option value="false">Base 10 (KB, MB, GB, TB)</option>
                   <option value="true">Base 2 (KiB, MiB, GiB, TiB)</option>
@@ -72,7 +55,7 @@ export function Settings() {
           <div className="col-md-6 col-lg-3">
             <Field label="Rows per table page">
               {(id) => (
-                <Form.Select id={id} value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                <Form.Select id={id} value={pageSize} onChange={(e) => change({ pageSize: Number(e.target.value) })}>
                   {PAGE_SIZES.map((n) => (
                     <option key={n} value={n}>
                       {n}
@@ -85,7 +68,7 @@ export function Settings() {
           <div className="col-md-6 col-lg-3">
             <Field label="Dates in tables" help="Tables only.">
               {(id) => (
-                <Form.Select id={id} value={dateFormat || "medium"} onChange={(e) => setDateFormat(e.target.value)}>
+                <Form.Select id={id} value={dateFormat} onChange={(e) => change({ dateFormat: e.target.value })}>
                   {DATE_FORMATS.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.label}
@@ -105,11 +88,7 @@ export function Settings() {
               help="Prevents sleep while a snapshot or check runs. Closing the lid on battery still sleeps."
             >
               {(id) => (
-                <Form.Select
-                  id={id}
-                  value={keepAwake === "ac" ? "ac" : "idle"}
-                  onChange={(e) => setKeepAwake(e.target.value)}
-                >
+                <Form.Select id={id} value={keepAwake} onChange={(e) => change({ keepAwake: e.target.value })}>
                   <option value="idle">Prevent idle sleep (any power source)</option>
                   <option value="ac">Also prevent lid-close sleep on AC power</option>
                 </Form.Select>
@@ -123,16 +102,16 @@ export function Settings() {
           label="Verify every snapshot when it finishes"
           help="Failures show on History and in the health check."
           checked={verifyNewData}
-          onChange={setVerifyNewData}
+          onChange={(v) => change({ verifyNewData: v })}
           data-testid="verify-new-data"
         />
         {verifyNewData && (
           <div data-testid="verify-each">
             <VerifyModePicker
               name="verify-each"
-              mode={verifyEachMode || "new"}
-              percent={verifyEachPercent || 10}
-              onChange={(m, p) => setVerifyEach(m, Number(p))}
+              mode={verifyEachMode}
+              percent={verifyEachPercent}
+              onChange={(m, p) => change({ verifyEachMode: m, verifyEachPercent: Number(p) })}
             />
           </div>
         )}

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { SnapshotDiff } from "../../../src/next/pages/SnapshotDiff";
 
@@ -28,14 +28,16 @@ const response = (over = {}) => ({
   ...over,
 });
 
-const renderPage = () =>
-  render(
-    <MemoryRouter initialEntries={["/snapshots/diff?from=aaa&to=bbb"]}>
-      <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
-        <SnapshotDiff />
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderPage = () => {
+  const router = createMemoryRouter([{ path: "*", element: <SnapshotDiff /> }], {
+    initialEntries: ["/snapshots/diff?from=aaa&to=bbb"],
+  });
+  return render(
+    <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
   );
+};
 
 const serve = (data) => axios.get.mockResolvedValue({ data });
 

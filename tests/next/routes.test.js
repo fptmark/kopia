@@ -11,10 +11,10 @@ const files = (dir) =>
     return e.isDirectory() ? files(p) : /\.(jsx?|js)$/.test(e.name) ? [p] : [];
   });
 
-// The first segment of every page the app defines: <Route path="tasks/:tid"> and the tabs in NextApp.
+// The first segment of every page the app defines: { path: "tasks/:tid", ... } and the tabs in NextApp.
 const app = fs.readFileSync(path.join(SRC, "NextApp.jsx"), "utf8");
 const known = new Set(
-  [...app.matchAll(/<Route path="([^"*]+)"/g)].map((m) => m[1].replace(/^\//, "").split("/")[0]).filter(Boolean),
+  [...app.matchAll(/\bpath:\s*"([^"*]+)"/g)].map((m) => m[1].replace(/^\//, "").split("/")[0]).filter(Boolean),
 );
 
 describe("links inside the app", () => {

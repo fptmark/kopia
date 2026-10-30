@@ -20,8 +20,11 @@
   padding: 0 1.25rem 3rem;
 }
 
-/* top bar */
+/* top bar: stays visible while a long page (snapshot history, tasks) scrolls under it */
 .nx-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   border-bottom: 1px solid var(--nx-border);
   background: var(--nx-surface);
 }
@@ -160,6 +163,10 @@
   border-bottom-color: var(--bs-primary);
   background: none;
 }
+/* a tab whose section has something set in it: bold alone is too subtle against the muted tab color */
+.nx-subtabs .nav-link.fw-semibold {
+  color: var(--bs-body-color);
+}
 
 /* panels and toolbars */
 .nx-panel {
@@ -227,6 +234,13 @@
   margin-left: auto;
   margin-right: auto;
 }
+.nx-toolbar-group.nowrap {
+  flex-wrap: nowrap;
+}
+.nx-toolbar-group.nowrap .form-control,
+.nx-toolbar-group.nowrap .form-select {
+  min-width: 0;
+}
 .nx-toolbar-label {
   color: var(--nx-muted);
   font-size: 0.78rem;
@@ -240,6 +254,7 @@
 }
 .nx-toolbar-group .form-control.nx-search {
   flex: 1 1 12rem;
+  max-width: 24rem;
 }
 
 /* stats */
@@ -397,6 +412,50 @@
 }
 .nx-num {
   font-variant-numeric: tabular-nums;
+}
+
+/* the policy editor's source picker */
+.nx-policy-picker {
+  align-items: center;
+  flex-wrap: wrap;
+}
+.nx-combo {
+  position: relative;
+}
+.nx-combo .form-control {
+  min-width: 18rem;
+}
+.nx-combo-menu {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 20;
+  min-width: 100%;
+  max-height: 16rem;
+  overflow-y: auto;
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius);
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.18);
+  padding: 0.3rem;
+}
+.nx-combo-opt {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.nx-combo-opt:hover,
+.nx-combo-opt:focus {
+  background: var(--nx-surface-alt);
+  outline: none;
+}
+.nx-combo-empty {
+  padding: 0.5rem 0.6rem;
+  color: var(--nx-muted);
+  font-size: 0.85rem;
 }
 
 /* badges with fixed meanings */
@@ -647,4 +706,49 @@
 .nx .btn.nx-icon-btn {
   padding: 0;
   border: 0;
+}
+
+/* the health banner: one row per failing snapshot. the left side uses fixed-width columns so the badge
+   lands at the same x on every row, whatever that row's source path or date happens to be. */
+.nx-fail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.nx-fail-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  border: 1px solid var(--bs-danger-border-subtle);
+  border-radius: var(--nx-radius);
+  padding: 0.4rem 0.6rem;
+}
+.nx-fail-left {
+  display: grid;
+  grid-template-columns: 11rem 9rem auto;
+  align-items: center;
+  column-gap: 0.6rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.nx-fail-src {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.nx-fail-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+@media (max-width: 640px) {
+  .nx-fail-left {
+    grid-template-columns: 1fr;
+    row-gap: 0.2rem;
+  }
 }

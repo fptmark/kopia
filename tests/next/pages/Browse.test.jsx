@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { SnapshotDirectory } from "../../../src/next/pages/SnapshotDirectory";
 import { SnapshotRestore } from "../../../src/next/pages/SnapshotRestore";
@@ -33,17 +33,20 @@ function Where() {
   );
 }
 
-const renderBrowse = (state) =>
-  render(
-    <MemoryRouter initialEntries={[{ pathname: "/snapshots/dir/kroot", state }]}>
-      <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
-        <Routes>
-          <Route path="/snapshots/dir/:oid" element={<SnapshotDirectory />} />
-          <Route path="*" element={<Where />} />
-        </Routes>
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderBrowse = (state) => {
+  const router = createMemoryRouter(
+    [
+      { path: "/snapshots/dir/:oid", element: <SnapshotDirectory /> },
+      { path: "*", element: <Where /> },
+    ],
+    { initialEntries: [{ pathname: "/snapshots/dir/kroot", state }] },
   );
+  return render(
+    <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
+  );
+};
 
 describe("SnapshotDirectory", () => {
   beforeEach(() => {
@@ -208,15 +211,16 @@ describe("SnapshotDirectory", () => {
   });
 });
 
-const renderRestore = () =>
-  render(
-    <MemoryRouter initialEntries={["/snapshots/dir/kroot/restore"]}>
-      <Routes>
-        <Route path="/snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
-        <Route path="/tasks/:id" element={<Where />} />
-      </Routes>
-    </MemoryRouter>,
+const renderRestore = () => {
+  const router = createMemoryRouter(
+    [
+      { path: "/snapshots/dir/:oid/restore", element: <SnapshotRestore /> },
+      { path: "/tasks/:id", element: <Where /> },
+    ],
+    { initialEntries: ["/snapshots/dir/kroot/restore"] },
   );
+  return render(<RouterProvider router={router} />);
+};
 
 describe("SnapshotRestore", () => {
   beforeEach(() => {
@@ -251,14 +255,14 @@ describe("SnapshotRestore", () => {
       { obj: "o1", name: "b.txt" },
       { obj: "kdocs", name: "Docs" },
     ];
-    render(
-      <MemoryRouter initialEntries={[{ pathname: "/snapshots/dir/kroot/restore", state: { items } }]}>
-        <Routes>
-          <Route path="/snapshots/dir/:oid/restore" element={<SnapshotRestore />} />
-          <Route path="/tasks" element={<Where />} />
-        </Routes>
-      </MemoryRouter>,
+    const router = createMemoryRouter(
+      [
+        { path: "/snapshots/dir/:oid/restore", element: <SnapshotRestore /> },
+        { path: "/tasks", element: <Where /> },
+      ],
+      { initialEntries: [{ pathname: "/snapshots/dir/kroot/restore", state: { items } }] },
     );
+    render(<RouterProvider router={router} />);
     expect(screen.getByText("2 items selected")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Destination folder"), { target: { value: "/tmp/out/" } });
     fireEvent.click(screen.getByTestId("submit-button"));

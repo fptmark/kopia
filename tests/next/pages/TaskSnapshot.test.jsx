@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { TaskSnapshot } from "../../../src/next/pages/TaskSnapshot";
 
 vi.mock("axios");
@@ -17,15 +17,16 @@ const Where = () => {
   );
 };
 
-const renderIt = () =>
-  render(
-    <MemoryRouter initialEntries={["/snapshots/of-task/t1"]}>
-      <Routes>
-        <Route path="/snapshots/of-task/:tid" element={<TaskSnapshot />} />
-        <Route path="*" element={<Where />} />
-      </Routes>
-    </MemoryRouter>,
+const renderIt = () => {
+  const router = createMemoryRouter(
+    [
+      { path: "/snapshots/of-task/:tid", element: <TaskSnapshot /> },
+      { path: "*", element: <Where /> },
+    ],
+    { initialEntries: ["/snapshots/of-task/t1"] },
   );
+  return render(<RouterProvider router={router} />);
+};
 
 const serve = (errors, snapshots = []) =>
   axios.get.mockImplementation((url) =>

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { Exclusions } from "../../../src/next/pages/Exclusions";
 
@@ -42,14 +42,14 @@ function serve(data, handlers = {}) {
   });
 }
 
-const renderPage = () =>
-  render(
-    <MemoryRouter>
-      <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
-        <Exclusions />
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderPage = () => {
+  const router = createMemoryRouter([{ path: "*", element: <Exclusions /> }]);
+  return render(
+    <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
   );
+};
 
 describe("Exclusions page", () => {
   beforeEach(() => {

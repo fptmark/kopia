@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { NextContext } from "../../../src/next/context";
 import { Repository } from "../../../src/next/pages/Repository";
@@ -30,16 +30,16 @@ const connected = (over = {}) => ({
 
 const shell = { repoConnected: true, repoDescription: "", runningTasks: 0, refreshRepo: vi.fn() };
 
-const renderPage = () =>
-  render(
-    <MemoryRouter>
-      <NextContext.Provider value={shell}>
-        <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
-          <Repository />
-        </UIPreferencesContext.Provider>
-      </NextContext.Provider>
-    </MemoryRouter>,
+const renderPage = () => {
+  const router = createMemoryRouter([{ path: "*", element: <Repository /> }]);
+  return render(
+    <NextContext.Provider value={shell}>
+      <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
+        <RouterProvider router={router} />
+      </UIPreferencesContext.Provider>
+    </NextContext.Provider>,
   );
+};
 
 const serve = (
   status,

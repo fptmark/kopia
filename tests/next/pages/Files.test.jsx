@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { Files } from "../../../src/next/pages/Files";
 import { availableRanges, formatSeenRange, resultLinks, searchRange } from "../../../src/next/search";
@@ -35,14 +35,14 @@ const result = (over = {}) => ({
 
 const progress = { snapshotsDone: 5, snapshotsTotal: 5, directories: 1200 };
 
-const renderPage = () =>
-  render(
-    <MemoryRouter>
-      <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
-        <Files />
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderPage = () => {
+  const router = createMemoryRouter([{ path: "*", element: <Files /> }]);
+  return render(
+    <UIPreferencesContext.Provider value={{ pageSize: 25, bytesStringBase2: false }}>
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
   );
+};
 
 describe("Files page", () => {
   beforeEach(() => {

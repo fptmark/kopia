@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { describe, it, expect, vi } from "vitest";
 import { DataTable, Page, Toolbar } from "../../../src/next/ui";
 
@@ -34,16 +34,20 @@ describe("DataTable", () => {
   });
 
   it("puts the pager at the end of the page's toolbar when there is one, so it takes no line of its own", () => {
-    const { container } = render(
-      <MemoryRouter>
-        <Page title="T">
-          <Toolbar>
-            <Toolbar.Group label="Show">x</Toolbar.Group>
-          </Toolbar>
-          <DataTable data={rows} columns={columns} getRowId={(r) => r.id} pageSize={10} />
-        </Page>
-      </MemoryRouter>,
-    );
+    const router = createMemoryRouter([
+      {
+        path: "*",
+        element: (
+          <Page title="T">
+            <Toolbar>
+              <Toolbar.Group label="Show">x</Toolbar.Group>
+            </Toolbar>
+            <DataTable data={rows} columns={columns} getRowId={(r) => r.id} pageSize={10} />
+          </Page>
+        ),
+      },
+    ]);
+    const { container } = render(<RouterProvider router={router} />);
     const slot = container.querySelector(".nx-toolbar .nx-pager-slot");
     expect(slot).toBeInTheDocument();
     expect(container.querySelector(".nx-table-top")).not.toBeInTheDocument();

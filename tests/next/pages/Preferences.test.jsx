@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from "@testing-library/rea
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import axios from "axios";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, RouterProvider, createMemoryRouter } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import { Preferences } from "../../../src/next/pages/Preferences";
 import { About } from "../../../src/next/pages/About";
@@ -22,26 +22,26 @@ const setters = () => ({
   setVerifyNewData: vi.fn(),
 });
 
-const renderPrefs = (search = "", prefs = {}) =>
-  render(
-    <MemoryRouter initialEntries={["/preferences" + search]}>
-      <UIPreferencesContext.Provider
-        value={{
-          theme: "light",
-          fontSize: "fs-6",
-          bytesStringBase2: false,
-          pageSize: 25,
-          keepAwake: "never",
-          ...setters(),
-          ...prefs,
-        }}
-      >
-        <Routes>
-          <Route path="/preferences" element={<Preferences />} />
-        </Routes>
-      </UIPreferencesContext.Provider>
-    </MemoryRouter>,
+const renderPrefs = (search = "", prefs = {}) => {
+  const router = createMemoryRouter([{ path: "/preferences", element: <Preferences /> }], {
+    initialEntries: ["/preferences" + search],
+  });
+  return render(
+    <UIPreferencesContext.Provider
+      value={{
+        theme: "light",
+        fontSize: "fs-6",
+        bytesStringBase2: false,
+        pageSize: 25,
+        keepAwake: "never",
+        ...setters(),
+        ...prefs,
+      }}
+    >
+      <RouterProvider router={router} />
+    </UIPreferencesContext.Provider>,
   );
+};
 
 describe("Preferences page", () => {
   beforeEach(() => {
@@ -51,18 +51,23 @@ describe("Preferences page", () => {
     axios.delete.mockReset().mockResolvedValue({ data: {} });
   });
 
-  it("opens on Settings and changes them", () => {
+  it("opens on Settings, stages changes, and applies them only on Save", () => {
     const p = setters();
     renderPrefs("", p);
     expect(screen.getByLabelText("Theme")).toHaveValue("light");
+    expect(screen.getByTestId("button-save")).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
-    expect(p.setTheme).toHaveBeenCalledWith("dark");
     fireEvent.change(screen.getByLabelText("Text size"), { target: { value: "fs-5" } });
-    expect(p.setFontSize).toHaveBeenCalledWith("fs-5");
     fireEvent.change(screen.getByLabelText("Sizes are written in"), { target: { value: "true" } });
-    expect(p.setByteStringBase).toHaveBeenCalledWith("true");
     fireEvent.change(screen.getByLabelText("Rows per table page"), { target: { value: "50" } });
+    expect(p.setTheme).not.toHaveBeenCalled();
+    expect(screen.getByTestId("button-save")).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId("button-save"));
+    expect(p.setTheme).toHaveBeenCalledWith("dark");
+    expect(p.setFontSize).toHaveBeenCalledWith("fs-5");
+    expect(p.setByteStringBase).toHaveBeenCalledWith("true");
     expect(p.setPageSize).toHaveBeenCalledWith(50);
   });
 
@@ -71,17 +76,21 @@ describe("Preferences page", () => {
     expect(screen.getByLabelText("Theme")).toHaveValue("light");
   });
 
-  it("goes to the tab named in the address, and switches tabs", () => {
+  it("goes to the tab named in the address, switches tabs, and keeps an unsaved change live across them", () => {
     const p = setters();
     renderPrefs("", { ...p });
     expect(screen.getByLabelText("Keep the Mac awake during snapshots and checks")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Keep the Mac awake during snapshots and checks"), {
       target: { value: "ac" },
     });
-    expect(p.setKeepAwake).toHaveBeenCalledWith("ac");
+    expect(p.setKeepAwake).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId("tab-notifications"));
     expect(screen.queryByLabelText("Theme")).not.toBeInTheDocument();
+    expect(screen.getByTestId("button-save")).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId("button-save"));
+    expect(p.setKeepAwake).toHaveBeenCalledWith("ac");
   });
 
   it("turns on reading back the data each snapshot adds", () => {
@@ -89,14 +98,65 @@ describe("Preferences page", () => {
     renderPrefs("", { verifyNewData: false, setVerifyNewData });
     expect(screen.getByTestId("verify-new-data")).not.toBeChecked();
     fireEvent.click(screen.getByTestId("verify-new-data"));
+    expect(setVerifyNewData).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("button-save"));
     expect(setVerifyNewData).toHaveBeenCalledWith(true);
   });
 
   it("chooses what to verify after each snapshot", () => {
     const setVerifyEach = vi.fn();
     renderPrefs("", { verifyNewData: true, verifyEachMode: "new", setVerifyEach });
-    fireEvent.click(screen.getByLabelText("A sample of the files"));
+    fireEvent.click(screen.getByLabelText("Verify files"));
+    expect(setVerifyEach).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("button-save"));
     expect(setVerifyEach).toHaveBeenCalledWith("sample", 10);
+  });
+
+  const renderWithElsewhere = () => {
+    const Elsewhere = () => <div data-testid="elsewhere">gone</div>;
+    const Wrapper = () => (
+      <div>
+        <Link to="/elsewhere">Away</Link>
+        <Preferences />
+      </div>
+    );
+    const router = createMemoryRouter(
+      [
+        { path: "/preferences", element: <Wrapper /> },
+        { path: "/elsewhere", element: <Elsewhere /> },
+      ],
+      { initialEntries: ["/preferences"] },
+    );
+    return render(
+      <UIPreferencesContext.Provider
+        value={{ theme: "light", fontSize: "fs-6", bytesStringBase2: false, pageSize: 25, keepAwake: "never", ...setters() }}
+      >
+        <RouterProvider router={router} />
+      </UIPreferencesContext.Provider>,
+    );
+  };
+
+  it("warns before leaving with unsaved changes, and leaves when confirmed", async () => {
+    renderWithElsewhere();
+    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
+
+    fireEvent.click(screen.getByText("Away"));
+    expect(screen.getByText("Leave without saving?")).toBeInTheDocument();
+    expect(screen.queryByTestId("elsewhere")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("confirm"));
+    await waitFor(() => expect(screen.getByTestId("elsewhere")).toBeInTheDocument());
+  });
+
+  it("stays on the page when the warning is cancelled", async () => {
+    renderWithElsewhere();
+    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
+
+    fireEvent.click(screen.getByText("Away"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByText("Leave without saving?")).not.toBeInTheDocument());
+    expect(screen.queryByTestId("elsewhere")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Theme")).toHaveValue("dark");
   });
 
   it("lists ignored errors and removes one", async () => {
@@ -302,7 +362,7 @@ describe("HealthBanner", () => {
 
     fireEvent.click(screen.getByText("Verify"));
     await waitFor(() => expect(screen.getByTestId("verify-dialog")).toBeInTheDocument());
-    fireEvent.click(screen.getByLabelText("A sample of the files"));
+    fireEvent.click(screen.getByLabelText("Verify files"));
     fireEvent.click(screen.getByTestId("confirm"));
     await waitFor(() =>
       expect(axios.post).toHaveBeenCalledWith("/api/v1/snapshots/verify", {
@@ -329,12 +389,11 @@ describe("HealthBanner", () => {
 
 describe("About page", () => {
   it("shows the versions and what this build adds", () => {
+    const router = createMemoryRouter([{ path: "*", element: <About /> }]);
     render(
-      <MemoryRouter>
-        <UIPreferencesContext.Provider value={{ pageSize: 25 }}>
-          <About />
-        </UIPreferencesContext.Provider>
-      </MemoryRouter>,
+      <UIPreferencesContext.Provider value={{ pageSize: 25 }}>
+        <RouterProvider router={router} />
+      </UIPreferencesContext.Provider>,
     );
     expect(screen.getByTestId("about-ui-version")).toHaveTextContent("custom-test");
     expect(screen.getByText("Server version")).toBeInTheDocument();

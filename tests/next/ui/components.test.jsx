@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { describe, it, expect, vi } from "vitest";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { Link, RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { UIPreferencesContext } from "../../../src/contexts/UIPreferencesContext";
 import {
   ConfirmDialog,
@@ -24,7 +24,10 @@ import {
   Toolbar,
 } from "../../../src/next/ui";
 
-const inRouter = (ui) => render(<MemoryRouter>{ui}</MemoryRouter>);
+const inRouter = (ui) => {
+  const router = createMemoryRouter([{ path: "*", element: ui }]);
+  return render(<RouterProvider router={router} />);
+};
 
 describe("Page", () => {
   it("shows title, subtitle, actions and the breadcrumbs", () => {
@@ -46,9 +49,19 @@ describe("Page", () => {
   });
 
   it("shows the trail it was opened from, then itself", () => {
-    render(
-      <MemoryRouter
-        initialEntries={[
+    const router = createMemoryRouter(
+      [
+        {
+          path: "*",
+          element: (
+            <Page title="Snapshot: long description" trail={[{ label: "Tasks", to: "/tasks" }]} crumb="Details">
+              body
+            </Page>
+          ),
+        },
+      ],
+      {
+        initialEntries: [
           {
             pathname: "/tasks/9",
             state: {
@@ -58,13 +71,10 @@ describe("Page", () => {
               ],
             },
           },
-        ]}
-      >
-        <Page title="Snapshot: long description" trail={[{ label: "Tasks", to: "/tasks" }]} crumb="Details">
-          body
-        </Page>
-      </MemoryRouter>,
+        ],
+      },
     );
+    render(<RouterProvider router={router} />);
     const crumbs = within(screen.getByLabelText("Where you are"));
     expect(crumbs.getAllByRole("listitem").map((x) => x.textContent)).toEqual(["Sources", "/Users/me", "Details"]);
     expect(crumbs.queryByRole("link", { name: "Details" })).not.toBeInTheDocument();
@@ -76,21 +86,21 @@ describe("Page", () => {
       const l = useLocation();
       return <div data-testid="from">{(l.state?.from ?? []).map((c) => c.label).join(" > ")}</div>;
     };
-    render(
-      <MemoryRouter initialEntries={["/snapshots/single-source"]}>
-        <Routes>
-          <Route
-            path="/snapshots/single-source"
-            element={
-              <Page trail={[{ label: "Sources", to: "/snapshots" }, { label: "/Users/me" }]}>
-                <FromLink to="/policies/edit">Policy</FromLink>
-              </Page>
-            }
-          />
-          <Route path="/policies/edit" element={<Dest />} />
-        </Routes>
-      </MemoryRouter>,
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/snapshots/single-source",
+          element: (
+            <Page trail={[{ label: "Sources", to: "/snapshots" }, { label: "/Users/me" }]}>
+              <FromLink to="/policies/edit">Policy</FromLink>
+            </Page>
+          ),
+        },
+        { path: "/policies/edit", element: <Dest /> },
+      ],
+      { initialEntries: ["/snapshots/single-source"] },
     );
+    render(<RouterProvider router={router} />);
     fireEvent.click(screen.getByText("Policy"));
     expect(screen.getByTestId("from")).toHaveTextContent("Sources > /Users/me");
   });
@@ -109,6 +119,88 @@ describe("Page", () => {
     expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute("href", "/snapshots/dir/k1");
     expect(screen.queryByRole("link", { name: "Here" })).not.toBeInTheDocument();
     expect(screen.getByText("Here")).toBeInTheDocument();
+  });
+
+  it("offers no Save button unless onSave is given", () => {
+    inRouter(<Page title="T">body</Page>);
+    expect(screen.queryByTestId("button-save")).not.toBeInTheDocument();
+  });
+
+  it("disables Save until dirty", () => {
+    inRouter(
+      <Page title="T" dirty={false} onSave={() => Promise.resolve()}>
+        body
+      </Page>,
+    );
+    expect(screen.getByTestId("button-save")).toBeDisabled();
+  });
+
+  it("enables Save once dirty, calls onSave, and shows its error", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("disk full"));
+    inRouter(
+      <Page title="T" dirty onSave={onSave}>
+        body
+      </Page>,
+    );
+    expect(screen.getByTestId("button-save")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("button-save"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Not saved: disk full");
+  });
+
+  it("asks before leaving a dirty page, leaving only once confirmed", async () => {
+    const Elsewhere = () => <div data-testid="elsewhere">gone</div>;
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/here",
+          element: (
+            <>
+              <Link to="/there">Away</Link>
+              <Page title="T" dirty onSave={() => Promise.resolve()}>
+                body
+              </Page>
+            </>
+          ),
+        },
+        { path: "/there", element: <Elsewhere /> },
+      ],
+      { initialEntries: ["/here"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByText("Away"));
+    expect(screen.getByText("Leave without saving?")).toBeInTheDocument();
+    expect(screen.queryByTestId("elsewhere")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByText("Leave without saving?")).not.toBeInTheDocument());
+    expect(screen.queryByTestId("elsewhere")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Away"));
+    fireEvent.click(screen.getByTestId("confirm"));
+    await waitFor(() => expect(screen.getByTestId("elsewhere")).toBeInTheDocument());
+  });
+
+  it("does not ask when only the query string changes (a tab switch, not leaving)", () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/here",
+          element: (
+            <>
+              <Link to="/here?tab=b">Switch tab</Link>
+              <Page title="T" dirty onSave={() => Promise.resolve()}>
+                body
+              </Page>
+            </>
+          ),
+        },
+      ],
+      { initialEntries: ["/here"] },
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(screen.getByText("Switch tab"));
+    expect(screen.queryByText("Leave without saving?")).not.toBeInTheDocument();
   });
 });
 
@@ -261,7 +353,7 @@ describe("forms", () => {
         <>
           <TabNav
             tabs={[
-              { id: "a", label: "First", badge: 3 },
+              { id: "a", label: "First", badge: 3, strong: true },
               { id: "b", label: "Second" },
             ]}
             active={t}
@@ -273,6 +365,8 @@ describe("forms", () => {
     }
     render(<T />);
     expect(screen.getByTestId("tab-a")).toHaveClass("active");
+    expect(screen.getByTestId("tab-a")).toHaveClass("fw-semibold");
+    expect(screen.getByTestId("tab-b")).not.toHaveClass("fw-semibold");
     expect(screen.getByText("3")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("tab-b"));
     expect(screen.getByTestId("now")).toHaveTextContent("b");
