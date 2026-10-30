@@ -78,7 +78,17 @@ describe("policy helpers", () => {
 
 describe("policy fields", () => {
   it("has unique settings with a label and a known type", () => {
-    const types = new Set(["number", "bool", "flag", "select", "lines", "duration", "times", "text", "readonly"]);
+    const types = new Set([
+      "number",
+      "bool",
+      "flag",
+      "select",
+      "lines",
+      "text",
+      "readonly",
+      "verifyPercent",
+      "schedule",
+    ]);
     const paths = ALL_FIELDS.map((f) => f.path);
     expect(new Set(paths).size).toBe(paths.length);
     for (const f of ALL_FIELDS) {
@@ -91,6 +101,7 @@ describe("policy fields", () => {
     expect(SECTIONS.map((s) => s.id)).toEqual([
       "retention",
       "scheduling",
+      "verifyScheduling",
       "files",
       "errors",
       "compression",

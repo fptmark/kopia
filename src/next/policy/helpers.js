@@ -5,6 +5,21 @@ export function getPath(obj, path) {
   return path.split(".").reduce((o, k) => (o === undefined || o === null ? undefined : o[k]), obj);
 }
 
+// A policy's JSON can nest empty structs for parts nobody touched (the server doesn't omit them), so a value
+// only really counts as set when at least one leaf underneath it holds something.
+export function hasValue(v) {
+  if (v === undefined || v === null) {
+    return false;
+  }
+  if (Array.isArray(v)) {
+    return v.length > 0;
+  }
+  if (typeof v === "object") {
+    return Object.values(v).some(hasValue);
+  }
+  return true;
+}
+
 function isEmpty(v) {
   return (
     v === undefined ||

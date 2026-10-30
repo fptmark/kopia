@@ -42,6 +42,7 @@ export const SECTIONS = [
   {
     id: "retention",
     label: "Retention",
+    sourceOnly: true,
     note: "How many snapshots are kept. A snapshot is kept if any rule below covers it.",
     fields: [
       { path: "retention.keepLatest", label: "Latest", help: "The most recent snapshots to keep.", type: "number" },
@@ -70,20 +71,23 @@ export const SECTIONS = [
   },
   {
     id: "scheduling",
-    label: "Schedule",
+    label: "Snapshot",
+    group: "schedule",
+    groupLabel: "Schedule",
+    sourceOnly: true,
     note: "Applies in server mode only.",
     fields: [
-      { path: "scheduling.intervalSeconds", label: "Every", help: "How often to take a snapshot.", type: "duration" },
       {
-        path: "scheduling.timeOfDay",
-        label: "At times of day",
-        help: "One time per line, 24 hour clock (9:30, 21:05).",
-        type: "times",
+        path: "scheduling.intervalSeconds",
+        altPath: "scheduling.timeOfDay",
+        label: "When",
+        help: "Pick one. Choosing an option clears the other.",
+        type: "schedule",
       },
       {
         path: "scheduling.cron",
         label: "Cron expressions",
-        help: "One per line. Five fields: minute hour day month weekday.",
+        help: "One per line, five fields: minute hour day month weekday. Runs in addition to the choice above.",
         type: "lines",
       },
       {
@@ -93,6 +97,47 @@ export const SECTIONS = [
         type: "bool",
       },
       { path: "scheduling.manual", label: "Manual snapshots only", help: "Turns the schedule off.", type: "bool" },
+    ],
+  },
+  {
+    id: "verifyScheduling",
+    label: "Verify",
+    group: "schedule",
+    sourceOnly: true,
+    note: "A periodic read-back of this source's newest snapshot, independent of the snapshot schedule. Off until a time, interval or cron line is set.",
+    fields: [
+      {
+        path: "verifyScheduling.percent",
+        modePath: "verifyScheduling.mode",
+        label: "Verify",
+        help: "Percent of files to read back. 100 checks every file.",
+        type: "verifyPercent",
+      },
+      {
+        path: "verifyScheduling.scheduling.intervalSeconds",
+        altPath: "verifyScheduling.scheduling.timeOfDay",
+        label: "When",
+        help: "Pick one. Choosing an option clears the other.",
+        type: "schedule",
+      },
+      {
+        path: "verifyScheduling.scheduling.cron",
+        label: "Cron expressions",
+        help: "One per line, five fields: minute hour day month weekday. Runs in addition to the choice above.",
+        type: "lines",
+      },
+      {
+        path: "verifyScheduling.scheduling.runMissed",
+        label: "Run missed verifies on start",
+        help: "Only matters for times of day.",
+        type: "bool",
+      },
+      {
+        path: "verifyScheduling.scheduling.manual",
+        label: "No periodic verify",
+        help: "Turns the schedule off even if a policy above sets one.",
+        type: "bool",
+      },
     ],
   },
   {
@@ -203,6 +248,7 @@ export const SECTIONS = [
   {
     id: "upload",
     label: "Upload",
+    sourceOnly: true,
     fields: [
       {
         path: "upload.maxParallelSnapshots",
@@ -299,3 +345,19 @@ export const SECTIONS = [
 
 /** Every setting of every section. */
 export const ALL_FIELDS = SECTIONS.flatMap((s) => s.fields);
+
+/**
+ * The editor's top-level tabs. A section with no `group` is its own tab; sections that share a `group` become
+ * one tab with its own sub-tabs, in SECTIONS order, labeled by the first of them to declare `groupLabel`.
+ */
+export const SECTION_GROUPS = SECTIONS.reduce((groups, s) => {
+  const id = s.group ?? s.id;
+  const existing = groups.find((g) => g.id === id);
+  if (existing) {
+    existing.sections.push(s.id);
+    existing.sourceOnly = existing.sourceOnly || !!s.sourceOnly;
+  } else {
+    groups.push({ id, label: s.groupLabel ?? s.label, sections: [s.id], sourceOnly: !!s.sourceOnly });
+  }
+  return groups;
+}, []);
