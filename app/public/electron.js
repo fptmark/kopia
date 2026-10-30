@@ -254,9 +254,10 @@ app.on(
  */
 app.on("window-all-closed", function () {});
 
-ipcMain.handle("select-dir", async (_event, _arg) => {
+ipcMain.handle("select-dir", async (_event, startPath) => {
   const result = await dialog.showOpenDialog({
     properties: ["openDirectory"],
+    ...(startPath ? { defaultPath: startPath } : {}),
   });
 
   if (result.filePaths) {
