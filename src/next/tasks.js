@@ -70,6 +70,50 @@ export const isSuccess = (t) => t.status === TaskStatus.SUCCESS;
 /** A failed task that says why. */
 export const failedWithMessage = (t) => t.status === TaskStatus.FAILED && !!t.errorMessage;
 
+const SNAPSHOT_SOURCE_RE = /^([^@]*)@([^:]*):(.+) at \d{4}-\d{2}-\d{2}T\S+$/;
+const VERIFY_SOURCE_RE = /^Verify snapshot of (.+) from \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(.+\)$/;
+
+/**
+ * The source a Snapshot or per-snapshot Verify task is tied to, parsed out of its description -- the
+ * server doesn't carry it separately. null for a task that isn't about one source (Maintenance,
+ * Repository, a repo-wide "Backup health check" Verify). A Verify's description only has the path, not
+ * who it belongs to, so its source comes back with host and userName left out.
+ */
+export function taskSource(t) {
+  const d = t.description || "";
+  if (t.kind === "Snapshot") {
+    const m = SNAPSHOT_SOURCE_RE.exec(d);
+    return m ? { userName: m[1], host: m[2], path: m[3] } : null;
+  }
+  if (t.kind === "Verify") {
+    const m = VERIFY_SOURCE_RE.exec(d);
+    return m ? { path: m[1] } : null;
+  }
+  return null;
+}
+
+/**
+ * "What" once Kind, Src and Started already say the rest: the verify mode, why an automatic verify ran, or
+ * the maintenance/repository trigger -- empty when Kind alone says it all, e.g. a plain Snapshot.
+ */
+export function taskWhat(t) {
+  const d = t.description || "";
+  switch (t.kind) {
+    case "Snapshot":
+      return "";
+    case "Verify": {
+      const m = /^Verify snapshot of .+ from .+ \((.+)\)$/.exec(d);
+      return m ? m[1] : d;
+    }
+    case "Maintenance":
+      return d === "Periodic maintenance" ? "periodic" : d;
+    case "Repository":
+      return d === "Open" ? "server start" : d === "Connect" ? "connect" : d;
+    default:
+      return d;
+  }
+}
+
 /** How long a task ran (or has been running), in words. */
 export function taskDuration(t, now = Date.now()) {
   const end = t.endTime ? new Date(t.endTime).getTime() : now;
@@ -98,7 +142,9 @@ export function taskStatus(t) {
     case TaskStatus.FAILED:
       return { kind: "error", text: "Failed after " + d };
     case TaskStatus.CANCELED:
-      return { kind: "neutral", text: "Canceled after " + d };
+      return t.cancelReason
+        ? { kind: "warning", text: "Aborted — " + t.cancelReason }
+        : { kind: "neutral", text: "Canceled after " + d };
     default:
       return { kind: "neutral", text: t.status };
   }

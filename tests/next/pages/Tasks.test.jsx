@@ -75,12 +75,12 @@ describe("Tasks page", () => {
       },
     });
     renderTasks();
-    await waitFor(() => expect(screen.getAllByText("Snapshot of /Users/me").length).toBe(2));
+    await waitFor(() => expect(screen.getAllByTestId("task-started")).toHaveLength(3));
 
     expect(screen.getAllByText("Finished in 5 min")).toHaveLength(2);
     expect(screen.getByText(/Failed after 5 min/)).toBeInTheDocument();
     expect(screen.getByTestId("task-error-inline")).toHaveTextContent("connect: no route to host");
-    expect(screen.getByText("Repository maintenance (periodic)")).toBeInTheDocument();
+    expect(screen.getByText("periodic")).toBeInTheDocument();
     expect(screen.getByTestId("tasks-summary")).toHaveTextContent("Showing 3 of 3 tasks");
   });
 
@@ -149,7 +149,7 @@ describe("Tasks page", () => {
   it("asks the server for matches when a filter changes", async () => {
     axios.get.mockResolvedValue({ data: { history: true, total: 1, tasks: [task("a")] } });
     renderTasks();
-    await waitFor(() => expect(screen.getByText("Snapshot of /Users/me")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("task-started")).toBeInTheDocument());
 
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "Failed" } });
     await waitFor(() =>
@@ -176,7 +176,7 @@ describe("Tasks page", () => {
     renderTasks();
     await waitFor(() => expect(screen.getByTestId("load-older-tasks")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("load-older-tasks"));
-    await waitFor(() => expect(screen.getByText("Snapshot of /Old")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByTestId("task-started")).toHaveLength(2));
     expect(axios.get).toHaveBeenCalledWith("/api/v1/tasks", { params: expect.objectContaining({ before: "a" }) });
   });
 
@@ -191,6 +191,38 @@ describe("Tasks page", () => {
     await waitFor(() => expect(screen.getByText("Stop")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Stop"));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith("/api/v1/tasks/r/cancel", {}));
+  });
+
+  it("labels the Src column with a source's last path segment, and ? for one no longer listed", async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === "/api/v1/sources") {
+        return Promise.resolve({
+          data: { sources: [{ source: { userName: "me", host: "mac", path: "/Users/me" } }] },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          history: true,
+          total: 3,
+          kinds: [],
+          tasks: [
+            task("a"),
+            task("b", { description: "me@mac:/Old at 2026-10-01T10:00:00Z" }),
+            task("c", { kind: "Maintenance", description: "Periodic maintenance" }),
+          ],
+        },
+      });
+    });
+    renderTasks();
+    await waitFor(() => expect(screen.getAllByTestId("task-started")).toHaveLength(3));
+
+    expect(screen.getByRole("link", { name: "me" })).toHaveAttribute(
+      "href",
+      "/snapshots/single-source?userName=me&host=mac&path=%2FUsers%2Fme",
+    );
+    const gone = screen.getByRole("link", { name: "?" });
+    expect(gone).toHaveAttribute("href", "/snapshots/single-source?userName=me&host=mac&path=%2FOld");
+    expect(gone).toHaveAttribute("title", expect.stringContaining("no longer listed"));
   });
 
   it("shows a running verify's progress, the same bar as the Snapshots page", async () => {
@@ -248,15 +280,15 @@ describe("Future tasks tab", () => {
     fireEvent.click(screen.getByTestId("tab-future"));
     await waitFor(() => expect(screen.getByTestId("future-task-source")).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText("How many upcoming tasks to show"), { target: { value: "50" } });
-    await waitFor(() =>
-      expect(axios.get).toHaveBeenCalledWith("/api/v1/tasks/upcoming", { params: { limit: 50 } }),
-    );
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith("/api/v1/tasks/upcoming", { params: { limit: 50 } }));
   });
 
   it("says so when nothing is scheduled", async () => {
-    axios.get.mockReset().mockImplementation((url) =>
-      Promise.resolve({ data: url === "/api/v1/tasks/upcoming" ? { tasks: [] } : { tasks: [] } }),
-    );
+    axios.get
+      .mockReset()
+      .mockImplementation((url) =>
+        Promise.resolve({ data: url === "/api/v1/tasks/upcoming" ? { tasks: [] } : { tasks: [] } }),
+      );
     renderTasks();
     fireEvent.click(screen.getByTestId("tab-future"));
     await waitFor(() => expect(screen.getByText(/Nothing is scheduled/)).toBeInTheDocument());

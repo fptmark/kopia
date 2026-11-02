@@ -7,7 +7,7 @@ import { policyEditorURL } from "../../utils/policyutil";
 import { errorMessage } from "../api";
 import { loadHealth } from "../health";
 import { useDebounced, useLoad } from "../hooks";
-import { sourceString } from "../snapshots";
+import { historyUrl, loadSources, sourceString } from "../snapshots";
 import {
   cancelTask,
   failedWithMessage,
@@ -19,7 +19,9 @@ import {
   shortTaskError,
   TASK_STATUSES,
   taskDescription,
+  taskSource,
   taskStatus,
+  taskWhat,
   verifyTaskPercent,
 } from "../tasks";
 import {
@@ -77,6 +79,48 @@ function StatusCell({ task, onDetails, onCancel }) {
         </Button>
       )}
     </span>
+  );
+}
+
+const lastPathSegment = (path) => path.replace(/\/+$/, "").split(/[/\\]/).pop() || path;
+
+/**
+ * Fills in a Verify task's host/userName (its description has only the path) by matching the current
+ * Sources list, and says whether the source is still listed there -- not, for a deleted source, even
+ * though its history is still reachable. null when the task isn't tied to one source.
+ */
+function resolveTaskSource(task, sources) {
+  const parsed = taskSource(task);
+  if (!parsed) {
+    return null;
+  }
+  const known = sources.find((r) => r.source.path === parsed.path && (!parsed.host || r.source.host === parsed.host));
+  if (known) {
+    return { source: known.source, listed: true };
+  }
+  // a Snapshot task always knows its own full source, even once that source is deleted
+  return parsed.host ? { source: parsed, listed: false } : { source: null, listed: false, path: parsed.path };
+}
+
+/** The source a task is tied to, as a small chip labeled with its last path segment; hover for the full
+ * path. Unresolved (deleted source, or a Verify whose host/userName can't be matched) renders as "?". */
+function SrcCell({ task, sources }) {
+  const r = resolveTaskSource(task, sources);
+  if (!r) {
+    return <span className="nx-muted">{"—"}</span>;
+  }
+  if (!r.source) {
+    return (
+      <span className="nx-chip nx-chip-unresolved" title={`${r.path} — not currently listed on Sources`}>
+        ?
+      </span>
+    );
+  }
+  const title = r.listed ? "Open " + r.source.path : `${r.source.path} — no longer listed on Sources (deleted)`;
+  return (
+    <Link className={"nx-chip" + (r.listed ? "" : " nx-chip-unresolved")} to={historyUrl(r.source)} title={title}>
+      {r.listed ? lastPathSegment(r.source.path) : "?"}
+    </Link>
   );
 }
 
@@ -167,6 +211,10 @@ function TaskHistory() {
   const health = useLoad(loadHealth, [], { refreshMs: 60000 });
   const clearedIds = useMemo(() => new Set(health.data?.clearedTaskIds ?? []), [health.data]);
 
+  // to label and link the Src column, and to tell a deleted source's task from one still listed
+  const sourcesState = useLoad(loadSources, [], { refreshMs: 30000 });
+  const sources = sourcesState.data?.sources ?? [];
+
   const first = state.data?.tasks ?? [];
   const olderTasks = older.key === key ? older.tasks.filter((t) => !first.some((f) => f.id === t.id)) : [];
   const shown = [...first, ...olderTasks];
@@ -235,12 +283,18 @@ function TaskHistory() {
     },
     { id: "kind", header: "Kind", accessor: (t) => t.kind },
     {
+      id: "src",
+      header: "Src",
+      accessor: (t) => resolveTaskSource(t, sources)?.source?.path,
+      cell: (t) => <SrcCell task={t} sources={sources} />,
+    },
+    {
       id: "description",
       header: "What",
-      accessor: (t) => taskDescription(t),
+      accessor: (t) => taskWhat(t),
       cell: (t) => (
         <span title={t.description}>
-          {taskDescription(t)}
+          {taskWhat(t) || <span className="nx-muted">{"—"}</span>}
           {failedWithMessage(t) && (
             <span className="text-danger" data-testid="task-error-inline">
               {" "}

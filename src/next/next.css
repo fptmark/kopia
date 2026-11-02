@@ -493,6 +493,33 @@
   color: var(--bs-secondary-color);
 }
 
+/* a small source chip: labeled with the last path segment, links to that source's history */
+.nx-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 9rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--nx-surface-alt);
+  border: 1px solid var(--nx-border);
+  color: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+a.nx-chip:hover {
+  border-color: var(--bs-link-color);
+  color: var(--bs-link-color);
+}
+.nx-chip.nx-chip-unresolved {
+  color: var(--nx-muted);
+  font-weight: 700;
+}
+
 /* forms */
 .nx-field {
   margin-bottom: 1rem;
