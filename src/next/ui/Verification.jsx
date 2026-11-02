@@ -18,6 +18,25 @@ export const TIP_DELAY = { show: 500, hide: 0 };
 function VerifiedBadge({ v, onShowFailures, label, when }) {
   const at = when ? formatLongDateTime(when) + ". " : "";
   const tip = (text) => <Tooltip data-testid="verified-tooltip">{text}</Tooltip>;
+  if (v.ok && v.interruptedCount > 0) {
+    // nothing came back bad, but part of this read-back didn't happen because of a connection problem --
+    // not a failure, just not confirmed yet; it retries itself once the connection looks stable.
+    return (
+      <OverlayTrigger
+        placement="top"
+        delay={TIP_DELAY}
+        overlay={tip(
+          `${at}${formatCount(v.interruptedCount)} reads were interrupted by a connection problem, not confirmed bad. Retrying automatically.`,
+        )}
+      >
+        <span>
+          <StatusBadge kind="warning" data-testid="verify-interrupted">
+            {formatCount(v.interruptedCount)} interrupted
+          </StatusBadge>
+        </span>
+      </OverlayTrigger>
+    );
+  }
   if (v.ok) {
     return (
       <OverlayTrigger
@@ -273,7 +292,13 @@ export function VerifyFailuresDialog({ verification, onClose }) {
                 {d.failures.map((f) => (
                   <li key={f.path + f.error}>
                     <PathText>{f.path}</PathText>
-                    <div className="nx-muted">{f.error}</div>
+                    {f.interrupted ? (
+                      <div className="nx-muted">
+                        <StatusBadge kind="warning">interrupted</StatusBadge> {f.error}
+                      </div>
+                    ) : (
+                      <div className="nx-muted">{f.error}</div>
+                    )}
                   </li>
                 ))}
               </ul>

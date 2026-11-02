@@ -51,7 +51,11 @@ function Summary({ task }) {
         </Notice>
       );
     case TaskStatus.CANCELED:
-      return <Notice kind="warning">Task canceled.</Notice>;
+      return task.cancelReason ? (
+        <Notice kind="warning">Aborted: {task.cancelReason}.</Notice>
+      ) : (
+        <Notice kind="warning">Task canceled.</Notice>
+      );
     case TaskStatus.CANCELING:
       return (
         <Notice kind="warning">
