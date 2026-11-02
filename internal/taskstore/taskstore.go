@@ -207,8 +207,21 @@ const schemaV7 = `
 ALTER TABLE snapshot_verifications ADD COLUMN cleared_seq INTEGER NOT NULL DEFAULT 0;
 `
 
+// schemaV8 tracks reads that didn't happen because of a connection problem or a cancellation, separately from
+// reads that actually came back bad -- so a flaky connection never shows up looking like data corruption.
+const schemaV8 = `
+ALTER TABLE snapshot_verifications ADD COLUMN interrupted_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE verification_failures ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV9 records why a task was canceled, when it wasn't a user clicking Stop -- e.g. the server canceling
+// a Snapshot/Verify/Maintenance task itself because the machine looked like it had just woken from sleep.
+const schemaV9 = `
+ALTER TABLE tasks ADD COLUMN cancel_reason TEXT NOT NULL DEFAULT '';
+`
+
 // migrations are applied in order; the database version is the number applied.
-var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7} //nolint:gochecknoglobals
+var migrations = []string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9} //nolint:gochecknoglobals
 
 func (s *Store) migrate() error {
 	var v int
@@ -310,8 +323,8 @@ func (s *Store) TaskFinished(info uitask.Info, logLines []json.RawMessage) error
 	}
 
 	res, err := tx.Exec(
-		`UPDATE tasks SET status = ?, end_time = ?, error = ?, counters = ?, description = ? WHERE seq = ?`,
-		string(info.Status), end, info.ErrorMessage, countersJSON(info.Counters), info.Description, seq)
+		`UPDATE tasks SET status = ?, end_time = ?, error = ?, counters = ?, description = ?, cancel_reason = ? WHERE seq = ?`,
+		string(info.Status), end, info.ErrorMessage, countersJSON(info.Counters), info.Description, info.CancelReason, seq)
 	if err != nil {
 		return errors.Wrap(err, "unable to record task end")
 	}
@@ -319,8 +332,8 @@ func (s *Store) TaskFinished(info uitask.Info, logLines []json.RawMessage) error
 	if n, _ := res.RowsAffected(); n == 0 {
 		// the start was not recorded (e.g. the history was attached while the task was running)
 		if _, err := tx.Exec(
-			`INSERT INTO tasks (seq, kind, description, status, start_time, end_time, error, counters) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			seq, info.Kind, info.Description, string(info.Status), info.StartTime.UnixNano(), end, info.ErrorMessage, countersJSON(info.Counters)); err != nil {
+			`INSERT INTO tasks (seq, kind, description, status, start_time, end_time, error, counters, cancel_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			seq, info.Kind, info.Description, string(info.Status), info.StartTime.UnixNano(), end, info.ErrorMessage, countersJSON(info.Counters), info.CancelReason); err != nil {
 			return errors.Wrap(err, "unable to record task")
 		}
 	}
@@ -368,7 +381,7 @@ func scanTask(row interface{ Scan(...any) error }) (uitask.Info, error) {
 		statusText string
 	)
 
-	if err := row.Scan(&seq, &info.Kind, &info.Description, &statusText, &start, &end, &info.ErrorMessage, &counters, &info.FailedFiles); err != nil {
+	if err := row.Scan(&seq, &info.Kind, &info.Description, &statusText, &start, &end, &info.ErrorMessage, &counters, &info.FailedFiles, &info.CancelReason); err != nil {
 		return uitask.Info{}, err //nolint:wrapcheck
 	}
 
@@ -387,7 +400,7 @@ func scanTask(row interface{ Scan(...any) error }) (uitask.Info, error) {
 	return info, nil
 }
 
-const taskColumns = `seq, kind, description, status, start_time, end_time, error, counters, failed_files`
+const taskColumns = `seq, kind, description, status, start_time, end_time, error, counters, failed_files, cancel_reason`
 
 // ListTasks implements uitask.HistoryStore.
 func (s *Store) ListTasks(q uitask.TaskQuery) ([]uitask.Info, int, error) {

@@ -3,6 +3,7 @@ package retry
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
@@ -23,6 +24,29 @@ const retryExponent = 1.5
 
 // IsRetriableFunc is a function that determines whether an error is retriable.
 type IsRetriableFunc func(err error) bool
+
+// ExhaustedError wraps the final error of a retry loop that gave up after every attempt failed with a
+// retriable (e.g. connection) error. A caller can use IsExhausted to tell "we kept hitting a connection
+// problem and ran out of attempts" apart from a non-retriable error, which is never wrapped this way.
+type ExhaustedError struct {
+	Attempts int
+	Err      error
+}
+
+func (e *ExhaustedError) Error() string {
+	return fmt.Sprintf("unable to complete %v despite %v retries", e.Err, e.Attempts)
+}
+
+func (e *ExhaustedError) Unwrap() error {
+	return e.Err
+}
+
+// IsExhausted reports whether err is (or wraps) an *ExhaustedError.
+func IsExhausted(err error) bool {
+	var ee *ExhaustedError
+
+	return errors.As(err, &ee)
+}
 
 // WithExponentialBackoff runs the provided attempt until it succeeds, retrying on all errors that are
 // deemed retriable by the provided function. The delay between retries grows exponentially up to
@@ -87,7 +111,7 @@ func internalRetry[T any](ctx context.Context, desc string, attempt func() (T, e
 		sleepAmount = min(time.Duration(float64(sleepAmount)*factor), maxSleep)
 	}
 
-	return defaultT, errors.Wrapf(lastError, "unable to complete %v despite %v retries", desc, i)
+	return defaultT, &ExhaustedError{Attempts: i, Err: errors.Wrap(lastError, desc)}
 }
 
 // WithExponentialBackoffNoValue is a shorthand for WithExponentialBackoff except the

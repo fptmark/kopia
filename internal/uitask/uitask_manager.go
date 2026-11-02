@@ -195,8 +195,18 @@ func (m *Manager) GetTask(taskID string) (Info, bool) {
 	return Info{}, false
 }
 
-// CancelTask retrieves the log from the task.
+// CancelTask cancels a running task, as if the user had clicked Stop.
 func (m *Manager) CancelTask(taskID string) {
+	m.cancelTask(taskID, "")
+}
+
+// CancelTaskWithReason cancels a running task on the server's own initiative rather than the user's -- reason
+// is shown in the UI in place of the plain "Canceled" so it reads differently from a user-requested Stop.
+func (m *Manager) CancelTaskWithReason(taskID, reason string) {
+	m.cancelTask(taskID, reason)
+}
+
+func (m *Manager) cancelTask(taskID, reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -205,7 +215,7 @@ func (m *Manager) CancelTask(taskID string) {
 		return
 	}
 
-	t.cancel()
+	t.cancel(reason)
 }
 
 func (m *Manager) startTask(r *runningTaskInfo) string {

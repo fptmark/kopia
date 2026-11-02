@@ -22,6 +22,9 @@ const (
 type VerificationFailure struct {
 	Path  string `json:"path"`
 	Error string `json:"error"`
+	// Interrupted is true when this wasn't a confirmed bad read: the task was being canceled, or a
+	// connection problem kept failing until the retry budget ran out. Not counted toward ErrorCount.
+	Interrupted bool `json:"interrupted,omitempty"`
 }
 
 // Verification is the outcome of reading back one snapshot.
@@ -39,7 +42,10 @@ type Verification struct {
 	ReadFiles  int64     `json:"readFiles"`
 	ReadBytes  int64     `json:"readBytes"`
 	ErrorCount int64     `json:"errorCount"`
-	Error      string    `json:"error,omitempty"`
+	// InterruptedCount is how many reads didn't happen because of a connection problem or a cancellation --
+	// not counted in ErrorCount and never what makes OK false.
+	InterruptedCount int64  `json:"interruptedCount,omitempty"`
+	Error            string `json:"error,omitempty"`
 	TaskSeq    int       `json:"taskSeq,omitempty"`
 	// TaskID is TaskSeq as the task is named in the UI and the API.
 	TaskID      string `json:"taskId,omitempty"`
@@ -80,10 +86,10 @@ func (s *Store) RecordVerification(v Verification, failures []VerificationFailur
 
 	res, err := tx.Exec(
 		`INSERT INTO snapshot_verifications
-		 (snapshot_id, source, mode, percent, started_at, finished_at, ok, files, bytes, read_files, read_bytes, error_count, error, task_seq, cleared_seq)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (snapshot_id, source, mode, percent, started_at, finished_at, ok, files, bytes, read_files, read_bytes, error_count, interrupted_count, error, task_seq, cleared_seq)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		v.SnapshotID, v.Source, v.Mode, v.Percent, v.StartedAt.UnixNano(), v.FinishedAt.UnixNano(), boolInt(v.OK),
-		v.Files, v.Bytes, v.ReadFiles, v.ReadBytes, v.ErrorCount, v.Error, v.TaskSeq, clearedSeq)
+		v.Files, v.Bytes, v.ReadFiles, v.ReadBytes, v.ErrorCount, v.InterruptedCount, v.Error, v.TaskSeq, clearedSeq)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "unable to record verification")
 	}
@@ -94,7 +100,7 @@ func (s *Store) RecordVerification(v Verification, failures []VerificationFailur
 	}
 
 	if len(failures) > 0 {
-		stmt, err := tx.Prepare(`INSERT INTO verification_failures (verification_seq, path, error) VALUES (?, ?, ?)`)
+		stmt, err := tx.Prepare(`INSERT INTO verification_failures (verification_seq, path, error, interrupted) VALUES (?, ?, ?, ?)`)
 		if err != nil {
 			return 0, 0, errors.Wrap(err, "unable to record verification failures")
 		}
@@ -102,7 +108,7 @@ func (s *Store) RecordVerification(v Verification, failures []VerificationFailur
 		defer stmt.Close() //nolint:errcheck
 
 		for _, f := range failures {
-			if _, err := stmt.Exec(id, f.Path, f.Error); err != nil {
+			if _, err := stmt.Exec(id, f.Path, f.Error, boolInt(f.Interrupted)); err != nil {
 				return 0, 0, errors.Wrap(err, "unable to record verification failures")
 			}
 		}
@@ -120,7 +126,7 @@ func boolInt(b bool) int {
 }
 
 const verificationColumns = `v.seq, v.snapshot_id, v.source, v.mode, v.percent, v.started_at, v.finished_at, v.ok, v.files, v.bytes,
-	v.read_files, v.read_bytes, v.error_count, v.error, v.task_seq, v.cleared_seq,
+	v.read_files, v.read_bytes, v.error_count, v.interrupted_count, v.error, v.task_seq, v.cleared_seq,
 	(SELECT COUNT(*) FROM verification_failures f WHERE f.verification_seq = v.seq)`
 
 type rowScanner interface{ Scan(...any) error }
@@ -133,7 +139,7 @@ func scanVerification(row rowScanner) (Verification, error) {
 	)
 
 	if err := row.Scan(&v.ID, &v.SnapshotID, &v.Source, &v.Mode, &v.Percent, &start, &end, &ok, &v.Files, &v.Bytes,
-		&v.ReadFiles, &v.ReadBytes, &v.ErrorCount, &v.Error, &v.TaskSeq, &v.ClearedSeq, &v.FailureKept); err != nil {
+		&v.ReadFiles, &v.ReadBytes, &v.ErrorCount, &v.InterruptedCount, &v.Error, &v.TaskSeq, &v.ClearedSeq, &v.FailureKept); err != nil {
 		return v, errors.Wrap(err, "unable to read verification")
 	}
 
@@ -204,7 +210,7 @@ func (s *Store) GetVerification(id int64) (Verification, bool, error) {
 
 // VerificationFailures returns the failures of one verification, up to limit (0 means all).
 func (s *Store) VerificationFailures(id int64, limit int) ([]VerificationFailure, error) {
-	q := `SELECT path, error FROM verification_failures WHERE verification_seq = ? ORDER BY path`
+	q := `SELECT path, error, interrupted FROM verification_failures WHERE verification_seq = ? ORDER BY path`
 	args := []any{id}
 
 	if limit > 0 {
@@ -223,10 +229,16 @@ func (s *Store) VerificationFailures(id int64, limit int) ([]VerificationFailure
 	out := []VerificationFailure{}
 
 	for rows.Next() {
-		var f VerificationFailure
-		if err := rows.Scan(&f.Path, &f.Error); err != nil {
+		var (
+			f           VerificationFailure
+			interrupted int
+		)
+
+		if err := rows.Scan(&f.Path, &f.Error, &interrupted); err != nil {
 			return nil, errors.Wrap(err, "unable to read verification failures")
 		}
+
+		f.Interrupted = interrupted != 0
 
 		out = append(out, f)
 	}

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -99,8 +100,12 @@ type Server struct {
 	rep repo.Repository
 	// +checklocks:serverMutex
 	maint *srvMaintenance
-	// +checklocks:serverMutex
-	verify *verifier
+
+	// verify is read lock-free (currentVerifier/systemRecentlyUnstable are called from deep inside
+	// code that already holds serverMutex as a writer, e.g. syncSourcesLocked via sourceManager
+	// scheduling) -- an RLock there would deadlock against serverMutex's own non-reentrant Lock.
+	// Writes still happen only inside SetRepository, which already serializes them under the write lock.
+	verify atomic.Pointer[verifier]
 
 	// snapVerifs tracks the read-back verifications of single snapshots that are queued or running.
 	snapVerifs snapVerifyRegistry
@@ -685,9 +690,9 @@ func (s *Server) SetRepository(ctx context.Context, rep repo.Repository) error {
 			s.maint = nil
 		}
 
-		if s.verify != nil {
-			s.verify.stop()
-			s.verify = nil
+		if v := s.verify.Load(); v != nil {
+			v.stop()
+			s.verify.Store(nil)
 		}
 	}
 
@@ -706,7 +711,7 @@ func (s *Server) SetRepository(ctx context.Context, rep repo.Repository) error {
 	s.maint = maybeStartMaintenanceManager(ctx, s.rep, s, s.options.MinMaintenanceInterval)
 
 	if s.options.EnableVerifier {
-		s.verify = startVerifier(ctx, s, s.rep)
+		s.verify.Store(startVerifier(ctx, s, s.rep))
 	}
 
 	s.sched = scheduler.Start(context.WithoutCancel(ctx), s.getSchedulerItems, scheduler.Options{
@@ -1211,7 +1216,10 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 	if s.maint != nil {
 		// If we have a direct repository, add an item to run maintenance.
 		// If we're the owner then nextMaintenanceTime will be zero.
-		if nextMaintenanceTime := s.maint.nextMaintenanceTime(); !nextMaintenanceTime.IsZero() {
+		// Skipped (not just deferred) while recently unstable: every source's own snapshot/verify item
+		// below still carries a near-future recheck time during that window, so this whole list gets
+		// re-evaluated soon regardless, and maintenance is reconsidered the moment the machine settles.
+		if nextMaintenanceTime := s.maint.nextMaintenanceTime(); !nextMaintenanceTime.IsZero() && !s.systemRecentlyUnstable() {
 			result = append(result, scheduler.Item{
 				Description: "maintenance",
 				Trigger:     s.maint.trigger,
@@ -1266,6 +1274,36 @@ func (s *Server) lastVerificationTime(src snapshot.SourceInfo, mode string) (tim
 	}
 
 	return t, ok
+}
+
+// systemRecentlyUnstable reports whether the machine appears to have just woken from sleep (see
+// verifier.recentlyUnstable). Scheduling consults this before starting new background work; false (not
+// just no verifier yet) is the safe default so scheduling is never stuck deferring forever.
+func (s *Server) systemRecentlyUnstable() bool {
+	v := s.currentVerifier()
+	if v == nil {
+		return false
+	}
+
+	return v.recentlyUnstable(clock.Now())
+}
+
+// cancelBackgroundTasksForInstability cancels every currently running Snapshot, Verify and Maintenance
+// task. Called the moment the verifier notices a gap consistent with the machine having just woken from
+// sleep, so none of them keeps limping through reconnect after reconnect for hours; each is free to start
+// over, cleanly, once the connection actually settles.
+func (s *Server) cancelBackgroundTasksForInstability(ctx context.Context) {
+	for _, t := range s.taskmgr.ListTasks() {
+		if t.Status != uitask.StatusRunning {
+			continue
+		}
+
+		switch t.Kind {
+		case "Snapshot", "Verify", "Maintenance":
+			userLog(ctx).Infof("canceling %v task %v: the machine appears to have just woken from sleep", t.Kind, t.TaskID)
+			s.taskmgr.CancelTaskWithReason(t.TaskID, "the machine appears to have just woken from sleep")
+		}
+	}
 }
 
 // triggerScheduledVerify starts a source's periodic verify, against its latest complete snapshot, in the

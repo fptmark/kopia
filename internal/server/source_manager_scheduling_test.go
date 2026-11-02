@@ -31,6 +31,14 @@ func (noopSMServer) lastVerificationTime(snapshot.SourceInfo, string) (time.Time
 	return time.Time{}, false
 }
 
+func (noopSMServer) systemRecentlyUnstable() bool { return false }
+
+// unstableSMServer is noopSMServer with systemRecentlyUnstable forced true, for tests of the deferral it
+// drives in findClosestNextSnapshotTimeReadLocked/findClosestNextVerifyTimeReadLocked.
+type unstableSMServer struct{ noopSMServer }
+
+func (unstableSMServer) systemRecentlyUnstable() bool { return true }
+
 // setClock pins clock.Now() to t and restores the real clock when the test ends. Requires the
 // "testing" build tag (clock.Now is a plain func otherwise, not an overridable var).
 func setClock(tb testing.TB, t time.Time) {
@@ -169,4 +177,47 @@ func TestRefreshStatusCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime(t *te
 	require.True(t, ok)
 	require.False(t, after.Before(wokeAt.Add(time.Hour)),
 		"resumes the normal hourly cadence instead of firing again immediately")
+}
+
+// TestSchedulingDefersWhileRecentlyUnstable covers the "don't start a job while the machine looks like it's
+// still sleep-cycling" rule: even a badly overdue source must not get an immediate catch-up time while
+// systemRecentlyUnstable is true -- it gets a near-future recheck instead, so the scheduler keeps polling
+// without actually starting a snapshot or verify into what is likely still a flaky connection.
+func TestSchedulingDefersWhileRecentlyUnstable(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+	si := snapshot.SourceInfo{Host: "host", UserName: "user", Path: "/tmp/src"}
+
+	require.NoError(t, policy.SetPolicy(ctx, env.RepositoryWriter, policy.GlobalPolicySourceInfo, &policy.Policy{
+		SchedulingPolicy:       policy.SchedulingPolicy{IntervalSeconds: 3600},
+		VerifySchedulingPolicy: policy.VerifySchedulingPolicy{SchedulingPolicy: policy.SchedulingPolicy{IntervalSeconds: 3600}},
+	}))
+
+	t0 := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
+	setClock(t, t0)
+	saveTestSnapshot(t, env, si, t0)
+
+	// badly overdue: a real wake right now would trigger an immediate catch-up.
+	wayLater := t0.Add(5 * time.Hour)
+	advanceClock(t, wayLater)
+
+	sm := &sourceManager{src: si, rep: env.RepositoryWriter, server: unstableSMServer{}}
+	sm.refreshStatus(ctx)
+
+	nextSnapshot, ok := sm.getNextSnapshotTime()
+	require.True(t, ok)
+	require.False(t, nextSnapshot.After(wayLater.Add(instabilityRecheckInterval)),
+		"a near-future recheck, not left stuck at the real (badly overdue) catch-up time")
+	require.True(t, nextSnapshot.After(wayLater), "not in the past either -- genuinely deferred, not due now")
+
+	nextVerify, ok := sm.getNextVerifyTime()
+	require.True(t, ok)
+	require.False(t, nextVerify.After(wayLater.Add(instabilityRecheckInterval)))
+
+	// stability returns: a normal refresh now computes the real (immediate, one-time catch-up) time again.
+	sm.server = noopSMServer{}
+	sm.refreshStatus(ctx)
+
+	caughtUp, ok := sm.getNextSnapshotTime()
+	require.True(t, ok)
+	require.True(t, wayLater.Equal(caughtUp), "due right away once stable, the normal catch-up-once behavior")
 }

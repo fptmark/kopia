@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/internal/retry"
 	"github.com/kopia/kopia/internal/taskstore"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
@@ -37,7 +38,13 @@ type snapVerifyStats struct {
 	Bytes     int64
 	ReadFiles int64
 	ReadBytes int64
-	Errors    int64
+	// Errors is how many reads failed for a reason that is not a connection problem -- the only count that
+	// means "this data may actually be bad".
+	Errors int64
+	// Interrupted is how many reads failed because the task was canceled mid-read or a connection kept
+	// failing until the retry budget ran out -- not evidence of anything wrong with the data, just that the
+	// read didn't happen. See (*snapVerify).fail.
+	Interrupted int64
 }
 
 // snapVerifyResult is what a verification found. Every failure is counted; the first verifyFailuresKept are kept.
@@ -70,7 +77,7 @@ type snapVerify struct {
 	opts snapVerifyOptions
 	seen sync.Map
 
-	files, bytes, readFiles, readBytes, errs, total atomic.Int64
+	files, bytes, readFiles, readBytes, errs, interrupted, total atomic.Int64
 
 	mu       sync.Mutex
 	failures []taskstore.VerificationFailure
@@ -115,7 +122,8 @@ func verifyTrees(ctx context.Context, rep repo.Repository, roots []treeRoot, opt
 
 func (v *snapVerify) stats() snapVerifyStats {
 	return snapVerifyStats{
-		Total: v.total.Load(), Files: v.files.Load(), Bytes: v.bytes.Load(), ReadFiles: v.readFiles.Load(), ReadBytes: v.readBytes.Load(), Errors: v.errs.Load(),
+		Total: v.total.Load(), Files: v.files.Load(), Bytes: v.bytes.Load(), ReadFiles: v.readFiles.Load(), ReadBytes: v.readBytes.Load(),
+		Errors: v.errs.Load(), Interrupted: v.interrupted.Load(),
 	}
 }
 
@@ -126,18 +134,33 @@ func (v *snapVerify) result() snapVerifyResult {
 	return snapVerifyResult{snapVerifyStats: v.stats(), Failures: append([]taskstore.VerificationFailure(nil), v.failures...)}
 }
 
+// fail records a read that didn't succeed. A read that failed only because the task was already being
+// canceled, or because the connection kept failing until the retry budget gave up, is not evidence that the
+// stored data is bad -- it's recorded separately, as Interrupted, so it never shows up as a "corrupt" result
+// and the caller can requeue it once the connection looks stable again (see requeueInterruptedVerify).
 func (v *snapVerify) fail(ctx context.Context, path string, err error) {
-	n := v.errs.Add(1)
+	interrupted := ctx.Err() != nil || retry.IsExhausted(err)
+
+	var n int64
+	if interrupted {
+		n = v.interrupted.Add(1)
+	} else {
+		n = v.errs.Add(1)
+	}
 
 	if n <= verifyFailuresLogged {
-		userLog(ctx).Errorf("%v: %v", path, err)
+		if interrupted {
+			userLog(ctx).Infof("%v: %v (connection interrupted, not treated as a failure)", path, err)
+		} else {
+			userLog(ctx).Errorf("%v: %v", path, err)
+		}
 	}
 
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
 	if len(v.failures) < verifyFailuresKept {
-		v.failures = append(v.failures, taskstore.VerificationFailure{Path: path, Error: err.Error()})
+		v.failures = append(v.failures, taskstore.VerificationFailure{Path: path, Error: err.Error(), Interrupted: interrupted})
 	}
 }
 

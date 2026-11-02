@@ -58,6 +58,9 @@ type Info struct {
 	Status       Status                  `json:"status"`
 	ProgressInfo string                  `json:"progressInfo"`
 	ErrorMessage string                  `json:"errorMessage,omitempty"`
+	// CancelReason is set when the server itself canceled this task (not a user clicking Stop), e.g. because
+	// the machine looked like it had just woken from sleep. Empty for a plain user cancellation.
+	CancelReason string `json:"cancelReason,omitempty"`
 	Counters     map[string]CounterValue `json:"counters"`
 	// FailedFiles is how many files a finished snapshot could not back up (from the task history).
 	FailedFiles int `json:"failedFiles,omitempty"`
@@ -98,12 +101,14 @@ func (t *runningTaskInfo) OnCancel(f context.CancelFunc) {
 	}
 }
 
-func (t *runningTaskInfo) cancel() {
+func (t *runningTaskInfo) cancel(reason string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.Status == StatusRunning {
 		t.Status = StatusCanceling
+		t.CancelReason = reason
+
 		for _, c := range t.taskCancel {
 			// run cancellation functions on their own goroutines
 			go c()

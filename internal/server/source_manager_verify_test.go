@@ -30,6 +30,8 @@ func (s *stubSourceManagerServer) lastVerificationTime(snapshot.SourceInfo, stri
 	return s.lastVerify, s.lastVerifyOK
 }
 
+func (s *stubSourceManagerServer) systemRecentlyUnstable() bool { return false }
+
 func TestFindClosestNextVerifyTime(t *testing.T) {
 	src := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/x"}
 

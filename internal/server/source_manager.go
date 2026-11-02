@@ -31,6 +31,10 @@ type sourceManagerServerInterface interface {
 	// lastVerificationTime returns when src was last verified in mode's bucket ("new" is its own bucket,
 	// sample and full share one), so a periodic verify schedule knows whether it's due.
 	lastVerificationTime(src snapshot.SourceInfo, mode string) (time.Time, bool)
+	// systemRecentlyUnstable reports whether the machine appears to have just woken from sleep, so the
+	// next snapshot/verify time can defer instead of judging this source overdue off a connection that
+	// is likely still mid-reconnect-storm.
+	systemRecentlyUnstable() bool
 }
 
 // sourceManager manages the state machine of each source
@@ -468,8 +472,17 @@ func (s *sourceManager) snapshotInternal(ctx context.Context, ctrl uitask.Contro
 	})
 }
 
+// instabilityRecheckInterval is how soon scheduling looks again while systemRecentlyUnstable is true: short
+// enough that a real wake is picked up promptly, long enough not to busy-loop the scheduler.
+const instabilityRecheckInterval = time.Minute
+
 // +checklocksread:s.sourceMutex
 func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
+	if s.server.systemRecentlyUnstable() {
+		t := clock.Now().Add(instabilityRecheckInterval)
+		return &t
+	}
+
 	var previousSnapshotTime fs.UTCTimestamp
 	if lcs := s.lastCompleteSnapshot; lcs != nil {
 		previousSnapshotTime = lcs.StartTime
@@ -492,6 +505,11 @@ func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
 func (s *sourceManager) findClosestNextVerifyTimeReadLocked() *time.Time {
 	if s.verifyPol.SchedulingPolicy.Manual {
 		return nil
+	}
+
+	if s.server.systemRecentlyUnstable() {
+		t := clock.Now().Add(instabilityRecheckInterval)
+		return &t
 	}
 
 	previousVerifyTime, _ := s.server.lastVerificationTime(s.src, s.verifyPol.EffectiveMode())

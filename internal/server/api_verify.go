@@ -11,10 +11,7 @@ import (
 )
 
 func (s *Server) currentVerifier() *verifier {
-	s.serverMutex.RLock()
-	defer s.serverMutex.RUnlock()
-
-	return s.verify
+	return s.verify.Load()
 }
 
 // describeFailingVerification turns one failing taskstore.Verification into the banner's short badge and its

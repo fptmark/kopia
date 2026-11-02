@@ -17,6 +17,10 @@ import (
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
 
+// requeueInterruptedVerifyMaxWait bounds how long an interrupted verify waits for the connection to look
+// stable again before giving up -- long enough for an overnight outage, not an indefinite goroutine.
+const requeueInterruptedVerifyMaxWait = 24 * time.Hour
+
 // runningVerify is a verification that is queued or reading data now.
 type runningVerify struct {
 	SnapshotID string    `json:"snapshotId"`
@@ -179,12 +183,16 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 
 			r.Total, r.Files, r.Bytes, r.ReadBytes, r.Errors = st.Total, st.Files, st.Bytes, st.ReadBytes, st.Errors
 		})
-		ctrl.ReportCounters(map[string]uitask.CounterValue{
+		counters := map[string]uitask.CounterValue{
 			"Files checked": uitask.SimpleCounter(st.Files),
 			"Total files":   uitask.SimpleCounter(st.Total),
 			"Data read":     uitask.BytesCounter(st.ReadBytes),
 			"Failures":      uitask.ErrorCounter(st.Errors),
-		})
+		}
+		if st.Interrupted > 0 {
+			counters["Interrupted (connection)"] = uitask.SimpleCounter(st.Interrupted)
+		}
+		ctrl.ReportCounters(counters)
 	}
 
 	var res snapVerifyResult
@@ -241,7 +249,8 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 	v := taskstore.Verification{
 		SnapshotID: string(m.ID), Source: m.Source.String(), Mode: rv.Mode, Percent: rv.Percent,
 		StartedAt: started, FinishedAt: clock.Now(), OK: res.Errors == 0,
-		Files: res.Files, Bytes: res.Bytes, ReadFiles: res.ReadFiles, ReadBytes: res.ReadBytes, ErrorCount: res.Errors,
+		Files: res.Files, Bytes: res.Bytes, ReadFiles: res.ReadFiles, ReadBytes: res.ReadBytes,
+		ErrorCount: res.Errors, InterruptedCount: res.Interrupted,
 	}
 
 	if seq, ok := uitask.ParseTaskID(ctrl.CurrentTaskID()); ok {
@@ -264,7 +273,50 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 		hv.clearIfVerified(ctx)
 	}
 
+	if res.Interrupted > 0 {
+		// nothing confirmed bad, but part of this snapshot was never actually read -- try again once the
+		// connection looks stable, instead of leaving it looking "verified" when it wasn't, in full.
+		userLog(ctx).Infof("%v: %d reads interrupted by a connection problem; will retry once the connection looks stable", m.Source.Path, res.Interrupted)
+		s.requeueInterruptedVerify(ctx, rep, m, rv.Mode, rv.Percent)
+	}
+
 	return nil
+}
+
+// requeueInterruptedVerify re-runs a verify that came back with nothing confirmed bad but some reads
+// interrupted by a connection problem, once the connection looks stable again -- so a blip (of any length)
+// resolves itself instead of leaving a permanent "not fully verified" result for someone to notice and retry
+// by hand. Gives up after requeueInterruptedVerifyMaxWait rather than waiting forever across a repository
+// that may never reconnect.
+func (s *Server) requeueInterruptedVerify(ctx context.Context, rep repo.Repository, m *snapshot.Manifest, mode string, percent float64) {
+	ctx = context.WithoutCancel(ctx)
+	cp := *m
+
+	go func() {
+		deadline := clock.Now().Add(requeueInterruptedVerifyMaxWait)
+
+		for s.systemRecentlyUnstable() {
+			if clock.Now().After(deadline) {
+				userLog(ctx).Infof("%v: giving up retrying an interrupted verify; the connection never looked stable", m.Source.Path)
+				return
+			}
+
+			if !clock.SleepInterruptibly(ctx, instabilityRecheckInterval) {
+				return
+			}
+		}
+
+		s.serverMutex.RLock()
+		current := s.rep
+		s.serverMutex.RUnlock()
+
+		if current == nil || current != rep {
+			// the repository changed under us; a stale connection has nothing useful left to retry.
+			return
+		}
+
+		s.startSnapshotVerify(ctx, rep, &cp, mode, percent)
+	}()
 }
 
 // verifyNewData verifies a snapshot just saved, in the mode the setting names, when the setting asks for it and the snapshot was saved.
@@ -275,6 +327,12 @@ func (s *Server) verifyNewData(ctx context.Context, m *snapshot.Manifest, snapsh
 
 	prefs, err := getUIPreferencesOrEmpty(s)
 	if err != nil || !prefs.VerifyNewData {
+		return
+	}
+
+	// this snapshot itself may well have just been the one catch-up run after waking; its own data
+	// doesn't need a verify queued on top while the connection is still likely to be unstable.
+	if s.systemRecentlyUnstable() {
 		return
 	}
 

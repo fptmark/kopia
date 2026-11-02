@@ -525,6 +525,10 @@ func TestDatabaseFromVersionOneGainsEveryLaterTable(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec("DROP TABLE dismissed_verifications")
 	require.NoError(t, err)
+	// schemaV9 ALTERs the v1 "tasks" table itself (the others above are all tables a later schema created
+	// outright), so undo that one column by hand to put "tasks" back the way v1 left it.
+	_, err = db.Exec("ALTER TABLE tasks DROP COLUMN cancel_reason")
+	require.NoError(t, err)
 	_, err = db.Exec("PRAGMA user_version = 1")
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
