@@ -50,6 +50,31 @@
 
 ## Done
 
+- [x] Scoped how much of the codebase is macOS-specific, ahead of a possible per-OS driver
+      architecture. Diffed `custom` against real upstream `kopia/master` and audited the
+      deploy layer. Findings:
+        - **Go backend is already abstracted** -- every OS-specific behavior (keep-awake via
+          `caffeinate`, iCloud/cloud-placeholder detection via `SF_DATALESS`, AppleScript/
+          iMessage/Mail notifications, plus upstream's own password-prompt/mount/path/
+          tempfile handling) already follows Go's native build-tag driver pattern: a shared
+          interface file + `*_darwin.go` + `*_other.go`/`*_windows.go`/`*_linux.go`. ~23
+          files total. No new framework needed here -- a hand-rolled interface/registry
+          would just reinvent what `//go:build` already gives for free.
+        - **The install/service layer is the one unabstracted, 100%-macOS-only part**: the
+          root `Makefile` (codesign with the stable local cert, `launchctl bootout`/
+          `bootstrap` against `setup/launchd/*.plist`) and TCC/Full Disk Access itself, which
+          has no Linux/Windows equivalent to abstract *to*. ~80 lines, no plans to touch
+          unless/until a second OS target is real -- then it's a second install script
+          (systemd unit on Linux, Windows Service on Windows) picked by `uname`, not a
+          redesign.
+        - **One real driver gap, not a framework gap**: `local_fs_dataless_other.go` (used
+          for Linux and Windows alike) is a no-op stub, correct for Linux (no OS concept to
+          detect) but a genuine blind spot on Windows -- OneDrive/cloud-sync placeholders
+          are real and detectable there via `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS`/
+          `RECALL_ON_OPEN`, just through a completely different mechanism than macOS's
+          `st_flags` bit. Would need its own `local_fs_dataless_windows.go` if ever needed;
+          not written, no current Windows target.
+
 - [x] The "Future" tab's first entry per source now comes from the source manager's own
       live `getNextSnapshotTime()`/`getNextVerifyTime()` (which already reflects actual
       last completion, sleep/wake deferral, and the too-soon suppression) instead of a
