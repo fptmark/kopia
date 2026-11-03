@@ -21,6 +21,7 @@ export function Settings({ draft, change }) {
     verifyEachMode,
     verifyEachPercent,
     storageStallTimeoutSeconds,
+    wakeGraceMinutes,
   } = draft;
 
   return (
@@ -102,6 +103,27 @@ export function Settings({ draft, change }) {
                   <option value="idle">Prevent idle sleep (any power source)</option>
                   <option value="ac">Also prevent lid-close sleep on AC power</option>
                 </Form.Select>
+              )}
+            </Field>
+          </div>
+          <div className="col-lg-8">
+            <Field
+              label="Wait this long after waking from sleep before resuming backups"
+              help="A connection is often still settling right after a real wake. Snapshot, Verify and Maintenance tasks hold off starting until this much time has passed."
+            >
+              {(id) => (
+                <div className="nx-row">
+                  <NumberField
+                    id={id}
+                    size="sm"
+                    min={1}
+                    max={60}
+                    style={{ width: "6rem" }}
+                    value={wakeGraceMinutes}
+                    onChange={(n) => change({ wakeGraceMinutes: n })}
+                  />
+                  <span>minutes</span>
+                </div>
               )}
             </Field>
           </div>

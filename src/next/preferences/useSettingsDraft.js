@@ -13,6 +13,7 @@ function toDraft(prefs) {
     verifyEachMode: prefs.verifyEachMode || "new",
     verifyEachPercent: prefs.verifyEachPercent || 10,
     storageStallTimeoutSeconds: prefs.storageStallTimeoutSeconds || 30,
+    wakeGraceMinutes: Math.round((prefs.wakeGraceSeconds || 300) / 60),
   };
 }
 
@@ -72,6 +73,9 @@ export function useSettingsDraft() {
     }
     if (draft.storageStallTimeoutSeconds !== persisted.storageStallTimeoutSeconds) {
       prefs.setStorageStallTimeoutSeconds(draft.storageStallTimeoutSeconds);
+    }
+    if (draft.wakeGraceMinutes !== persisted.wakeGraceMinutes) {
+      prefs.setWakeGraceSeconds(draft.wakeGraceMinutes * 60);
     }
     touchedRef.current = false;
     return Promise.resolve();
