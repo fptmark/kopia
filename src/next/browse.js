@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { formatDateTime } from "./format";
-import { historyUrl, loadHistory, newestFirst } from "./snapshots";
+import { useLoad } from "./hooks";
+import { historyUrl, loadDiff, loadHistory, newestFirst } from "./snapshots";
 import { objectLink } from "../utils/formatutils";
 
 /** A folder of a snapshot; with the path of its source the failures that ignore rules cover are left out of its counts. */
@@ -30,6 +31,13 @@ export async function loadSnapshotBrowse(source, snapshotId) {
   const list = newestFirst((await loadHistory(source, true)).snapshots);
   const i = list.findIndex((s) => s.id === snapshotId);
   return i < 0 ? null : snapshotBrowse(source, list[i], list[i + 1]?.id);
+}
+
+/** Files added/modified/removed since a snapshot's predecessor, or not-loading state when it has none. */
+export function useSnapshotDiff(snapshot) {
+  return useLoad(() => loadDiff(snapshot.previousId, snapshot.id), [snapshot?.id, snapshot?.previousId], {
+    enabled: !!snapshot?.previousId,
+  });
 }
 
 export const startRestore = (req) => api.post("/api/v1/restore", req).then((r) => r.data);

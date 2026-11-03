@@ -13,9 +13,9 @@ import {
   loadSnapshotTask,
   mountDirectory,
   unmountDirectory,
+  useSnapshotDiff,
 } from "../browse";
 import { useLoad } from "../hooks";
-import { loadDiff } from "../snapshots";
 import {
   CountText,
   DataTable,
@@ -32,9 +32,7 @@ import {
 
 /** What snapshot is being browsed: when, how big, and what changed since the one before it. */
 function SnapshotFacts({ snapshot, taskId }) {
-  const diff = useLoad(() => loadDiff(snapshot.previousId, snapshot.id), [snapshot.id, snapshot.previousId], {
-    enabled: !!snapshot.previousId,
-  });
+  const diff = useSnapshotDiff(snapshot);
   const n = (v) => (diff.data ? <CountText n={v} /> : diff.loading ? "…" : "—");
   return (
     <div className="nx-facts" data-testid="snapshot-facts">

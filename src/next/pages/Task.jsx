@@ -3,7 +3,7 @@ import { formatCount } from "../format";
 import Button from "react-bootstrap/Button";
 import Spinner from "react-bootstrap/Spinner";
 import { Link, useParams } from "react-router";
-import { loadSnapshotBrowse } from "../browse";
+import { loadSnapshotBrowse, useSnapshotDiff } from "../browse";
 import { useLoad } from "../hooks";
 import {
   cancelTask,
@@ -17,6 +17,7 @@ import {
   TaskStatus,
 } from "../tasks";
 import {
+  CountText,
   DataTable,
   DateTimeText,
   FailedFilesDialog,
@@ -140,6 +141,9 @@ export function Task({ taskID }) {
   const made = useLoad(() => loadSnapshotBrowse(source, failed.snapshotId), [id, failed.snapshotId], {
     enabled: !!(source && failed.snapshotId),
   });
+  const snapshot = made.data?.state?.snapshot;
+  const diff = useSnapshotDiff(snapshot);
+  const n = (v) => (diff.data ? <CountText n={v} /> : diff.loading ? "…" : "—");
 
   const errors = failed.errors || [];
   const unignored = errors.filter((e) => !e.ignored);
@@ -204,6 +208,18 @@ export function Task({ taskID }) {
                 value={task.endTime ? <DateTimeText long value={task.endTime} /> : "still running"}
               />
               <Stat label="Took" value={taskDuration(task)} />
+              {snapshot && (
+                <>
+                  <Stat label="Size" value={<SizeText bytes={snapshot.summary?.size} />} />
+                  {snapshot.previousId && (
+                    <>
+                      <Stat label="Files Added" value={n(diff.data?.added)} />
+                      <Stat label="Modified" value={n(diff.data?.modified)} />
+                      <Stat label="Deleted" value={n(diff.data?.removed)} />
+                    </>
+                  )}
+                </>
+              )}
             </Stats>
           </Panel>
           {matrixRows.length > 0 && (
