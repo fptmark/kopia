@@ -1139,18 +1139,145 @@ func (s *Server) runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, i
 }
 
 func (s *Server) runMaintenanceTask(ctx context.Context, dr repo.DirectRepository) error {
-	err := s.taskmgr.Run(ctx, "Maintenance", "Periodic maintenance", func(ctx context.Context, _ uitask.Controller) error {
-		return repo.DirectWriteSession(ctx, dr, repo.WriteSessionOptions{
+	// maintenanceCycleLabel predicts which cycle ModeAuto is about to resolve to, so the task can be labeled
+	// up front -- the real decision only happens deep inside maintenance.RunExclusive (unexported shouldRun),
+	// by which point the task's description is already fixed and there's no API to change it afterward. A
+	// schedule change racing this read could make the label stale, but it never affects which cycle actually
+	// runs -- ModeAuto still resolves for real, independently, inside RunExclusive below.
+	description := "Periodic maintenance (" + maintenanceCycleLabel(ctx, dr) + ")"
+	started := clock.Now()
+
+	err := s.taskmgr.Run(ctx, "Maintenance", description, func(ctx context.Context, ctrl uitask.Controller) error {
+		runErr := repo.DirectWriteSession(ctx, dr, repo.WriteSessionOptions{
 			Purpose: "periodicMaintenance",
 		}, func(ctx context.Context, w repo.DirectRepositoryWriter) error {
 			return snapshotmaintenance.Run(ctx, w, maintenance.ModeAuto, false, maintenance.SafetyFull)
 		})
+
+		// whatever subtasks actually ran (GC, pack/content rewrite, index compaction, log cleanup, ...)
+		// already recorded their own stats into the maintenance schedule -- surface those on the task
+		// instead of adding separate, parallel counter-reporting into each subtask.
+		ctrl.ReportCounters(maintenanceStatsCounters(ctx, dr, started))
+
+		return runErr
 	})
 	if ctx.Err() == nil {
 		s.emit(ctx, notifyhub.Event{ID: notifyhub.EventMaint, Problem: notifyhub.ProblemMaintFailed, Recovered: err == nil})
 	}
 
 	return errors.Wrap(err, "unable to run maintenance")
+}
+
+// maintenanceCycleLabel mirrors maintenance.shouldRun (unexported) just enough to predict "full", "quick" or
+// "periodic" (nothing due, or a lookup failed) from already-exported building blocks. It's a prediction, not
+// the decision itself -- see the comment above its one call site.
+func maintenanceCycleLabel(ctx context.Context, dr repo.DirectRepository) string {
+	p, err := maintenance.GetParams(ctx, dr)
+	if err != nil || p.Owner != dr.ClientOptions().UsernameAtHost() {
+		return "periodic"
+	}
+
+	s, err := maintenance.GetSchedule(ctx, dr)
+	if err != nil {
+		return "periodic"
+	}
+
+	// full is checked first: due-for-full implies due-for-quick too, and full does strictly more.
+	if p.FullCycle.Enabled && !dr.Time().Before(s.NextFullMaintenanceTime) {
+		return "full"
+	}
+
+	if p.QuickCycle.Enabled && !dr.Time().Before(s.NextQuickMaintenanceTime) {
+		return "quick"
+	}
+
+	return "periodic"
+}
+
+// maintenanceStatsCounters turns every maintenance subtask's stats, for a run that started no earlier than
+// runStart (i.e. as part of this invocation), into UI counters. It decodes maintenance.RunInfo.Extra
+// generically by its JSON shape rather than switching on each maintenancestats.Kind type, so a newly added
+// stats field -- or a whole new maintenance subtask -- shows up without this needing to know its shape ahead
+// of time. Non-numeric fields (bools, strings, timestamps) are skipped; there's no sensible way to show them
+// as a counter.
+func maintenanceStatsCounters(ctx context.Context, dr repo.DirectRepository, runStart time.Time) map[string]uitask.CounterValue {
+	schedule, err := maintenance.GetSchedule(ctx, dr)
+	if err != nil {
+		return nil
+	}
+
+	counters := map[string]uitask.CounterValue{}
+
+	for taskType, runs := range schedule.Runs {
+		if len(runs) == 0 {
+			continue
+		}
+
+		latest := runs[0] // newest first, see Schedule.ReportRun
+		if !latest.Success || latest.Start.Before(runStart) {
+			continue
+		}
+
+		label := humanizeMaintenanceWords(string(taskType), "-")
+
+		for _, extra := range latest.Extra {
+			var fields map[string]any
+			if json.Unmarshal(extra.Data, &fields) != nil {
+				continue
+			}
+
+			for name, v := range fields {
+				n, ok := v.(float64)
+				if !ok {
+					continue
+				}
+
+				units := ""
+				if strings.HasSuffix(name, "Size") {
+					units = "bytes"
+				}
+
+				counters[label+": "+humanizeMaintenanceFieldName(name)] = uitask.CounterValue{Value: int64(n), Units: units}
+			}
+		}
+	}
+
+	return counters
+}
+
+// humanizeMaintenanceWords turns a sep-separated identifier ("snapshot-gc") into a label ("Snapshot GC"),
+// capitalizing short (<=2 letter) words fully since they're usually acronyms (gc, io, ...).
+func humanizeMaintenanceWords(s, sep string) string {
+	words := strings.Split(s, sep)
+	for i, w := range words {
+		if len(w) <= 2 {
+			words[i] = strings.ToUpper(w)
+		} else {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
+// humanizeMaintenanceFieldName turns a camelCase JSON field name ("unreferencedContentSize") into a label
+// ("Unreferenced Content Size").
+func humanizeMaintenanceFieldName(s string) string {
+	var b strings.Builder
+
+	for i, r := range s {
+		switch {
+		case i == 0:
+			b.WriteString(strings.ToUpper(string(r)))
+		case r >= 'A' && r <= 'Z':
+			b.WriteByte(' ')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+
+	return b.String()
 }
 
 // +checklocksread:s.serverMutex
