@@ -14,26 +14,6 @@
       continuously since Oct 21), and found no corroborating tccd log entries at all in the
       last 2h window. Genuinely unexplained; needs more investigation if revisited.
 
-- [ ] The 138/139 "operation not permitted" snapshot errors are real, confirmed from the
-      raw error list on the latest run: AddressBook, CallHistoryDB, CloudDocs, FaceTime,
-      Calendars, com.apple.TCC, Siri data, Home app data, etc. Full Disk Access does not
-      cover these -- each is its own separate TCC category (same pattern as the Media
-      Library / Desktop Folder popups), and since KopiaServer runs as a headless background
-      LaunchAgent, several of these categories may never even prompt for consent (some
-      require an interactive/foreground process).
-      Timeline (confirmed from full snapshot history, not guessed): ran clean
-      (numFailed=0) for 9 straight days, Oct 24 - Nov 2 20:18:59 PST, then broke at Nov 2
-      22:23:10 PST and has stayed broken since. That ~2h window is exactly the heaviest
-      rebuild/re-sign cycling of the night (stall-timeout feature, multiple
-      install-server/restart-server calls, the dataless-file fix) -- a second, separate
-      breakage from the original Oct 21 one (which got fixed and stayed fixed for 9 days),
-      not a continuation of it.
-      Decide: try to grant what can be granted, or add a policy ignore rule for these paths
-      (mostly macOS's own internal caches/databases, not real user documents).
-
-- [ ] Check final status/error count of the snapshot that was running as of the last
-      restart tonight — never confirmed its outcome.
-
 - [ ] Snapshot throughput is very slow -- e.g. ~58 files/sec at one point tonight, well
       below the historical range seen in task-history (2,551-22,541 files/sec across past
       runs). Partly explained by this run doing real first-time work in previously
@@ -86,9 +66,14 @@
 - [x] Persistent local code-signing certificate ("Kopia Local Signing", self-signed,
       Code Signing EKU, trusted for codeSign in the login keychain) now used instead of
       ad-hoc signing (`--sign -`). Verified: CDHash is identical across repeated
-      `make install-server` runs now (confirmed twice in a row), where it previously
-      changed on every single rebuild. This is the actual, researched root cause fix for
-      the repeated Full Disk Access revocations tonight -- not a guess, confirmed via
-      multiple independent reports of the same issue in other projects. Deployed; still
-      needs Full Disk Access granted one more time against this new identity, then should
-      persist through real code changes too, not just no-op rebuilds.
+      `make install-server` runs now, where it previously changed on every single rebuild.
+      This is the actual, researched root cause fix for the repeated Full Disk Access
+      revocations tonight -- not a guess, confirmed via multiple independent reports of the
+      same issue in other projects.
+      Fully confirmed working, including the case that was unverified when first deployed:
+      after one remove-and-re-add of the FDA grant (a stale stored code-requirement needed
+      that, not just a toggle) and a relaunch, the 138/139 "operation not permitted"
+      errors (AddressBook, CallHistoryDB, CloudDocs, FaceTime, Calendars, com.apple.TCC,
+      etc.) are gone -- confirmed numFailed=0 on a snapshot that ran after a real
+      code-change rebuild (the wake-grace-preference change), not just a no-op rebuild.
+      That was the actual open question; it's answered. Grants now survive real rebuilds.
