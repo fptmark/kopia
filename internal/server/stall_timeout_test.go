@@ -28,6 +28,31 @@ func TestStorageStallTimeoutUsesTheStoredValue(t *testing.T) {
 	require.Equal(t, 90*time.Second, s.storageStallTimeout())
 }
 
+func TestWakeGraceDurationDefaultsWhenPreferenceIsUnsetOrInvalid(t *testing.T) {
+	for _, body := range []string{
+		``,                         // no preferences file at all
+		`{}`,                       // file exists, field never set
+		`{"wakeGraceSeconds": 0}`,  // explicitly zero
+		`{"wakeGraceSeconds": -5}`, // nonsensical stored value
+	} {
+		s := &Server{options: Options{UIPreferencesFile: writePrefsFile(t, body)}}
+
+		require.Equal(t, defaultWakeGrace, s.wakeGraceDuration(), "for body %q", body)
+	}
+}
+
+func TestWakeGraceDurationUsesTheStoredValue(t *testing.T) {
+	s := &Server{options: Options{UIPreferencesFile: writePrefsFile(t, `{"wakeGraceSeconds": 120}`)}}
+
+	require.Equal(t, 120*time.Second, s.wakeGraceDuration())
+}
+
+func TestWakeGraceDurationOnANilServerUsesTheDefault(t *testing.T) {
+	var s *Server
+
+	require.Equal(t, defaultWakeGrace, s.wakeGraceDuration())
+}
+
 // writePrefsFile returns the path to a preferences file containing body, or "" (no file at all, matching an
 // unconfigured UIPreferencesFile) when body is empty.
 func writePrefsFile(t *testing.T, body string) string {

@@ -41,9 +41,6 @@ const (
 	verifyQuickInterval = 10 * time.Minute
 	// the newest snapshot of a local source must be younger than this (snapshots run hourly).
 	verifyMaxSnapshotAge = 3 * time.Hour
-	// after the server starts or the machine wakes up, stale snapshots are not reported for this long
-	// because the next scheduled snapshot has not had a chance to run yet.
-	verifyWakeGrace = 90 * time.Minute
 	// the machine is assumed to have slept when the quick check ran this much later than scheduled.
 	verifySleepGap = 3 * verifyQuickInterval
 	// the deep check runs once a day, in the first quick run in the hours after this local hour.
@@ -566,7 +563,7 @@ func startVerifier(ctx context.Context, srv *Server, rep repo.Repository) *verif
 
 	now := clock.Now()
 	v.status = serverapi.VerifyStatus{Enabled: true, State: "unknown"}
-	v.graceUntil = now.Add(verifyWakeGrace)
+	v.graceUntil = now.Add(srv.wakeGraceDuration())
 	v.lastTick = now
 
 	v.loadState(ctx)
@@ -650,10 +647,12 @@ func (v *verifier) tick(ctx context.Context) {
 	sleepDetected := gap > verifySleepGap
 
 	if sleepDetected {
-		userLog(ctx).Infof("verifier: last check was %v ago (machine asleep?); not reporting stale snapshots for %v", gap.Round(time.Second), verifyWakeGrace)
+		wakeGrace := v.srv.wakeGraceDuration()
 
-		v.graceUntil = now.Add(verifyWakeGrace)
-		v.instabilityUntil = now.Add(verifyWakeGrace)
+		userLog(ctx).Infof("verifier: last check was %v ago (machine asleep?); not reporting stale snapshots for %v", gap.Round(time.Second), wakeGrace)
+
+		v.graceUntil = now.Add(wakeGrace)
+		v.instabilityUntil = now.Add(wakeGrace)
 	}
 
 	v.lastTick = now

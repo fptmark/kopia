@@ -414,6 +414,11 @@ type UIPreferences struct {
 	// (listing, reading, writing) goes this long with no response -- a dead/unreachable NAS otherwise just
 	// looks like a task that is still quietly running. 0 (unset) uses the default, 30s.
 	StorageStallTimeoutSeconds int `json:"storageStallTimeoutSeconds"`
+	// WakeGraceSeconds is how long, after the server detects a gap consistent with the machine having just
+	// woken from sleep, it defers starting new Snapshot/Verify/Maintenance work and holds off reporting
+	// snapshots as stale -- the connection is often still settling right after a real wake. 0 (unset) uses
+	// the default, 5 minutes.
+	WakeGraceSeconds int `json:"wakeGraceSeconds"`
 }
 
 // VerifyFailure is a file that did not read back.
