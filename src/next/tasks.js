@@ -105,8 +105,12 @@ export function taskWhat(t) {
       const m = /^Verify snapshot of .+ from .+ \((.+)\)$/.exec(d);
       return m ? m[1] : d;
     }
-    case "Maintenance":
-      return d === "Periodic maintenance" ? "periodic" : d;
+    case "Maintenance": {
+      // "Periodic maintenance (quick|full)" going forward; bare "Periodic maintenance" is what older,
+      // already-persisted task-history rows still say (the cycle label was added later).
+      const m = /^Periodic maintenance \((.+)\)$/.exec(d);
+      return m ? m[1] : d === "Periodic maintenance" ? "periodic" : d;
+    }
     case "Repository":
       return d === "Open" ? "server start" : d === "Connect" ? "connect" : d;
     default:
