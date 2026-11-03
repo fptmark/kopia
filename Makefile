@@ -36,7 +36,10 @@ TASK_HISTORY_DB := $(HOME)/Library/Application Support/kopia/task-history.db
 BACKUP_DIR := $(ROOT)/backups
 BACKUP_FILE := $(BACKUP_DIR)/task-history-$(shell date +%Y%m%d-%H%M%S).db
 
-VERSION_INFO := local build on $(shell date) $(shell hostname)
+# No timestamp here either, for the same reason as gui/vite.config.js's UI_VERSION: it ends up in the built
+# binary, which gets re-signed on every install-server -- a timestamp would make that signature (and so the
+# TCC/Full Disk Access grant tied to it) change on every build even when nothing actually changed.
+VERSION_INFO := local build on $(shell hostname)
 
 .PHONY: build build-gui sync-gui-build build-server install-server \
         stop-server start-server restart-server backup
@@ -55,8 +58,18 @@ build-server:
 	cd $(SERVER_DIR) && GOWORK=$(GOWORK_FILE) go build -o $(BUILT_BINARY) .
 	@echo "Built $(BUILT_BINARY)"
 
+SIGNING_IDENTITY := Kopia Local Signing
+
 install-server: build
 	cp $(BUILT_BINARY) $(INSTALLED_BINARY)
+	# Overwriting the binary leaves the bundle's _CodeSignature/CodeResources manifest (from the original
+	# install) pointing at hashes that no longer match -- macOS then kills the process at launch with
+	# OS_REASON_CODESIGNING instead of running it. Re-signing the whole bundle after every install keeps it
+	# internally consistent. Signed with a stable local certificate (SIGNING_IDENTITY), not ad-hoc (`-`):
+	# an ad-hoc signature's identity IS the binary's own hash, so it changes on every rebuild and macOS
+	# treats each one as a new, untrusted app -- silently revoking Full Disk Access and every other TCC
+	# grant each time. A certificate-backed identity stays the same across rebuilds, so grants persist.
+	codesign --force --deep --sign "$(SIGNING_IDENTITY)" $(INSTALLED_APP)
 	@echo "Installed into $(INSTALLED_BINARY) -- run 'make restart-server' to pick it up"
 
 stop-server:
