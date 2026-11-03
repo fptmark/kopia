@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/kopia/kopia/internal/taskprogress"
 	"github.com/kopia/kopia/repo/logging"
 )
 
@@ -96,6 +97,12 @@ func internalRetry[T any](ctx context.Context, desc string, attempt func() (T, e
 		}
 
 		v, err := attempt()
+
+		// the attempt returned at all (success or a real error, as opposed to still being stuck inside
+		// attempt()), which means the storage is responding right now: reset the running task's stall
+		// clock, if any. A no-op outside a tracked task (CLI usage, tests, non-server code paths).
+		taskprogress.Tick(ctx)
+
 		if err == nil {
 			return v, nil
 		}

@@ -3,6 +3,7 @@ package blob
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/kopia/kopia/internal/taskprogress"
 	"github.com/kopia/kopia/repo/logging"
 )
 
@@ -412,6 +414,12 @@ func ReadBlobMap(ctx context.Context, bl Lister) (map[ID]Metadata, error) {
 		if len(blobMap)%10000 == 0 {
 			log(ctx).Infof("  %v blobs...", len(blobMap))
 		}
+		// a no-op outside a running Snapshot/Verify/Maintenance task: counts as an operation for stall
+		// detection, and (throttled to ~1/sec) surfaces real progress instead of a static "listing blobs"
+		// message sitting motionless for minutes against a flaky connection.
+		taskprogress.Tick(ctx)
+		taskprogress.Report(ctx, fmt.Sprintf("listing blobs in storage (%v so far)", len(blobMap)))
+
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "unable to list blobs")

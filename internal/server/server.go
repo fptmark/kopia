@@ -1196,6 +1196,24 @@ func (s *Server) snapshotAllSourceManagers() map[snapshot.SourceInfo]*sourceMana
 	return maps.Clone(s.sourceManagers)
 }
 
+// deferredSchedulerItem builds a scheduler.Item for a due time and a trigger, deferring identically
+// regardless of what kind of background work it is (snapshot, verify, maintenance -- the caller never
+// branches on that): while the system is recently unstable, the real due time and trigger are replaced with
+// a near-future no-op recheck, so nothing that looks "due" during that window ever actually runs, and the
+// list gets re-evaluated again shortly to notice once stability returns. One site decides this for every
+// task type, rather than each caller re-implementing (or forgetting) the same guard.
+func (s *Server) deferredSchedulerItem(description string, dueTime time.Time, trigger func()) scheduler.Item {
+	if s.systemRecentlyUnstable() {
+		return scheduler.Item{
+			Description: description + " (deferred: recently unstable)",
+			NextTime:    clock.Now().Add(instabilityRecheckInterval),
+			Trigger:     func() {},
+		}
+	}
+
+	return scheduler.Item{Description: description, NextTime: dueTime, Trigger: trigger}
+}
+
 func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []scheduler.Item {
 	s.serverMutex.RLock()
 	defer s.serverMutex.RUnlock()
@@ -1216,15 +1234,8 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 	if s.maint != nil {
 		// If we have a direct repository, add an item to run maintenance.
 		// If we're the owner then nextMaintenanceTime will be zero.
-		// Skipped (not just deferred) while recently unstable: every source's own snapshot/verify item
-		// below still carries a near-future recheck time during that window, so this whole list gets
-		// re-evaluated soon regardless, and maintenance is reconsidered the moment the machine settles.
-		if nextMaintenanceTime := s.maint.nextMaintenanceTime(); !nextMaintenanceTime.IsZero() && !s.systemRecentlyUnstable() {
-			result = append(result, scheduler.Item{
-				Description: "maintenance",
-				Trigger:     s.maint.trigger,
-				NextTime:    nextMaintenanceTime,
-			})
+		if nextMaintenanceTime := s.maint.nextMaintenanceTime(); !nextMaintenanceTime.IsZero() {
+			result = append(result, s.deferredSchedulerItem("maintenance", nextMaintenanceTime, s.maint.trigger))
 		}
 	}
 
@@ -1235,21 +1246,13 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 		}
 
 		if nst, ok := sm.getNextSnapshotTime(); ok {
-			result = append(result, scheduler.Item{
-				Description: fmt.Sprintf("snapshot %q", sm.src.Path),
-				Trigger:     sm.scheduleSnapshotNow,
-				NextTime:    nst,
-			})
+			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("snapshot %q", sm.src.Path), nst, sm.scheduleSnapshotNow))
 		} else {
 			userLog(ctx).Debugf("no snapshot scheduled for %v %v %v", sm.src, nst, now)
 		}
 
 		if nvt, ok := sm.getNextVerifyTime(); ok {
-			result = append(result, scheduler.Item{
-				Description: fmt.Sprintf("verify %q", sm.src.Path),
-				Trigger:     func() { s.triggerScheduledVerify(ctx, sm) },
-				NextTime:    nvt,
-			})
+			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("verify %q", sm.src.Path), nvt, func() { s.triggerScheduledVerify(ctx, sm) }))
 		}
 	}
 
@@ -1355,6 +1358,8 @@ func New(ctx context.Context, options *Options) (*Server, error) {
 		nextRefreshTime:      clock.Now().Add(options.RefreshInterval),
 		schedulerRefresh:     make(chan string, 1),
 	}
+
+	s.taskmgr.StallTimeout = s.storageStallTimeout
 
 	s.parallelSnapshotsChanged = sync.NewCond(&s.parallelSnapshotsMutex)
 

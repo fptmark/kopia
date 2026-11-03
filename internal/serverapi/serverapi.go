@@ -410,6 +410,10 @@ type UIPreferences struct {
 	DateFormat             string  `json:"dateFormat"`             // How summary pages write dates: "medium" (Oct 26, 2026, 7:00 AM), "numeric" (10/26/2026, 7:00 AM) or "iso" (2026-10-26 07:00)
 	VerifyEachMode         string  `json:"verifyEachMode"`         // What to verify: "new" (the data the snapshot added, the default), "sample" or "full"
 	VerifyEachPercent      float64 `json:"verifyEachPercent"`      // The share of files to read back when VerifyEachMode is "sample"
+	// StorageStallTimeoutSeconds quits a Snapshot/Verify/Maintenance task if a single storage operation
+	// (listing, reading, writing) goes this long with no response -- a dead/unreachable NAS otherwise just
+	// looks like a task that is still quietly running. 0 (unset) uses the default, 30s.
+	StorageStallTimeoutSeconds int `json:"storageStallTimeoutSeconds"`
 }
 
 // VerifyFailure is a file that did not read back.

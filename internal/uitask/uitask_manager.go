@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kopia/kopia/internal/clock"
+	"github.com/kopia/kopia/internal/taskprogress"
 	"github.com/kopia/kopia/repo/logging"
 )
 
@@ -20,7 +21,14 @@ const (
 	maxLogMessagesPerTask = 1000
 	minWaitInterval       = 500 * time.Millisecond
 	maxWaitInterval       = time.Second
+
+	// defaultStallTimeout is used when Manager.StallTimeout is nil.
+	defaultStallTimeout = 30 * time.Second
 )
+
+// stallCheckInterval is how often the stall watchdog polls a running task's Reporter. A var, not a const, so
+// a test can shrink it instead of waiting on real time.
+var stallCheckInterval = time.Second //nolint:gochecknoglobals
 
 // Manager manages UI tasks.
 type Manager struct {
@@ -39,6 +47,20 @@ type Manager struct {
 
 	// +checklocks:mu
 	history HistoryStore
+
+	// StallTimeout, called fresh for each running task (so a preference change applies to the very next task
+	// without a restart), returns how long a task may go with no single storage operation completing before
+	// Run cancels it on its own, with a reason distinguishing this from a user Stop (see CancelTaskWithReason).
+	// nil uses defaultStallTimeout. +checklocksignore
+	StallTimeout func() time.Duration
+}
+
+func (m *Manager) stallTimeout() time.Duration {
+	if m.StallTimeout == nil {
+		return defaultStallTimeout
+	}
+
+	return m.StallTimeout()
 }
 
 // Controller allows the task to communicate with task manager and receive signals.
@@ -73,10 +95,45 @@ func (m *Manager) Run(ctx context.Context, kind, description string, task TaskFu
 
 	m.startTask(r)
 
+	reporter := taskprogress.New(r.ReportProgressInfo)
+	ctx = taskprogress.WithReporter(ctx, reporter)
+
+	stopWatchdog := m.watchForStall(r.TaskID, reporter)
+	defer stopWatchdog()
+
 	err := task(ctx, r)
 	m.completeTask(r, err)
 
 	return err
+}
+
+// watchForStall cancels taskID, with a clear CancelReason, the first time reporter goes stallTimeout()
+// without a single storage operation completing -- which otherwise looks identical to "still running
+// normally" to anyone watching the task (every retry/reconnect involved is Debug-level logging; see
+// taskprogress's doc comment). Returns a function that must be called once the task finishes on its own, to
+// stop the watchdog goroutine.
+func (m *Manager) watchForStall(taskID string, reporter *taskprogress.Reporter) func() {
+	done := make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(stallCheckInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				// clock.Now(), not the real wall-clock tick time, so a test can drive this with a fake clock.
+				if stalled := reporter.StalledFor(clock.Now()); stalled >= m.stallTimeout() {
+					m.CancelTaskWithReason(taskID, fmt.Sprintf("no response from storage for %v", stalled.Round(time.Second)))
+					return
+				}
+			}
+		}
+	}()
+
+	return func() { close(done) }
 }
 
 // ListTasks lists all running and some recently-finished tasks up to configured limits.
