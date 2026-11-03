@@ -33,6 +33,11 @@ export function cancelSnapshot(source) {
   return api.post("/api/v1/sources/cancel?" + sourceQueryStringParams(source), {});
 }
 
+/** The ID of the task that made a snapshot (its full counters, errors and log live there), or "" if none is on record. */
+export function loadSnapshotTask(snapshotId) {
+  return api.get("/api/v1/snapshots/task", { params: { snapshotId } }).then((r) => r.data.taskId);
+}
+
 export function syncRepository() {
   return api.post("/api/v1/repo/sync", {});
 }

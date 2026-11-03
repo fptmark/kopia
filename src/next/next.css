@@ -520,6 +520,18 @@ a.nx-chip:hover {
   font-weight: 700;
 }
 
+/* a button that reads as inline text (table cells, etc.), not a full Bootstrap button */
+.nx-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bs-link-color);
+}
+.nx-link-button:hover {
+  color: var(--bs-link-color);
+  text-decoration: underline;
+}
+
 /* forms */
 .nx-field {
   margin-bottom: 1rem;

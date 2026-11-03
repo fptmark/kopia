@@ -11,11 +11,13 @@ import {
   deleteSnapshots,
   editSnapshots,
   loadHistory,
+  loadSnapshotTask,
   loadStorageStats,
   newestFirst,
   sizeJump,
   sourceFromSearch,
 } from "../snapshots";
+import { taskDuration } from "../tasks";
 import {
   ConfirmDialog,
   CountText,
@@ -167,6 +169,31 @@ export function SnapshotHistory() {
             <DateTimeText value={s.startTime} />
           </Link>
         </>
+      ),
+    },
+    {
+      id: "duration",
+      header: () => <span title="Click to see the full task: counters, errors, log">Duration</span>,
+      align: "end",
+      accessor: (s) => new Date(s.endTime) - new Date(s.startTime),
+      cell: (s) => (
+        <Button
+          variant="link"
+          size="sm"
+          className="nx-link-button"
+          title="See the full task: counters, errors, log"
+          onClick={() =>
+            loadSnapshotTask(s.id).then((taskId) => {
+              if (taskId) {
+                navigate("/tasks/" + taskId);
+              } else {
+                report("error", "No task on record for this snapshot.");
+              }
+            })
+          }
+        >
+          {taskDuration(s)}
+        </Button>
       ),
     },
     {
