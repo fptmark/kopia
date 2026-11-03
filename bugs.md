@@ -5,15 +5,6 @@
       label change (gui/src/next/ui/ConfirmDialog.jsx), so a slow delete (e.g. flaky SFTP)
       looks frozen. Fix: show a spinner + "Deleting…" while busy. Not yet implemented.
 
-- [ ] Media Library TCC popup ("KopiaServer.app would like to access Apple Music...")
-      appeared, never answered.
-
-- [ ] Desktop Folder TCC popup appeared, never answered. Root cause unresolved — checked
-      and ruled out: bundle-identity confusion (only one app bundle, stable
-      CFBundleIdentifier), "first time ever access" (Desktop/labs.png has been captured
-      continuously since Oct 21), and found no corroborating tccd log entries at all in the
-      last 2h window. Genuinely unexplained; needs more investigation if revisited.
-
 - [ ] Snapshot throughput is very slow -- e.g. ~58 files/sec at one point tonight, well
       below the historical range seen in task-history (2,551-22,541 files/sec across past
       runs). Partly explained by this run doing real first-time work in previously
@@ -49,6 +40,15 @@
           nothing mid-file. Neither explains a performance regression by itself.
 
 ## Done
+
+- [x] Media Library and Desktop Folder TCC popups ("KopiaServer.app would like to
+      access...") have stopped appearing — user confirmed as of 2026-11-03. Root cause was
+      never independently confirmed for these two specifically (unlike the Full Disk Access
+      case, where the stale-code-requirement / ad-hoc-signing-churn fix was proven with
+      numFailed=0 before and after). Most likely the same stable code-signing cert fix
+      resolved them too, since ad-hoc re-signing on every rebuild would churn every TCC
+      category's grant identity, not just FDA's — but that's a plausible explanation, not a
+      verified one. Reopen if they come back.
 
 - [x] Scoped how much of the codebase is macOS-specific, ahead of a possible per-OS driver
       architecture. Diffed `custom` against real upstream `kopia/master` and audited the
