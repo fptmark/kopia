@@ -89,6 +89,11 @@ func (fsd *filesystemDirectory) Child(_ context.Context, name string) (fs.Entry,
 		return nil, errors.Wrap(err, "unable to get child")
 	}
 
+	if platformSpecificIsDataless(st) {
+		// see toDirEntryOrNil: a cloud-provider placeholder, not actually present on local disk.
+		return nil, fs.ErrEntryNotFound
+	}
+
 	return entryFromDirEntry(name, st, fullPath+separatorStr), nil
 }
 
@@ -97,6 +102,13 @@ func toDirEntryOrNil(dirEntry os.DirEntry, prefix string) (fs.Entry, error) {
 
 	switch fi, err := os.Lstat(prefix + n); {
 	case err == nil:
+		if platformSpecificIsDataless(fi) {
+			// not actually on local disk -- a cloud-provider placeholder (iCloud Drive and similar).
+			// Reading it would trigger an on-demand download rather than return real local content, so
+			// it's skipped the same way a vanished entry is below, not snapshotted as empty/zero-size.
+			return nil, nil
+		}
+
 		return entryFromDirEntry(n, fi, prefix), nil
 	case os.IsNotExist(err):
 		return nil, nil
