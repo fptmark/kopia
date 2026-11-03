@@ -48,20 +48,18 @@
           gaps, not performance causes: Maintenance shows nothing at all, Verify shows
           nothing mid-file. Neither explains a performance regression by itself.
 
-- [ ] The "Future" tab (/api/v1/tasks/upcoming, internal/server/api_tasks_upcoming.go:41)
-      shows a misleading next time when an earlier scheduled snapshot is still pending and
-      deferred (e.g. by the sleep/wake instability window). It calls
-      `eff.SchedulingPolicy.NextSnapshotTime(now, now)` -- a standalone "next clean slot
-      from right now" projection with no knowledge of the real source manager's actual
-      pending target or live deferral state. Confirmed concretely: at 08:09 the real
-      pending target (/api/v1/sources' nextSnapshotTime) was still the overdue 08:00 slot,
-      correctly held back by a fresh sleep/wake instability window (log: "last check was
-      1h51m5s ago (machine asleep?)"), while the Future tab was already showing 09:00 as
-      next -- implying the 8am run was skipped when it was actually still owed and about
-      to fire late. Fix direction: this display should reflect the real pending/deferred
-      target, not recompute independently from "now".
-
 ## Done
+
+- [x] The "Future" tab's first entry per source now comes from the source manager's own
+      live `getNextSnapshotTime()`/`getNextVerifyTime()` (which already reflects actual
+      last completion, sleep/wake deferral, and the too-soon suppression) instead of a
+      blind `SchedulingPolicy.NextSnapshotTime(now, now)` recompute that had no idea an
+      earlier slot was still overdue-and-pending. Verified live: with the real pending
+      target at 09:00 for one source and 12:00 for another (/api/v1/sources'
+      nextSnapshotTime), the Future tab's first entries now match exactly. Only the first
+      entry per source/kind can be made honest this way -- the source manager tracks just
+      the one next target, not a run of future ones -- so entries after it still project
+      the policy forward, same as before.
 
 - [x] Persistent local code-signing certificate ("Kopia Local Signing", self-signed,
       Code Signing EKU, trusted for codeSign in the login keychain) now used instead of
