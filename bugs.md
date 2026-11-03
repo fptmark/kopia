@@ -68,6 +68,19 @@
           gaps, not performance causes: Maintenance shows nothing at all, Verify shows
           nothing mid-file. Neither explains a performance regression by itself.
 
+- [ ] The "Future" tab (/api/v1/tasks/upcoming, internal/server/api_tasks_upcoming.go:41)
+      shows a misleading next time when an earlier scheduled snapshot is still pending and
+      deferred (e.g. by the sleep/wake instability window). It calls
+      `eff.SchedulingPolicy.NextSnapshotTime(now, now)` -- a standalone "next clean slot
+      from right now" projection with no knowledge of the real source manager's actual
+      pending target or live deferral state. Confirmed concretely: at 08:09 the real
+      pending target (/api/v1/sources' nextSnapshotTime) was still the overdue 08:00 slot,
+      correctly held back by a fresh sleep/wake instability window (log: "last check was
+      1h51m5s ago (machine asleep?)"), while the Future tab was already showing 09:00 as
+      next -- implying the 8am run was skipped when it was actually still owed and about
+      to fire late. Fix direction: this display should reflect the real pending/deferred
+      target, not recompute independently from "now".
+
 ## Done
 
 - [x] Persistent local code-signing certificate ("Kopia Local Signing", self-signed,
