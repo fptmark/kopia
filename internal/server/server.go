@@ -1182,9 +1182,11 @@ func maintenanceCycleLabel(ctx context.Context, dr repo.DirectRepository) string
 		return "periodic"
 	}
 
-	// full is checked first: due-for-full implies due-for-quick too, and full does strictly more.
+	// full is checked first: due-for-full implies due-for-quick too, and full does strictly more. Labeled
+	// "GC" rather than "full": a full cycle always starts with snapshot GC (snapshotmaintenance.go), so
+	// that's the recognizable, meaningful name for what it does.
 	if p.FullCycle.Enabled && !dr.Time().Before(s.NextFullMaintenanceTime) {
-		return "full"
+		return "GC"
 	}
 
 	if p.QuickCycle.Enabled && !dr.Time().Before(s.NextQuickMaintenanceTime) {

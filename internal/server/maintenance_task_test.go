@@ -123,7 +123,7 @@ func TestMaintenanceCycleLabel(t *testing.T) {
 		NextFullMaintenanceTime:  now.Add(-time.Minute),
 		NextQuickMaintenanceTime: now.Add(time.Hour),
 	}))
-	require.Equal(t, "full", maintenanceCycleLabel(ctx, env.RepositoryWriter))
+	require.Equal(t, "GC", maintenanceCycleLabel(ctx, env.RepositoryWriter))
 
 	// only quick is due
 	require.NoError(t, maintenance.SetSchedule(ctx, env.RepositoryWriter, &maintenance.Schedule{
