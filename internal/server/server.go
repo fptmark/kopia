@@ -1246,7 +1246,7 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 		}
 
 		if nst, ok := sm.getNextSnapshotTime(); ok {
-			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("snapshot %q", sm.src.Path), nst, sm.scheduleSnapshotNow))
+			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("snapshot %q", sm.src.Path), nst, sm.triggerScheduledSnapshot))
 		} else {
 			userLog(ctx).Debugf("no snapshot scheduled for %v %v %v", sm.src, nst, now)
 		}

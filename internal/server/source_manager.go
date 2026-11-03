@@ -310,6 +310,46 @@ func (s *sourceManager) scheduleSnapshotNow() {
 	}
 }
 
+// snapshotSuppressTolerance is how close to the last completed snapshot's own start time an *automatic*
+// trigger must land to get suppressed, as a fraction of the policy's interval. Only ever consulted by
+// triggerScheduledSnapshot -- an explicit "Snapshot now" always goes straight through scheduleSnapshotNow,
+// unsuppressed.
+const snapshotSuppressTolerance = 0.25
+
+// triggerScheduledSnapshot is the scheduler's own trigger for this source. Unlike scheduleSnapshotNow (used
+// directly by the explicit "Snapshot now" action), it first checks whether a snapshot for this source
+// already completed too recently to be worth repeating -- guarding against exactly the collision an
+// overdue catch-up and some other automatic trigger can produce with nothing to stop it: two full walks of
+// the same source back to back, a minute apart. Only suppresses for a plain interval schedule; a
+// time-of-day or cron slot is a specific intended moment, not a window this tolerance has any meaning
+// against.
+func (s *sourceManager) triggerScheduledSnapshot() {
+	if s.recentlyCompletedWithinTolerance() {
+		return
+	}
+
+	s.scheduleSnapshotNow()
+}
+
+// +checklocksread:s.sourceMutex is not held on entry; taken here, read-only.
+func (s *sourceManager) recentlyCompletedWithinTolerance() bool {
+	s.sourceMutex.RLock()
+	defer s.sourceMutex.RUnlock()
+
+	if s.pol.IntervalSeconds <= 0 || len(s.pol.TimesOfDay) > 0 || len(s.pol.Cron) > 0 {
+		return false // not a plain interval schedule -- this tolerance has no meaning here
+	}
+
+	if s.lastCompleteSnapshot == nil {
+		return false
+	}
+
+	tolerance := time.Duration(float64(s.pol.IntervalSeconds)*snapshotSuppressTolerance) * time.Second
+	since := clock.Now().Sub(s.lastCompleteSnapshot.StartTime.ToTime())
+
+	return since >= 0 && since < tolerance
+}
+
 func (s *sourceManager) upload(ctx context.Context) serverapi.SourceActionResponse {
 	userLog(ctx).Infof("upload triggered via API: %v", s.src)
 	s.scheduleSnapshotNow()
