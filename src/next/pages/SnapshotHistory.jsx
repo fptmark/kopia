@@ -11,7 +11,6 @@ import {
   deleteSnapshots,
   editSnapshots,
   loadHistory,
-  loadSnapshotTask,
   loadStorageStats,
   newestFirst,
   sizeJump,
@@ -173,28 +172,10 @@ export function SnapshotHistory() {
     },
     {
       id: "duration",
-      header: () => <span title="Click to see the full task: counters, errors, log">Duration</span>,
+      header: "Duration",
       align: "end",
       accessor: (s) => new Date(s.endTime) - new Date(s.startTime),
-      cell: (s) => (
-        <Button
-          variant="link"
-          size="sm"
-          className="nx-link-button"
-          title="See the full task: counters, errors, log"
-          onClick={() =>
-            loadSnapshotTask(s.id).then((taskId) => {
-              if (taskId) {
-                navigate("/tasks/" + taskId);
-              } else {
-                report("error", "No task on record for this snapshot.");
-              }
-            })
-          }
-        >
-          {taskDuration(s)}
-        </Button>
-      ),
+      cell: (s) => taskDuration(s),
     },
     {
       id: "retention",
