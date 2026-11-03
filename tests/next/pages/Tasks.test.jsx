@@ -343,12 +343,14 @@ describe("Task page", () => {
     axios.post.mockReset().mockResolvedValue({ data: {} });
   });
 
-  it("shows a finished task with its counters and log", async () => {
+  it("shows a finished task's counters as a Files/Bytes-by-category matrix, plus log on click", async () => {
     serve(
       task("t1", {
         counters: {
-          "Hashed files": { value: 1234 },
-          "Hashed bytes": { value: 5e9, units: "bytes" },
+          "Hashed Files": { value: 1234 },
+          "Hashed Bytes": { value: 5e9, units: "bytes" },
+          "Excluded Directories": { value: 3 },
+          Errors: { value: 2, level: "error" },
           Zero: { value: 0 },
         },
       }),
@@ -356,9 +358,21 @@ describe("Task page", () => {
     renderTask();
     await waitFor(() => expect(screen.getByText("Task succeeded after 5 min.")).toBeInTheDocument());
 
+    // the matrix: one "Hashed" column, Files/Bytes rows
+    expect(screen.getByText("Hashed")).toBeInTheDocument();
     expect(screen.getByText("1,234")).toBeInTheDocument();
     expect(screen.getByText("5 GB")).toBeInTheDocument();
+
+    // doesn't fit the <Category> Files/Bytes shape: falls to the plain counter list instead
+    expect(screen.getByText("Excluded Directories")).toBeInTheDocument();
+    expect(screen.getByText("Errors")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+
     expect(screen.queryByText("Zero")).not.toBeInTheDocument();
+
+    // the log is hidden until asked for
+    expect(screen.queryByText(/snapshotting/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show log" }));
     await waitFor(() => expect(screen.getByText(/snapshotting/)).toBeInTheDocument());
   });
 
