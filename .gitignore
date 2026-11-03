@@ -1,0 +1,8 @@
+.claude/
+.gitignore
+build/
+dist/
+backups/
+local.work
+local.work.sum
+setup/
