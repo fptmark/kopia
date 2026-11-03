@@ -2,7 +2,7 @@ import React from "react";
 import Form from "react-bootstrap/Form";
 import { PAGE_SIZES } from "../../contexts/UIPreferencesContext";
 import { DATE_FORMATS } from "../format";
-import { Field, FormSection, Panel, SwitchField, VerifyModePicker } from "../ui";
+import { Field, FormSection, NumberField, Panel, SwitchField, VerifyModePicker } from "../ui";
 
 /**
  * How the pages look, how the Mac behaves while backing up, and how much checking each snapshot gets.
@@ -10,11 +10,21 @@ import { Field, FormSection, Panel, SwitchField, VerifyModePicker } from "../ui"
  * clicked.
  */
 export function Settings({ draft, change }) {
-  const { theme, fontSize, bytesStringBase2, pageSize, keepAwake, dateFormat, verifyNewData, verifyEachMode, verifyEachPercent } =
-    draft;
+  const {
+    theme,
+    fontSize,
+    bytesStringBase2,
+    pageSize,
+    keepAwake,
+    dateFormat,
+    verifyNewData,
+    verifyEachMode,
+    verifyEachPercent,
+    storageStallTimeoutSeconds,
+  } = draft;
 
   return (
-    <Panel>
+    <Panel className="nx-panel-plain">
       <FormSection title="Appearance">
         <div className="row">
           <div className="col-md-6 col-lg-3">
@@ -92,6 +102,31 @@ export function Settings({ draft, change }) {
                   <option value="idle">Prevent idle sleep (any power source)</option>
                   <option value="ac">Also prevent lid-close sleep on AC power</option>
                 </Form.Select>
+              )}
+            </Field>
+          </div>
+        </div>
+      </FormSection>
+      <FormSection title="Storage connection">
+        <div className="row">
+          <div className="col-lg-8">
+            <Field
+              label="Quit a task if storage stops responding for"
+              help="Applies to Snapshot, Verify and Maintenance tasks. A listing, read or write that goes this long with no response (an unreachable NAS, for example) ends the task instead of it sitting unresponsive."
+            >
+              {(id) => (
+                <div className="nx-row">
+                  <NumberField
+                    id={id}
+                    size="sm"
+                    min={5}
+                    max={600}
+                    style={{ width: "6rem" }}
+                    value={storageStallTimeoutSeconds}
+                    onChange={(n) => change({ storageStallTimeoutSeconds: n })}
+                  />
+                  <span>seconds</span>
+                </div>
               )}
             </Field>
           </div>

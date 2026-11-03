@@ -12,6 +12,7 @@ function toDraft(prefs) {
     verifyNewData: !!prefs.verifyNewData,
     verifyEachMode: prefs.verifyEachMode || "new",
     verifyEachPercent: prefs.verifyEachPercent || 10,
+    storageStallTimeoutSeconds: prefs.storageStallTimeoutSeconds || 30,
   };
 }
 
@@ -68,6 +69,9 @@ export function useSettingsDraft() {
     }
     if (draft.verifyEachMode !== persisted.verifyEachMode || draft.verifyEachPercent !== persisted.verifyEachPercent) {
       prefs.setVerifyEach(draft.verifyEachMode, draft.verifyEachPercent);
+    }
+    if (draft.storageStallTimeoutSeconds !== persisted.storageStallTimeoutSeconds) {
+      prefs.setStorageStallTimeoutSeconds(draft.storageStallTimeoutSeconds);
     }
     touchedRef.current = false;
     return Promise.resolve();

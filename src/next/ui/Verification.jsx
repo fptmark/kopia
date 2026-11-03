@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import Form from "react-bootstrap/Form";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Modal from "react-bootstrap/Modal";
@@ -11,6 +11,7 @@ import { describeCovered, loadVerificationFailures } from "../verification";
 import { CountText, DateTimeText, PathText, SizeText, StatusBadge } from "./Cells";
 import { Loaded } from "./Feedback";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { NumberField } from "./Form";
 
 // the browser's own tooltip waits over a second; this one shows after half a second
 export const TIP_DELAY = { show: 500, hide: 0 };
@@ -175,23 +176,6 @@ export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode"
 
   const setPercent = (p) => onChange(p >= 100 ? "full" : "sample", p);
 
-  // its own buffer, not read straight from shownPercent: an unrelated re-render elsewhere in the app (the
-  // health banner polls every few seconds) would otherwise snap a mid-edit, momentarily-empty box back to the
-  // last committed number before the next keystroke could land.
-  const [text, setText] = useState(String(shownPercent));
-  useEffect(() => setText(String(shownPercent)), [shownPercent]);
-
-  const typePercent = (raw) => {
-    setText(raw);
-    if (raw === "") {
-      return;
-    }
-    const n = Number(raw);
-    if (!Number.isNaN(n)) {
-      setPercent(n);
-    }
-  };
-
   return (
     <>
       <div>
@@ -203,7 +187,6 @@ export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode"
           checked={isNew}
           onChange={() => onChange("new", percent)}
         />
-        <div className="nx-help">Quick.</div>
       </div>
       <div>
         <Form.Check
@@ -216,15 +199,14 @@ export function VerifyModePicker({ mode, percent, onChange, name = "verify-mode"
         />
         {!isNew && (
           <div className="nx-row">
-            <Form.Control
+            <NumberField
               size="sm"
-              type="number"
               min={1}
               max={100}
               style={{ width: "6rem" }}
               aria-label="Percent of files"
-              value={text}
-              onChange={(e) => typePercent(e.target.value)}
+              value={shownPercent}
+              onChange={setPercent}
             />
             <span>% of the files</span>
           </div>

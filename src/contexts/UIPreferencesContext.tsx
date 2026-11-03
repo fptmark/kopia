@@ -13,6 +13,7 @@ const DEFAULT_PREFERENCES = {
   preferWebDav: false,
   fontSize: "fs-6",
   keepAwake: "never",
+  storageStallTimeoutSeconds: 30,
 } as SerializedUIPreferences;
 const PREFERENCES_URL = "/api/v1/ui-preferences";
 
@@ -33,6 +34,7 @@ export interface UIPreferences {
   get dateFormat(): string;
   get verifyEachMode(): string;
   get verifyEachPercent(): number;
+  get storageStallTimeoutSeconds(): number;
   setTheme: (theme: Theme) => void;
   setPageSize: (pageSize: number) => void;
   setByteStringBase: (bytesStringBase2: string) => void;
@@ -43,6 +45,7 @@ export interface UIPreferences {
   setVerifyNewData: (on: boolean) => void;
   setDateFormat: (format: string) => void;
   setVerifyEach: (mode: string, percent: number) => void;
+  setStorageStallTimeoutSeconds: (seconds: number) => void;
 }
 
 interface SerializedUIPreferences {
@@ -57,6 +60,7 @@ interface SerializedUIPreferences {
   verifyEachMode?: string;
   verifyEachPercent?: number;
   dateFormat?: string;
+  storageStallTimeoutSeconds?: number;
 }
 
 export interface UIPreferenceProviderProps {
@@ -148,6 +152,11 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
       return { ...oldPreferences, verifierIMessageTo: input };
     });
 
+  const setStorageStallTimeoutSeconds = (seconds: number) =>
+    setPreferences((oldPreferences) => {
+      return { ...oldPreferences, storageStallTimeoutSeconds: seconds };
+    });
+
   const setFontSize = useCallback(
     (fontSize: FontSize) =>
       setPreferences((oldPreferences) => {
@@ -227,6 +236,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
     setVerifyNewData,
     setVerifyEach,
     setDateFormat,
+    setStorageStallTimeoutSeconds,
   } as UIPreferences;
 
   return <UIPreferencesContext value={providedValue}>{props.children}</UIPreferencesContext>;

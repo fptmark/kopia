@@ -5,7 +5,7 @@ export { Toolbar } from "./Toolbar";
 export { Notice, Loading, EmptyState, ErrorState, Loaded } from "./Feedback";
 export { StatusBadge, SizeText, CountText, DateTimeText, PathText } from "./Cells";
 export { ConfirmDialog } from "./ConfirmDialog";
-export { Field, SwitchField, FormSection } from "./Form";
+export { Field, SwitchField, FormSection, NumberField } from "./Form";
 export { TabNav } from "./TabNav";
 export { SearchBox } from "./SearchBox";
 export { DataTable } from "./DataTable";

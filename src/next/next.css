@@ -524,6 +524,16 @@ a.nx-chip:hover {
 .nx-field {
   margin-bottom: 1rem;
 }
+/* no native up/down stepper on any number input in the app */
+.nx input[type="number"]::-webkit-outer-spin-button,
+.nx input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.nx input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
 .nx-field label.form-label {
   display: block;
   font-weight: 600;
@@ -536,14 +546,29 @@ a.nx-chip:hover {
   margin-top: 0.2rem;
 }
 .nx-form-section {
-  margin-bottom: 1.5rem;
+  min-width: 0;
+  margin: 0 0 1.5rem;
+  padding: 1.25rem 1.25rem 1.5rem;
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius);
 }
-.nx-form-section > h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--nx-border);
+.nx-form-section > legend {
+  width: auto;
+  float: none;
+  margin: 0 0 0 max(0.25in, 0.5rem);
+  padding: 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nx-muted);
+}
+
+/* The Settings page's own outer frame around its sections is redundant once each section is its own
+   boxed fieldset -- this modifier drops just that outer border/background, not .nx-panel generally. */
+.nx-panel-plain {
+  border: 0;
+  background: transparent;
 }
 
 .nx-notice {

@@ -1,4 +1,4 @@
-import React, { useId } from "react";
+import React, { useEffect, useId, useState } from "react";
 import Form from "react-bootstrap/Form";
 
 /**
@@ -46,12 +46,42 @@ export function SwitchField({ label, help, checked, onChange, disabled = false, 
   );
 }
 
-/** A titled group of fields. */
+/**
+ * A number input with its own text buffer instead of reading straight from value: a plain controlled number
+ * input snaps a mid-edit, momentarily-empty or leading-digit-deleted box back to the last committed number
+ * before the next keystroke can land, which makes it look like it won't let you edit at all. onChange fires
+ * with a parsed number as soon as the typed text is a valid one; min/max constrain what gets committed, not
+ * what can be typed along the way (so e.g. deleting down to "" or "0" first doesn't fight you).
+ */
+export function NumberField({ value, onChange, min, max, ...rest }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+
+  const handleChange = (e) => {
+    const raw = e.target.value;
+    setText(raw);
+
+    if (raw === "") {
+      return;
+    }
+
+    const n = Number(raw);
+    if (!Number.isNaN(n)) {
+      onChange(n);
+    }
+  };
+
+  return (
+    <Form.Control type="number" value={text} onChange={handleChange} min={min} max={max} {...rest} />
+  );
+}
+
+/** A titled group of fields, boxed with its title set into the top-left of the border (like a fieldset). */
 export function FormSection({ title, children }) {
   return (
-    <section className="nx-form-section">
-      {title && <h3>{title}</h3>}
+    <fieldset className="nx-form-section">
+      {title && <legend>{title}</legend>}
       {children}
-    </section>
+    </fieldset>
   );
 }
