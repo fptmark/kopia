@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Button from "react-bootstrap/Button";
 import Dropdown from "react-bootstrap/Dropdown";
 import Form from "react-bootstrap/Form";
@@ -37,26 +38,35 @@ function FailuresPicker({ d, onChange }) {
       <Dropdown.Toggle size="sm" variant="secondary" className="w-100 text-start" aria-label={`Failures for ${d.name}`}>
         {failuresLabel(d)}
       </Dropdown.Toggle>
-      <Dropdown.Menu style={{ minWidth: "19rem" }}>
-        {FAILURES.map((f) => (
-          <Form.Check
-            key={f.id}
-            type="checkbox"
-            id={`${d.id}-failure-${f.id}`}
-            label={f.name}
-            checked={!!has(f.id)}
-            onChange={() => toggle(f.id)}
-          />
-        ))}
-        <div className="nx-row">
-          <Button size="sm" variant="secondary" onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}>
-            All
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => onChange(others)}>
-            None
-          </Button>
-        </div>
-      </Dropdown.Menu>
+      {/* Portaled to <body> -- the table this sits in scrolls horizontally (.nx-table-scroll, overflow-x:
+          auto) inside a rounded card that clips overflow (.nx-table-wrap, overflow: hidden), so the menu's
+          normal in-place DOM position gets cut off. (popperConfig={{strategy:"fixed"}} alone doesn't fix
+          this: it computes a wrong offset in this nesting, landing the menu near the page's top-left corner
+          instead of under the toggle -- a portal sidesteps that by not nesting it under the clipping
+          ancestors at all, and Popper's default "absolute" positioning works fine once it isn't.) */}
+      {createPortal(
+        <Dropdown.Menu style={{ minWidth: "19rem" }}>
+          {FAILURES.map((f) => (
+            <Form.Check
+              key={f.id}
+              type="checkbox"
+              id={`${d.id}-failure-${f.id}`}
+              label={f.name}
+              checked={!!has(f.id)}
+              onChange={() => toggle(f.id)}
+            />
+          ))}
+          <div className="nx-row">
+            <Button size="sm" variant="secondary" onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}>
+              All
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => onChange(others)}>
+              None
+            </Button>
+          </div>
+        </Dropdown.Menu>,
+        document.body,
+      )}
     </Dropdown>
   );
 }
