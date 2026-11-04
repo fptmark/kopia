@@ -21,9 +21,12 @@ import (
 )
 
 const (
-	failedSnapshotRetryInterval = 5 * time.Minute
-	refreshTimeout              = 30 * time.Second // max amount of time to refresh a single source
+	refreshTimeout = 30 * time.Second // max amount of time to refresh a single source
 )
+
+// sleepInterruptibly is clock.SleepInterruptibly, overridable in tests so a retry-tier burst's delays
+// (minutes apart, by design) don't make a test actually wait that long.
+var sleepInterruptibly = clock.SleepInterruptibly
 
 type sourceManagerServerInterface interface {
 	runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, inner func(ctx context.Context, ctrl uitask.Controller, result *notifydata.ManifestWithError) error) error
@@ -35,6 +38,8 @@ type sourceManagerServerInterface interface {
 	// next snapshot/verify time can defer instead of judging this source overdue off a connection that
 	// is likely still mid-reconnect-storm.
 	systemRecentlyUnstable() bool
+	// retryTierSettings resolves the current often/occasional retry-tier preferences. See docs/retry-tiers.md.
+	retryTierSettings() retryTierSettings
 }
 
 // sourceManager manages the state machine of each source
@@ -50,10 +55,12 @@ type sourceManager struct {
 
 	server sourceManagerServerInterface
 
-	src              snapshot.SourceInfo
-	rep              repo.Repository
-	closed           chan struct{}
-	snapshotRequests chan struct{}
+	src    snapshot.SourceInfo
+	rep    repo.Repository
+	closed chan struct{}
+	// snapshotRequests carries whether the request came from the automatic scheduler (true, eligible for
+	// the retry-tier burst on failure) or a manual/explicit trigger (false, never auto-retried).
+	snapshotRequests chan bool
 	wg               sync.WaitGroup
 
 	sourceMutex sync.RWMutex
@@ -81,6 +88,12 @@ type sourceManager struct {
 	currentTask string
 	// +checklocks:sourceMutex
 	lastAttemptedSnapshotTime fs.UTCTimestamp
+	// +checklocks:sourceMutex
+	// lastAttemptedVerifyTime is the Snapshot-side lastAttemptedSnapshotTime's counterpart for the
+	// scheduled Verify: set before every automatic verify attempt (success or failure), so the schedule
+	// computation always advances past "now" after an attempt instead of treating a stale last-success as
+	// still overdue indefinitely. See docs/retry-tiers.md.
+	lastAttemptedVerifyTime time.Time
 	// +checklocks:sourceMutex
 	isReadOnly bool
 	// +checklocks:sourceMutex
@@ -242,7 +255,7 @@ func (s *sourceManager) runLocal(ctx context.Context) {
 		case <-s.closed:
 			return
 
-		case <-s.snapshotRequests:
+		case scheduled := <-s.snapshotRequests:
 			if s.isPaused() {
 				s.setStatus("PAUSED")
 
@@ -251,33 +264,73 @@ func (s *sourceManager) runLocal(ctx context.Context) {
 
 			s.setStatus("PENDING")
 
-			userLog(ctx).Debugw("snapshotting", "source", s.src)
-
-			s.setSnapshotInProgress(true)
-			err := s.server.runSnapshotTask(ctx, s.src, s.snapshotInternal)
-			s.setSnapshotInProgress(false)
-
-			if err != nil {
-				userLog(ctx).Errorf("snapshot error: %v", err)
-
-				s.backoffBeforeNextSnapshot()
-			} else {
-				s.refreshStatus(ctx)
-			}
-
-			s.server.refreshScheduler("snapshot finished")
+			s.attemptSnapshotWithRetries(ctx, scheduled)
 
 			s.setStatus("IDLE")
 		}
 	}
 }
 
-func (s *sourceManager) backoffBeforeNextSnapshot() {
-	if _, ok := s.getNextSnapshotTime(); !ok {
-		return
+// attemptSnapshotWithRetries runs one snapshot cycle: the first attempt, then -- only for an automatic
+// (scheduled) trigger that fails -- the retry-tier burst from docs/retry-tiers.md, classified once at the
+// start of the cycle. A manual trigger never retries: it just reports its own failure.
+func (s *sourceManager) attemptSnapshotWithRetries(ctx context.Context, scheduled bool) {
+	cycleStart := clock.Now()
+
+	var delays []time.Duration
+	if scheduled {
+		rt := s.server.retryTierSettings()
+		often, ok := s.classifySnapshotRetryTier(rt, cycleStart)
+
+		if ok {
+			delays = rt.retryDelays(often)
+		}
 	}
 
-	s.setNextSnapshotTime(clock.Now().Add(failedSnapshotRetryInterval))
+	for attempt := 0; ; attempt++ {
+		userLog(ctx).Debugw("snapshotting", "source", s.src)
+
+		s.setSnapshotInProgress(true)
+		err := s.server.runSnapshotTask(ctx, s.src, s.snapshotInternal)
+		s.setSnapshotInProgress(false)
+
+		if err == nil {
+			s.refreshStatus(ctx)
+			s.server.refreshScheduler("snapshot finished")
+
+			return
+		}
+
+		userLog(ctx).Errorf("snapshot error: %v", err)
+
+		if attempt >= len(delays) {
+			// out of retries (or never eligible for any): let the natural schedule, now advanced past
+			// this attempt, take over.
+			s.refreshStatus(ctx)
+			s.server.refreshScheduler("snapshot finished")
+
+			return
+		}
+
+		if !sleepInterruptibly(ctx, delays[attempt]) {
+			return // shutting down
+		}
+	}
+}
+
+// classifySnapshotRetryTier reports whether this source is "often" or "occasional" (see docs/retry-tiers.md).
+// ok is false when there is no real schedule to classify against (e.g. a manual-policy source, which the
+// automatic scheduler never triggers in the first place -- callers should treat that as "don't retry").
+func (s *sourceManager) classifySnapshotRetryTier(rt retryTierSettings, from time.Time) (often, ok bool) {
+	s.sourceMutex.RLock()
+	defer s.sourceMutex.RUnlock()
+
+	period, ok := s.snapshotPeriodEstimateReadLocked(from)
+	if !ok {
+		return false, false
+	}
+
+	return rt.isOften(period), true
 }
 
 func (s *sourceManager) isRunningReadOnly() bool {
@@ -297,7 +350,18 @@ func (s *sourceManager) runReadOnly() {
 	<-s.closed
 }
 
+// scheduleSnapshotNow queues an explicit, manual snapshot request -- never auto-retried on failure.
 func (s *sourceManager) scheduleSnapshotNow() {
+	s.scheduleSnapshot(false)
+}
+
+// scheduleAutomaticSnapshot is the scheduler's own trigger for this source: a snapshot request eligible
+// for the retry-tier burst on failure (docs/retry-tiers.md).
+func (s *sourceManager) scheduleAutomaticSnapshot() {
+	s.scheduleSnapshot(true)
+}
+
+func (s *sourceManager) scheduleSnapshot(scheduled bool) {
 	s.sourceMutex.Lock()
 	defer s.sourceMutex.Unlock()
 
@@ -305,49 +369,9 @@ func (s *sourceManager) scheduleSnapshotNow() {
 	s.nextSnapshotTime = nil
 
 	select {
-	case s.snapshotRequests <- struct{}{}: // scheduled snapshot
+	case s.snapshotRequests <- scheduled:
 	default: // already scheduled
 	}
-}
-
-// snapshotSuppressTolerance is how close to the last completed snapshot's own start time an *automatic*
-// trigger must land to get suppressed, as a fraction of the policy's interval. Only ever consulted by
-// triggerScheduledSnapshot -- an explicit "Snapshot now" always goes straight through scheduleSnapshotNow,
-// unsuppressed.
-const snapshotSuppressTolerance = 0.25
-
-// triggerScheduledSnapshot is the scheduler's own trigger for this source. Unlike scheduleSnapshotNow (used
-// directly by the explicit "Snapshot now" action), it first checks whether a snapshot for this source
-// already completed too recently to be worth repeating -- guarding against exactly the collision an
-// overdue catch-up and some other automatic trigger can produce with nothing to stop it: two full walks of
-// the same source back to back, a minute apart. Only suppresses for a plain interval schedule; a
-// time-of-day or cron slot is a specific intended moment, not a window this tolerance has any meaning
-// against.
-func (s *sourceManager) triggerScheduledSnapshot() {
-	if s.recentlyCompletedWithinTolerance() {
-		return
-	}
-
-	s.scheduleSnapshotNow()
-}
-
-// +checklocksread:s.sourceMutex is not held on entry; taken here, read-only.
-func (s *sourceManager) recentlyCompletedWithinTolerance() bool {
-	s.sourceMutex.RLock()
-	defer s.sourceMutex.RUnlock()
-
-	if s.pol.IntervalSeconds <= 0 || len(s.pol.TimesOfDay) > 0 || len(s.pol.Cron) > 0 {
-		return false // not a plain interval schedule -- this tolerance has no meaning here
-	}
-
-	if s.lastCompleteSnapshot == nil {
-		return false
-	}
-
-	tolerance := time.Duration(float64(s.pol.IntervalSeconds)*snapshotSuppressTolerance) * time.Second
-	since := clock.Now().Sub(s.lastCompleteSnapshot.StartTime.ToTime())
-
-	return since >= 0 && since < tolerance
 }
 
 func (s *sourceManager) upload(ctx context.Context) serverapi.SourceActionResponse {
@@ -516,12 +540,22 @@ func (s *sourceManager) snapshotInternal(ctx context.Context, ctrl uitask.Contro
 // enough that a real wake is picked up promptly, long enough not to busy-loop the scheduler.
 const instabilityRecheckInterval = time.Minute
 
+// snapshotPeriodEstimateReadLocked is schedulePeriodEstimate for this source's snapshot policy, used only
+// to classify a retry-tier (docs/retry-tiers.md), never as an actual next-run time.
+// +checklocksread:s.sourceMutex
+func (s *sourceManager) snapshotPeriodEstimateReadLocked(from time.Time) (time.Duration, bool) {
+	hasTimesOfDayOrCron := len(s.pol.TimesOfDay) > 0 || len(s.pol.Cron) > 0
+	return schedulePeriodEstimate(s.pol.IntervalSeconds, hasTimesOfDayOrCron, s.pol.NextSnapshotTime, from)
+}
+
 // +checklocksread:s.sourceMutex
 func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
 	if s.server.systemRecentlyUnstable() {
 		t := clock.Now().Add(instabilityRecheckInterval)
 		return &t
 	}
+
+	now := clock.Now()
 
 	var previousSnapshotTime fs.UTCTimestamp
 	if lcs := s.lastCompleteSnapshot; lcs != nil {
@@ -533,12 +567,34 @@ func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
 		previousSnapshotTime = s.lastAttemptedSnapshotTime
 	}
 
-	t, ok := s.pol.NextSnapshotTime(previousSnapshotTime.ToTime(), clock.Now())
+	t, ok := s.pol.NextSnapshotTime(previousSnapshotTime.ToTime(), now)
 	if !ok {
 		return nil
 	}
 
+	var lastCompletion time.Time
+
+	hasCompletion := s.lastCompleteSnapshot != nil
+	if hasCompletion {
+		lastCompletion = s.lastCompleteSnapshot.StartTime.ToTime()
+	}
+
+	rt := s.server.retryTierSettings()
+	period, periodOK := s.snapshotPeriodEstimateReadLocked(now)
+	often := !periodOK || rt.isOften(period) // no schedule to estimate from: be conservative, no floor
+
+	t = rt.floor(t, lastCompletion, hasCompletion, often)
+
 	return &t
+}
+
+// verifyPeriodEstimateReadLocked is snapshotPeriodEstimateReadLocked's Verify counterpart.
+// +checklocksread:s.sourceMutex
+func (s *sourceManager) verifyPeriodEstimateReadLocked(from time.Time) (time.Duration, bool) {
+	sp := s.verifyPol.SchedulingPolicy
+	hasTimesOfDayOrCron := len(sp.TimesOfDay) > 0 || len(sp.Cron) > 0
+
+	return schedulePeriodEstimate(sp.IntervalSeconds, hasTimesOfDayOrCron, s.verifyPol.NextVerifyTime, from)
 }
 
 // +checklocksread:s.sourceMutex
@@ -552,14 +608,50 @@ func (s *sourceManager) findClosestNextVerifyTimeReadLocked() *time.Time {
 		return &t
 	}
 
-	previousVerifyTime, _ := s.server.lastVerificationTime(s.src, s.verifyPol.EffectiveMode())
+	now := clock.Now()
 
-	t, ok := s.verifyPol.NextVerifyTime(previousVerifyTime, clock.Now())
+	lastCompletion, hasCompletion := s.server.lastVerificationTime(s.src, s.verifyPol.EffectiveMode())
+
+	previousVerifyTime := lastCompletion
+	if s.lastAttemptedVerifyTime.After(previousVerifyTime) {
+		previousVerifyTime = s.lastAttemptedVerifyTime
+	}
+
+	t, ok := s.verifyPol.NextVerifyTime(previousVerifyTime, now)
 	if !ok {
 		return nil
 	}
 
+	rt := s.server.retryTierSettings()
+	period, periodOK := s.verifyPeriodEstimateReadLocked(now)
+	often := !periodOK || rt.isOften(period)
+
+	t = rt.floor(t, lastCompletion, hasCompletion, often)
+
 	return &t
+}
+
+// markVerifyAttempted records that a scheduled verify attempt is starting now, the Verify counterpart of
+// snapshotInternal setting lastAttemptedSnapshotTime -- so the schedule computation always advances past
+// "now" after an attempt, succeed or fail.
+func (s *sourceManager) markVerifyAttempted() {
+	s.sourceMutex.Lock()
+	defer s.sourceMutex.Unlock()
+
+	s.lastAttemptedVerifyTime = clock.Now()
+}
+
+// classifyVerifyRetryTier is the Verify counterpart of classifySnapshotRetryTier.
+func (s *sourceManager) classifyVerifyRetryTier(rt retryTierSettings, from time.Time) (often, ok bool) {
+	s.sourceMutex.RLock()
+	defer s.sourceMutex.RUnlock()
+
+	period, ok := s.verifyPeriodEstimateReadLocked(from)
+	if !ok {
+		return false, false
+	}
+
+	return rt.isOften(period), true
 }
 
 func (s *sourceManager) refreshStatus(ctx context.Context) {
@@ -742,7 +834,7 @@ func newSourceManager(src snapshot.SourceInfo, server *Server, rep repo.Reposito
 		server:           server,
 		state:            "UNKNOWN",
 		closed:           make(chan struct{}),
-		snapshotRequests: make(chan struct{}, 1),
+		snapshotRequests: make(chan bool, 1),
 		progress:         &upload.CountingUploadProgress{},
 	}
 

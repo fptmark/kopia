@@ -131,26 +131,51 @@ func (s *Server) startSnapshotVerify(ctx context.Context, rep repo.Repository, m
 	go func() {
 		defer s.snapVerifs.remove(rv)
 
-		gate := s.snapVerifs.turn()
-		gate <- struct{}{}
-
-		defer func() { <-gate }()
-
-		s.snapVerifs.update(rv, func(r *runningVerify) {
-			r.State = "running"
-			r.StartedAt = clock.Now()
-			r.Phase = "reading"
-			r.ProgressAt = r.StartedAt
-		})
-
-		desc := fmt.Sprintf("Verify snapshot of %v from %v (%v)", m.Source.Path, m.StartTime.ToTime().Local().Format("2006-01-02 15:04"), describeVerifyMode(mode, percent))
-
-		_ = s.taskmgr.Run(ctx, "Verify", desc, func(ctx context.Context, ctrl uitask.Controller) error {
-			return s.runSnapshotVerify(ctx, ctrl, rep, m, rv)
-		})
+		_ = s.runQueuedVerify(ctx, rep, m, rv)
 	}()
 
 	return true
+}
+
+// runQueuedVerifyOnce is runQueuedVerify for a caller that isn't already tracking a runningVerify of its
+// own (the scheduled-verify retry loop, which needs a fresh one per attempt): it reports false instead of
+// running when the same snapshot+mode is already queued or running elsewhere (e.g. a manual Verify click
+// racing the same cycle), rather than silently skipping the attempt.
+func (s *Server) runQueuedVerifyOnce(ctx context.Context, rep repo.Repository, m *snapshot.Manifest, mode string, percent float64) error {
+	rv := &runningVerify{
+		SnapshotID: string(m.ID), Source: m.Source.String(), Mode: mode, Percent: percent, State: "queued", StartedAt: clock.Now(),
+	}
+
+	if !s.snapVerifs.add(rv) {
+		return errors.New("already queued or running")
+	}
+
+	defer s.snapVerifs.remove(rv)
+
+	return s.runQueuedVerify(ctx, rep, m, rv)
+}
+
+// runQueuedVerify waits its turn (one verify at a time against the repo: they all read from the same
+// storage, and two at once would only slow each other down), then runs it as a recorded task and returns
+// the task's error.
+func (s *Server) runQueuedVerify(ctx context.Context, rep repo.Repository, m *snapshot.Manifest, rv *runningVerify) error {
+	gate := s.snapVerifs.turn()
+	gate <- struct{}{}
+
+	defer func() { <-gate }()
+
+	s.snapVerifs.update(rv, func(r *runningVerify) {
+		r.State = "running"
+		r.StartedAt = clock.Now()
+		r.Phase = "reading"
+		r.ProgressAt = r.StartedAt
+	})
+
+	desc := fmt.Sprintf("Verify snapshot of %v from %v (%v)", m.Source.Path, m.StartTime.ToTime().Local().Format("2006-01-02 15:04"), describeVerifyMode(rv.Mode, rv.Percent))
+
+	return s.taskmgr.Run(ctx, "Verify", desc, func(ctx context.Context, ctrl uitask.Controller) error {
+		return s.runSnapshotVerify(ctx, ctrl, rep, m, rv)
+	})
 }
 
 func describeVerifyMode(mode string, percent float64) string {

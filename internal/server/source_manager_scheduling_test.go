@@ -10,6 +10,7 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/clock"
 	"github.com/kopia/kopia/internal/repotesting"
+	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/testlogging"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/notification/notifydata"
@@ -32,6 +33,10 @@ func (noopSMServer) lastVerificationTime(snapshot.SourceInfo, string) (time.Time
 }
 
 func (noopSMServer) systemRecentlyUnstable() bool { return false }
+
+func (noopSMServer) retryTierSettings() retryTierSettings {
+	return retryTierSettingsFromPreferences(serverapi.UIPreferences{})
+}
 
 // unstableSMServer is noopSMServer with systemRecentlyUnstable forced true, for tests of the deferral it
 // drives in findClosestNextSnapshotTimeReadLocked/findClosestNextVerifyTimeReadLocked.

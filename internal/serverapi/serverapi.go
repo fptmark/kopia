@@ -419,6 +419,21 @@ type UIPreferences struct {
 	// snapshots as stale -- the connection is often still settling right after a real wake. 0 (unset) uses
 	// the default, 5 minutes.
 	WakeGraceSeconds int `json:"wakeGraceSeconds"`
+	// RetryTierThresholdHours divides a Snapshot or Verify source's automatic retries into two tiers: if
+	// its own schedule would next run again within this many hours, retrying it is "often"; otherwise
+	// "occasional". It also floors how soon an occasional-tier source's next automatic cycle may start
+	// after its last completion. 0 (unset) uses the default, 1 hour.
+	RetryTierThresholdHours float64 `json:"retryTierThresholdHours"`
+	// OftenRetryCount/OftenRetryIntervalMinutes is the retry burst every failed automatic Snapshot/Verify
+	// attempt gets, regardless of tier: this many retries, this many minutes apart, before an often-tier
+	// source gives up for the cycle. 0 (unset) uses the defaults, 3 retries 1 minute apart.
+	OftenRetryCount           int `json:"oftenRetryCount"`
+	OftenRetryIntervalMinutes int `json:"oftenRetryIntervalMinutes"`
+	// OccasionalRetryCount/OccasionalRetryIntervalMinutes is the extra retries an occasional-tier source
+	// gets after its often burst is also exhausted, before it gives up for the cycle. 0 (unset) uses the
+	// defaults, 5 retries 5 minutes apart.
+	OccasionalRetryCount           int `json:"occasionalRetryCount"`
+	OccasionalRetryIntervalMinutes int `json:"occasionalRetryIntervalMinutes"`
 }
 
 // VerifyFailure is a file that did not read back.

@@ -1375,7 +1375,7 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 		}
 
 		if nst, ok := sm.getNextSnapshotTime(); ok {
-			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("snapshot %q", sm.src.Path), nst, sm.triggerScheduledSnapshot))
+			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("snapshot %q", sm.src.Path), nst, sm.scheduleAutomaticSnapshot))
 		} else {
 			userLog(ctx).Debugf("no snapshot scheduled for %v %v %v", sm.src, nst, now)
 		}
@@ -1439,7 +1439,9 @@ func (s *Server) cancelBackgroundTasksForInstability(ctx context.Context) {
 }
 
 // triggerScheduledVerify starts a source's periodic verify, against its latest complete snapshot, in the
-// mode and percent its own policy asks for -- the same path a manual Verify click uses.
+// mode and percent its own policy asks for. It returns at once: the attempt (and, on failure, the
+// retry-tier burst from docs/retry-tiers.md) runs in its own goroutine, same as a manual Verify click
+// starting a verify and returning immediately -- the scheduler loop that calls this must never block.
 func (s *Server) triggerScheduledVerify(ctx context.Context, sm *sourceManager) {
 	m, mode, percent, ok := sm.verifyTriggerArgs()
 	if !ok {
@@ -1454,7 +1456,41 @@ func (s *Server) triggerScheduledVerify(ctx context.Context, sm *sourceManager) 
 		return
 	}
 
-	s.startSnapshotVerify(ctx, rep, m, mode, percent)
+	go s.runScheduledVerifyWithRetries(context.WithoutCancel(ctx), rep, sm, m, mode, percent)
+}
+
+// runScheduledVerifyWithRetries runs one scheduled verify cycle: the first attempt, then -- on failure --
+// the retry-tier burst, classified once at the start of the cycle. See docs/retry-tiers.md.
+func (s *Server) runScheduledVerifyWithRetries(ctx context.Context, rep repo.Repository, sm *sourceManager, m *snapshot.Manifest, mode string, percent float64) {
+	cycleStart := clock.Now()
+
+	rt := s.retryTierSettings()
+
+	var delays []time.Duration
+
+	often, ok := sm.classifyVerifyRetryTier(rt, cycleStart)
+	if ok {
+		delays = rt.retryDelays(often)
+	}
+
+	for attempt := 0; ; attempt++ {
+		sm.markVerifyAttempted()
+
+		if s.runQueuedVerifyOnce(ctx, rep, m, mode, percent) == nil {
+			break
+		}
+
+		if attempt >= len(delays) {
+			break // out of retries: let the natural schedule, now advanced past this attempt, take over
+		}
+
+		if !sleepInterruptibly(ctx, delays[attempt]) {
+			return // shutting down
+		}
+	}
+
+	sm.refreshStatus(ctx)
+	s.refreshScheduler("verify finished")
 }
 
 // New creates a Server.

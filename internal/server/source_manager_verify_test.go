@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kopia/kopia/internal/serverapi"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/notification/notifydata"
 	"github.com/kopia/kopia/snapshot"
@@ -18,6 +19,7 @@ import (
 type stubSourceManagerServer struct {
 	lastVerify   time.Time
 	lastVerifyOK bool
+	rt           retryTierSettings // zero value: retryTierSettings() fills in the defaults
 }
 
 func (s *stubSourceManagerServer) runSnapshotTask(context.Context, snapshot.SourceInfo, func(context.Context, uitask.Controller, *notifydata.ManifestWithError) error) error {
@@ -31,6 +33,14 @@ func (s *stubSourceManagerServer) lastVerificationTime(snapshot.SourceInfo, stri
 }
 
 func (s *stubSourceManagerServer) systemRecentlyUnstable() bool { return false }
+
+func (s *stubSourceManagerServer) retryTierSettings() retryTierSettings {
+	if s.rt == (retryTierSettings{}) {
+		return retryTierSettingsFromPreferences(serverapi.UIPreferences{})
+	}
+
+	return s.rt
+}
 
 func TestFindClosestNextVerifyTime(t *testing.T) {
 	src := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/x"}
@@ -71,6 +81,37 @@ func TestFindClosestNextVerifyTime(t *testing.T) {
 		got := sm.findClosestNextVerifyTimeReadLocked()
 		require.NotNil(t, got)
 		require.False(t, got.After(time.Now()), "a zero previous time has already elapsed any interval")
+	})
+}
+
+// TestClassifyVerifyRetryTier mirrors classifySnapshotRetryTier's coverage (retry_tier_test.go /
+// source_manager_retry_test.go) for the Verify side: classification must use the policy's own interval,
+// not how overdue the source happens to be right now.
+func TestClassifyVerifyRetryTier(t *testing.T) {
+	src := snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/x"}
+	rt := retryTierSettingsFromPreferences(serverapi.UIPreferences{RetryTierThresholdHours: 1})
+	now := time.Now()
+
+	t.Run("short interval is often", func(t *testing.T) {
+		stub := &stubSourceManagerServer{rt: rt}
+		sm := &sourceManager{server: stub, src: src, verifyPol: policy.VerifySchedulingPolicy{
+			SchedulingPolicy: policy.SchedulingPolicy{IntervalSeconds: 1800}, // 30 min
+		}}
+
+		often, ok := sm.classifyVerifyRetryTier(rt, now)
+		require.True(t, ok)
+		require.True(t, often)
+	})
+
+	t.Run("daily time-of-day is occasional", func(t *testing.T) {
+		stub := &stubSourceManagerServer{rt: rt}
+		sm := &sourceManager{server: stub, src: src, verifyPol: policy.VerifySchedulingPolicy{
+			SchedulingPolicy: policy.SchedulingPolicy{TimesOfDay: []policy.TimeOfDay{{Hour: 3}}},
+		}}
+
+		often, ok := sm.classifyVerifyRetryTier(rt, now)
+		require.True(t, ok)
+		require.False(t, often)
 	})
 }
 
