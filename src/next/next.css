@@ -532,6 +532,20 @@ a.nx-chip:hover {
   text-decoration: underline;
 }
 
+/* a dropdown menu of checkboxes (e.g. the Failures picker): side margin so labels don't touch the edge, and
+   a surface a shade off the page so it reads as a popup rather than blending into the background behind it.
+   Uses Bootstrap's own --bs-tertiary-bg directly, not this app's --nx-surface-alt alias for it: that alias is
+   scoped to .nx (see the comment at the top of this file), and this menu is portaled straight to <body>, so
+   it sits outside .nx and never sees that scoped value -- --bs-tertiary-bg is set on :root/[data-bs-theme],
+   which resolves correctly regardless of where in the DOM the element actually is. */
+.nx-failures-menu {
+  padding: 0.75rem 1rem;
+  background: var(--bs-tertiary-bg);
+}
+.nx-failures-menu .form-check:not(:last-child) {
+  margin-bottom: 0.5rem;
+}
+
 /* forms */
 .nx-field {
   margin-bottom: 1rem;

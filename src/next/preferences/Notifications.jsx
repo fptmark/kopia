@@ -30,8 +30,6 @@ import { ConfirmDialog, DataTable, DateTimeText, Loaded, Panel, StatusBadge } fr
 function FailuresPicker({ d, onChange }) {
   const has = (id) => d.failures?.includes(id);
   const toggle = (id) => onChange(has(id) ? d.failures.filter((x) => x !== id) : [...(d.failures || []), id]);
-  // failure types this page does not list are kept as they are
-  const others = (d.failures || []).filter((id) => !FAILURES.some((f) => f.id === id));
 
   return (
     <Dropdown autoClose="outside">
@@ -45,7 +43,7 @@ function FailuresPicker({ d, onChange }) {
           instead of under the toggle -- a portal sidesteps that by not nesting it under the clipping
           ancestors at all, and Popper's default "absolute" positioning works fine once it isn't.) */}
       {createPortal(
-        <Dropdown.Menu style={{ minWidth: "19rem" }}>
+        <Dropdown.Menu className="nx-failures-menu" style={{ minWidth: "19rem" }}>
           {FAILURES.map((f) => (
             <Form.Check
               key={f.id}
@@ -56,14 +54,6 @@ function FailuresPicker({ d, onChange }) {
               onChange={() => toggle(f.id)}
             />
           ))}
-          <div className="nx-row">
-            <Button size="sm" variant="secondary" onClick={() => onChange([...FAILURES.map((f) => f.id), ...others])}>
-              All
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => onChange(others)}>
-              None
-            </Button>
-          </div>
         </Dropdown.Menu>,
         document.body,
       )}
@@ -231,16 +221,7 @@ export function Notifications() {
                   {
                     id: "name",
                     header: "Destination",
-                    cell: (d) => (
-                      <Form.Control
-                        size="sm"
-                        className="fw-semibold"
-                        aria-label={`Name of ${d.name}`}
-                        value={d.name}
-                        onChange={(e) => replace({ ...d, name: e.target.value }, false)}
-                        onBlur={() => persist(latestRef.current)}
-                      />
-                    ),
+                    cell: (d) => <span className="fw-semibold">{d.name}</span>,
                   },
                   {
                     id: "address",

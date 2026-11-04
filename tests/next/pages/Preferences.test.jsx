@@ -239,7 +239,9 @@ describe("Notifications tab", () => {
   it("shows each destination with what it hears about, and the recent messages", async () => {
     serve();
     renderPrefs("?tab=notifications");
-    await waitFor(() => expect(screen.getByLabelText("Name of iPhone")).toHaveValue("iPhone"));
+    await waitFor(() =>
+      expect(within(screen.getByTestId("notification-destinations")).getByText("iPhone")).toBeInTheDocument(),
+    );
 
     expect(screen.getByLabelText("Send to for iPhone")).toHaveValue("+15550100");
     expect(screen.getByLabelText("Failures for iPhone")).toHaveTextContent("2 of 4 failures");
