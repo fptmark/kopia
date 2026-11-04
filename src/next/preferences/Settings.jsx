@@ -22,6 +22,11 @@ export function Settings({ draft, change }) {
     verifyEachPercent,
     storageStallTimeoutSeconds,
     wakeGraceMinutes,
+    retryTierThresholdHours,
+    oftenRetryCount,
+    oftenRetryIntervalMinutes,
+    occasionalRetryCount,
+    occasionalRetryIntervalMinutes,
   } = draft;
 
   return (
@@ -148,6 +153,97 @@ export function Settings({ draft, change }) {
                     onChange={(n) => change({ storageStallTimeoutSeconds: n })}
                   />
                   <span>seconds</span>
+                </div>
+              )}
+            </Field>
+          </div>
+        </div>
+      </FormSection>
+      <FormSection title="Automatic retries">
+        <div className="row">
+          <div className="col-lg-8">
+            <Field
+              label={'A source is "often" scheduled if its own runs are this close together'}
+              help="Applies to Snapshot and Verify. A source whose own schedule is within this many hours gets a short retry burst on failure; a less frequent source gets a longer one, and also won't start a fresh automatic run sooner than this many hours after its last one completed."
+            >
+              {(id) => (
+                <div className="nx-row">
+                  <NumberField
+                    id={id}
+                    size="sm"
+                    min={1}
+                    max={24}
+                    style={{ width: "6rem" }}
+                    value={retryTierThresholdHours}
+                    onChange={(n) => change({ retryTierThresholdHours: n })}
+                  />
+                  <span>hours</span>
+                </div>
+              )}
+            </Field>
+          </div>
+        </div>
+        <div className="row">
+          <div className="col-lg-8">
+            <Field
+              label="Often: retry this many times, this far apart"
+              help="Every failed automatic attempt gets this burst first, regardless of tier."
+            >
+              {(id) => (
+                <div className="nx-row">
+                  <NumberField
+                    id={id}
+                    size="sm"
+                    min={0}
+                    max={20}
+                    style={{ width: "5rem" }}
+                    value={oftenRetryCount}
+                    onChange={(n) => change({ oftenRetryCount: n })}
+                  />
+                  <span>times,</span>
+                  <NumberField
+                    id={`${id}-interval`}
+                    size="sm"
+                    min={1}
+                    max={60}
+                    style={{ width: "5rem" }}
+                    value={oftenRetryIntervalMinutes}
+                    onChange={(n) => change({ oftenRetryIntervalMinutes: n })}
+                  />
+                  <span>minutes apart</span>
+                </div>
+              )}
+            </Field>
+          </div>
+        </div>
+        <div className="row">
+          <div className="col-lg-8">
+            <Field
+              label="Occasional: then escalate to this many more, this far apart"
+              help="Only for a source whose own schedule is less frequent than the threshold above, once the often burst is also exhausted."
+            >
+              {(id) => (
+                <div className="nx-row">
+                  <NumberField
+                    id={id}
+                    size="sm"
+                    min={0}
+                    max={20}
+                    style={{ width: "5rem" }}
+                    value={occasionalRetryCount}
+                    onChange={(n) => change({ occasionalRetryCount: n })}
+                  />
+                  <span>times,</span>
+                  <NumberField
+                    id={`${id}-interval`}
+                    size="sm"
+                    min={1}
+                    max={120}
+                    style={{ width: "5rem" }}
+                    value={occasionalRetryIntervalMinutes}
+                    onChange={(n) => change({ occasionalRetryIntervalMinutes: n })}
+                  />
+                  <span>minutes apart</span>
                 </div>
               )}
             </Field>

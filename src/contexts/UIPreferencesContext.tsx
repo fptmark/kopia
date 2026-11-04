@@ -15,6 +15,11 @@ const DEFAULT_PREFERENCES = {
   keepAwake: "never",
   storageStallTimeoutSeconds: 30,
   wakeGraceSeconds: 300,
+  retryTierThresholdHours: 1,
+  oftenRetryCount: 3,
+  oftenRetryIntervalMinutes: 1,
+  occasionalRetryCount: 5,
+  occasionalRetryIntervalMinutes: 5,
 } as SerializedUIPreferences;
 const PREFERENCES_URL = "/api/v1/ui-preferences";
 
@@ -37,6 +42,11 @@ export interface UIPreferences {
   get verifyEachPercent(): number;
   get storageStallTimeoutSeconds(): number;
   get wakeGraceSeconds(): number;
+  get retryTierThresholdHours(): number;
+  get oftenRetryCount(): number;
+  get oftenRetryIntervalMinutes(): number;
+  get occasionalRetryCount(): number;
+  get occasionalRetryIntervalMinutes(): number;
   setTheme: (theme: Theme) => void;
   setPageSize: (pageSize: number) => void;
   setByteStringBase: (bytesStringBase2: string) => void;
@@ -49,6 +59,13 @@ export interface UIPreferences {
   setVerifyEach: (mode: string, percent: number) => void;
   setStorageStallTimeoutSeconds: (seconds: number) => void;
   setWakeGraceSeconds: (seconds: number) => void;
+  setRetryTiers: (settings: {
+    retryTierThresholdHours: number;
+    oftenRetryCount: number;
+    oftenRetryIntervalMinutes: number;
+    occasionalRetryCount: number;
+    occasionalRetryIntervalMinutes: number;
+  }) => void;
 }
 
 interface SerializedUIPreferences {
@@ -65,6 +82,11 @@ interface SerializedUIPreferences {
   dateFormat?: string;
   storageStallTimeoutSeconds?: number;
   wakeGraceSeconds?: number;
+  retryTierThresholdHours?: number;
+  oftenRetryCount?: number;
+  oftenRetryIntervalMinutes?: number;
+  occasionalRetryCount?: number;
+  occasionalRetryIntervalMinutes?: number;
 }
 
 export interface UIPreferenceProviderProps {
@@ -166,6 +188,14 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
       return { ...oldPreferences, wakeGraceSeconds: seconds };
     });
 
+  const setRetryTiers = (settings: {
+    retryTierThresholdHours: number;
+    oftenRetryCount: number;
+    oftenRetryIntervalMinutes: number;
+    occasionalRetryCount: number;
+    occasionalRetryIntervalMinutes: number;
+  }) => setPreferences((oldPreferences) => ({ ...oldPreferences, ...settings }));
+
   const setFontSize = useCallback(
     (fontSize: FontSize) =>
       setPreferences((oldPreferences) => {
@@ -247,6 +277,7 @@ export function UIPreferenceProvider(props: UIPreferenceProviderProps) {
     setDateFormat,
     setStorageStallTimeoutSeconds,
     setWakeGraceSeconds,
+    setRetryTiers,
   } as UIPreferences;
 
   return <UIPreferencesContext value={providedValue}>{props.children}</UIPreferencesContext>;

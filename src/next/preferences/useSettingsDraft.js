@@ -14,6 +14,11 @@ function toDraft(prefs) {
     verifyEachPercent: prefs.verifyEachPercent || 10,
     storageStallTimeoutSeconds: prefs.storageStallTimeoutSeconds || 30,
     wakeGraceMinutes: Math.round((prefs.wakeGraceSeconds || 300) / 60),
+    retryTierThresholdHours: prefs.retryTierThresholdHours || 1,
+    oftenRetryCount: prefs.oftenRetryCount || 3,
+    oftenRetryIntervalMinutes: prefs.oftenRetryIntervalMinutes || 1,
+    occasionalRetryCount: prefs.occasionalRetryCount || 5,
+    occasionalRetryIntervalMinutes: prefs.occasionalRetryIntervalMinutes || 5,
   };
 }
 
@@ -76,6 +81,21 @@ export function useSettingsDraft() {
     }
     if (draft.wakeGraceMinutes !== persisted.wakeGraceMinutes) {
       prefs.setWakeGraceSeconds(draft.wakeGraceMinutes * 60);
+    }
+    if (
+      draft.retryTierThresholdHours !== persisted.retryTierThresholdHours ||
+      draft.oftenRetryCount !== persisted.oftenRetryCount ||
+      draft.oftenRetryIntervalMinutes !== persisted.oftenRetryIntervalMinutes ||
+      draft.occasionalRetryCount !== persisted.occasionalRetryCount ||
+      draft.occasionalRetryIntervalMinutes !== persisted.occasionalRetryIntervalMinutes
+    ) {
+      prefs.setRetryTiers({
+        retryTierThresholdHours: draft.retryTierThresholdHours,
+        oftenRetryCount: draft.oftenRetryCount,
+        oftenRetryIntervalMinutes: draft.oftenRetryIntervalMinutes,
+        occasionalRetryCount: draft.occasionalRetryCount,
+        occasionalRetryIntervalMinutes: draft.occasionalRetryIntervalMinutes,
+      });
     }
     touchedRef.current = false;
     return Promise.resolve();
