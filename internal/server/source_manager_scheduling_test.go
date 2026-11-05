@@ -14,6 +14,7 @@ import (
 	"github.com/kopia/kopia/internal/testlogging"
 	"github.com/kopia/kopia/internal/uitask"
 	"github.com/kopia/kopia/notification/notifydata"
+	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
 )
@@ -23,6 +24,10 @@ import (
 type noopSMServer struct{}
 
 func (noopSMServer) runSnapshotTask(context.Context, snapshot.SourceInfo, func(context.Context, uitask.Controller, *notifydata.ManifestWithError) error) error {
+	return nil
+}
+
+func (noopSMServer) runQueuedVerifyOnce(context.Context, repo.Repository, *snapshot.Manifest, string, float64) error {
 	return nil
 }
 
@@ -65,14 +70,15 @@ func saveTestSnapshot(t *testing.T, env *repotesting.Environment, si snapshot.So
 	require.NoError(t, err)
 }
 
-// TestRefreshStatusDoesNotRescheduleWhileAnUploadIsRunning simulates a periodic background refresh
-// landing while this source's own snapshot is already running -- the scenario behind a snapshot
-// that stalls for hours (the laptop asleep, a dropped connection): the stalled run's own manifest
-// isn't written yet, so a refresh that didn't know to leave it alone would see the previous,
-// now-stale completion, judge the source overdue, and arm another run before this one even
-// finishes -- which is exactly how one slow snapshot turned into a burst of back-to-back ones the
-// moment it, and the ones right after it, finally completed.
-func TestRefreshStatusDoesNotRescheduleWhileAnUploadIsRunning(t *testing.T) {
+// TestGetNextSnapshotTimeSuppressedWhileAnUploadIsRunning simulates a periodic background refresh landing
+// while this source's own snapshot is already running -- the scenario behind a snapshot that stalls for
+// hours (the laptop asleep, a dropped connection): the stalled run's own manifest isn't written yet, so a
+// refresh that didn't know to leave it alone would see the previous, now-stale completion, judge the source
+// overdue, and offer another run before this one even finishes -- which is exactly how one slow snapshot
+// turned into a burst of back-to-back ones the moment it, and the ones right after it, finally completed.
+// getNextSnapshotTime checks snapshotInProgress itself (not a cache refreshStatus chooses to skip updating),
+// so it stays suppressed (ok=false) for as long as the flag is set, regardless of how many refreshes land.
+func TestGetNextSnapshotTimeSuppressedWhileAnUploadIsRunning(t *testing.T) {
 	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
 	si := snapshot.SourceInfo{Host: "host", UserName: "user", Path: "/tmp/src"}
 
@@ -104,12 +110,11 @@ func TestRefreshStatusDoesNotRescheduleWhileAnUploadIsRunning(t *testing.T) {
 	// source's own upload is still running.
 	sm.refreshStatus(ctx)
 
-	stillBaseline, ok := sm.getNextSnapshotTime()
-	require.True(t, ok)
-	require.Equal(t, baseline, stillBaseline, "a refresh mid-upload must not touch the schedule")
+	_, ok = sm.getNextSnapshotTime()
+	require.False(t, ok, "a refresh mid-upload must not offer another snapshot")
 
 	// the upload finally finishes; its own manifest lands, and this is the refresh the upload
-	// itself triggers on completion -- this one must recompute, not be skipped.
+	// itself triggers on completion.
 	saveTestSnapshot(t, env, si, stillRunningAt)
 	sm.setSnapshotInProgress(false)
 	sm.refreshStatus(ctx)
@@ -120,11 +125,11 @@ func TestRefreshStatusDoesNotRescheduleWhileAnUploadIsRunning(t *testing.T) {
 		"the next snapshot must not start sooner than one full interval after this one started")
 }
 
-// TestRefreshStatusCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime simulates the machine being
-// asleep (or otherwise unable to run) straight through one or more scheduled times: when it finally
-// gets a chance to check, it must catch up with exactly one immediate snapshot, due right away --
-// not stay silent, and not try to replay every slot it slept through.
-func TestRefreshStatusCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime(t *testing.T) {
+// TestGetNextSnapshotTimeCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime simulates the machine being
+// asleep (or otherwise unable to run) straight through one or more scheduled times: when it finally gets a
+// chance to check, it must catch up with exactly one immediate snapshot, due right away -- not stay silent,
+// and not try to replay every slot it slept through.
+func TestGetNextSnapshotTimeCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime(t *testing.T) {
 	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
 	si := snapshot.SourceInfo{Host: "host", UserName: "user", Path: "/tmp/src"}
 
@@ -154,13 +159,12 @@ func TestRefreshStatusCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime(t *te
 	sm.setSnapshotInProgress(true)
 
 	// a second interruption while the catch-up snapshot itself is still running -- a periodic
-	// refresh must still leave the schedule alone rather than queuing yet another one behind it.
+	// refresh must still leave it suppressed rather than offering another one on top of it.
 	advanceClock(t, wokeAt.Add(20*time.Minute))
 	sm.refreshStatus(ctx)
 
-	midRun, ok := sm.getNextSnapshotTime()
-	require.True(t, ok)
-	require.True(t, wokeAt.Equal(midRun), "still just the one catch-up run queued, not another on top of it")
+	_, ok = sm.getNextSnapshotTime()
+	require.False(t, ok, "still just the one catch-up run in progress, not another offered on top of it")
 
 	// it finishes quickly; the one after it must wait a full interval, not fire again right away
 	// just because the schedule was behind a moment ago.
@@ -176,18 +180,15 @@ func TestRefreshStatusCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime(t *te
 		"resumes the normal hourly cadence instead of firing again immediately")
 }
 
-// TestFindClosestNextTimeIgnoresInstability is the regression test for a real double-snapshot: deferring
-// while the machine looks recently unstable used to be decided twice -- once generically by
-// deferredSchedulerItem (see TestDeferredSchedulerItemTreatsEveryTaskKindTheSame), and a second time inside
-// findClosestNextSnapshotTimeReadLocked/findClosestNextVerifyTimeReadLocked, which replaced the real due
-// time with a "recheck in a minute" placeholder and let refreshStatus() cache it into
-// nextSnapshotTime/nextVerifyTime. That cache is not re-examined until the next refreshStatus() call (on the
-// next completed attempt, or the next explicit schedule), which can be minutes away -- by then the cached
-// placeholder, stamped from whenever instability was first noticed, read as badly overdue, so the very next
-// scheduler tick fired an unscheduled extra snapshot (and verify) the moment deferredSchedulerItem stopped
-// deferring on its own. Deferral is deferredSchedulerItem's job alone now: these two functions must always
-// compute and cache the real due time, regardless of how unstable the machine looks when they happen to run.
-func TestFindClosestNextTimeIgnoresInstability(t *testing.T) {
+// TestFindClosestNextTimeIsNeverCached is the regression test for a real double-snapshot: the next-due
+// computation used to be cached into nextSnapshotTime/nextVerifyTime fields by refreshStatus(), read back
+// later by the scheduler. A value computed under one set of conditions (e.g. a transient "recheck shortly"
+// placeholder the old instability layer briefly produced) and read back minutes later, after conditions had
+// already changed, is exactly the shape of bug that produced an unscheduled extra snapshot and verify in the
+// field. There is no cache any more: getNextSnapshotTime/getNextVerifyTime recompute from current policy and
+// attempt state on every call, so calling them repeatedly with nothing else changing, or with refreshStatus
+// not re-run in between, must always agree with each other and with a direct call under the same state.
+func TestFindClosestNextTimeIsNeverCached(t *testing.T) {
 	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
 	si := snapshot.SourceInfo{Host: "host", UserName: "user", Path: "/tmp/src"}
 
@@ -200,20 +201,70 @@ func TestFindClosestNextTimeIgnoresInstability(t *testing.T) {
 	setClock(t, t0)
 	saveTestSnapshot(t, env, si, t0)
 
-	// a refresh lands right as a real attempt completes -- in the field, this is exactly when a brief wake
-	// instability is most likely to be in effect. lastVerifiedAt(t0, true) stands in for a verify that
-	// completed alongside the snapshot, so nextVerifyTime has a real baseline to advance from too.
 	sm := &sourceManager{src: si, rep: env.RepositoryWriter, server: lastVerifiedAtSMServer{lastVerify: t0}}
 	sm.refreshStatus(ctx)
 
 	nextSnapshot, ok := sm.getNextSnapshotTime()
 	require.True(t, ok)
-	require.True(t, t0.Add(time.Hour).Equal(nextSnapshot),
-		"must cache the real due time, never a transient near-future placeholder")
+	require.True(t, t0.Add(time.Hour).Equal(nextSnapshot))
 
 	nextVerify, ok := sm.getNextVerifyTime()
 	require.True(t, ok)
 	require.True(t, t0.Add(time.Hour).Equal(nextVerify))
+
+	// time passes with no refreshStatus() in between -- a cached value would be unaffected, but the real
+	// due time hasn't changed either (still a clean hour out), so a fresh call must agree.
+	advanceClock(t, t0.Add(10*time.Minute))
+
+	nextSnapshotAgain, ok := sm.getNextSnapshotTime()
+	require.True(t, ok)
+	require.True(t, nextSnapshot.Equal(nextSnapshotAgain), "recomputing with nothing relevant changed must agree with the first answer")
+}
+
+// TestFindClosestNextTimeRespectsPauseAndInProgress covers the two conditions that must suppress scheduling
+// entirely (ok=false), now checked directly inside the next-due computation itself rather than emerging from
+// refreshStatus() choosing when to skip recomputing a cache.
+func TestFindClosestNextTimeRespectsPauseAndInProgress(t *testing.T) {
+	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
+	si := snapshot.SourceInfo{Host: "host", UserName: "user", Path: "/tmp/src"}
+
+	require.NoError(t, policy.SetPolicy(ctx, env.RepositoryWriter, policy.GlobalPolicySourceInfo, &policy.Policy{
+		SchedulingPolicy:       policy.SchedulingPolicy{IntervalSeconds: 3600},
+		VerifySchedulingPolicy: policy.VerifySchedulingPolicy{SchedulingPolicy: policy.SchedulingPolicy{IntervalSeconds: 3600}},
+	}))
+
+	t0 := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
+	setClock(t, t0)
+	saveTestSnapshot(t, env, si, t0)
+
+	sm := &sourceManager{src: si, rep: env.RepositoryWriter, server: lastVerifiedAtSMServer{lastVerify: t0}}
+	sm.refreshStatus(ctx)
+
+	_, ok := sm.getNextSnapshotTime()
+	require.True(t, ok, "baseline: due an hour out, nothing suppressing it")
+
+	sm.sourceMutex.Lock()
+	sm.paused = true
+	sm.sourceMutex.Unlock()
+
+	_, ok = sm.getNextSnapshotTime()
+	require.False(t, ok, "paused suppresses snapshot scheduling")
+
+	_, ok = sm.getNextVerifyTime()
+	require.False(t, ok, "paused suppresses verify scheduling too")
+
+	sm.sourceMutex.Lock()
+	sm.paused = false
+	sm.sourceMutex.Unlock()
+
+	sm.setSnapshotInProgress(true)
+	_, ok = sm.getNextSnapshotTime()
+	require.False(t, ok, "an upload already running suppresses another snapshot")
+
+	sm.setSnapshotInProgress(false)
+	sm.setVerifyInProgress(true)
+	_, ok = sm.getNextVerifyTime()
+	require.False(t, ok, "a verify already running suppresses another verify")
 }
 
 // lastVerifiedAtSMServer is noopSMServer reporting a specific last-verification time, for tests that need

@@ -101,10 +101,10 @@ type Server struct {
 	// +checklocks:serverMutex
 	maint *srvMaintenance
 
-	// verify is read lock-free (currentVerifier/systemRecentlyUnstable are called from deep inside
-	// code that already holds serverMutex as a writer, e.g. syncSourcesLocked via sourceManager
-	// scheduling) -- an RLock there would deadlock against serverMutex's own non-reentrant Lock.
-	// Writes still happen only inside SetRepository, which already serializes them under the write lock.
+	// verify is read lock-free (currentVerifier is called from deep inside code that already holds
+	// serverMutex as a writer, e.g. syncSourcesLocked via sourceManager scheduling) -- an RLock there
+	// would deadlock against serverMutex's own non-reentrant Lock. Writes still happen only inside
+	// SetRepository, which already serializes them under the write lock.
 	verify atomic.Pointer[verifier]
 
 	// snapVerifs tracks the read-back verifications of single snapshots that are queued or running.
@@ -1325,24 +1325,6 @@ func (s *Server) snapshotAllSourceManagers() map[snapshot.SourceInfo]*sourceMana
 	return maps.Clone(s.sourceManagers)
 }
 
-// deferredSchedulerItem builds a scheduler.Item for a due time and a trigger, deferring identically
-// regardless of what kind of background work it is (snapshot, verify, maintenance -- the caller never
-// branches on that): while the system is recently unstable, the real due time and trigger are replaced with
-// a near-future no-op recheck, so nothing that looks "due" during that window ever actually runs, and the
-// list gets re-evaluated again shortly to notice once stability returns. One site decides this for every
-// task type, rather than each caller re-implementing (or forgetting) the same guard.
-func (s *Server) deferredSchedulerItem(description string, dueTime time.Time, trigger func()) scheduler.Item {
-	if s.systemRecentlyUnstable() {
-		return scheduler.Item{
-			Description: description + " (deferred: recently unstable)",
-			NextTime:    clock.Now().Add(instabilityRecheckInterval),
-			Trigger:     func() {},
-		}
-	}
-
-	return scheduler.Item{Description: description, NextTime: dueTime, Trigger: trigger}
-}
-
 func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []scheduler.Item {
 	s.serverMutex.RLock()
 	defer s.serverMutex.RUnlock()
@@ -1364,7 +1346,7 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 		// If we have a direct repository, add an item to run maintenance.
 		// If we're the owner then nextMaintenanceTime will be zero.
 		if nextMaintenanceTime := s.maint.nextMaintenanceTime(); !nextMaintenanceTime.IsZero() {
-			result = append(result, s.deferredSchedulerItem("maintenance", nextMaintenanceTime, s.maint.trigger))
+			result = append(result, scheduler.Item{Description: "maintenance", NextTime: nextMaintenanceTime, Trigger: s.maint.trigger})
 		}
 	}
 
@@ -1375,13 +1357,13 @@ func (s *Server) getSchedulerItems(ctx context.Context, now time.Time) []schedul
 		}
 
 		if nst, ok := sm.getNextSnapshotTime(); ok {
-			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("snapshot %q", sm.src.Path), nst, sm.scheduleAutomaticSnapshot))
+			result = append(result, scheduler.Item{Description: fmt.Sprintf("snapshot %q", sm.src.Path), NextTime: nst, Trigger: sm.scheduleAutomaticSnapshot})
 		} else {
 			userLog(ctx).Debugf("no snapshot scheduled for %v %v %v", sm.src, nst, now)
 		}
 
 		if nvt, ok := sm.getNextVerifyTime(); ok {
-			result = append(result, s.deferredSchedulerItem(fmt.Sprintf("verify %q", sm.src.Path), nvt, func() { s.triggerScheduledVerify(ctx, sm) }))
+			result = append(result, scheduler.Item{Description: fmt.Sprintf("verify %q", sm.src.Path), NextTime: nvt, Trigger: sm.scheduleAutomaticVerify})
 		}
 	}
 
@@ -1406,91 +1388,6 @@ func (s *Server) lastVerificationTime(src snapshot.SourceInfo, mode string) (tim
 	}
 
 	return t, ok
-}
-
-// systemRecentlyUnstable reports whether the machine appears to have just woken from sleep (see
-// verifier.recentlyUnstable). Scheduling consults this before starting new background work; false (not
-// just no verifier yet) is the safe default so scheduling is never stuck deferring forever.
-func (s *Server) systemRecentlyUnstable() bool {
-	v := s.currentVerifier()
-	if v == nil {
-		return false
-	}
-
-	return v.recentlyUnstable(clock.Now())
-}
-
-// cancelBackgroundTasksForInstability cancels every currently running Snapshot, Verify and Maintenance
-// task. Called the moment the verifier notices a gap consistent with the machine having just woken from
-// sleep, so none of them keeps limping through reconnect after reconnect for hours; each is free to start
-// over, cleanly, once the connection actually settles.
-func (s *Server) cancelBackgroundTasksForInstability(ctx context.Context) {
-	for _, t := range s.taskmgr.ListTasks() {
-		if t.Status != uitask.StatusRunning {
-			continue
-		}
-
-		switch t.Kind {
-		case "Snapshot", "Verify", "Maintenance":
-			userLog(ctx).Infof("canceling %v task %v: the machine appears to have just woken from sleep", t.Kind, t.TaskID)
-			s.taskmgr.CancelTaskWithReason(t.TaskID, "the machine appears to have just woken from sleep")
-		}
-	}
-}
-
-// triggerScheduledVerify starts a source's periodic verify, against its latest complete snapshot, in the
-// mode and percent its own policy asks for. It returns at once: the attempt (and, on failure, the
-// retry-tier burst from docs/retry-tiers.md) runs in its own goroutine, same as a manual Verify click
-// starting a verify and returning immediately -- the scheduler loop that calls this must never block.
-func (s *Server) triggerScheduledVerify(ctx context.Context, sm *sourceManager) {
-	m, mode, percent, ok := sm.verifyTriggerArgs()
-	if !ok {
-		return
-	}
-
-	s.serverMutex.RLock()
-	rep := s.rep
-	s.serverMutex.RUnlock()
-
-	if rep == nil {
-		return
-	}
-
-	go s.runScheduledVerifyWithRetries(context.WithoutCancel(ctx), rep, sm, m, mode, percent)
-}
-
-// runScheduledVerifyWithRetries runs one scheduled verify cycle: the first attempt, then -- on failure --
-// the retry-tier burst, classified once at the start of the cycle. See docs/retry-tiers.md.
-func (s *Server) runScheduledVerifyWithRetries(ctx context.Context, rep repo.Repository, sm *sourceManager, m *snapshot.Manifest, mode string, percent float64) {
-	cycleStart := clock.Now()
-
-	rt := s.retryTierSettings()
-
-	var delays []time.Duration
-
-	often, ok := sm.classifyVerifyRetryTier(rt, cycleStart)
-	if ok {
-		delays = rt.retryDelays(often)
-	}
-
-	for attempt := 0; ; attempt++ {
-		sm.markVerifyAttempted()
-
-		if s.runQueuedVerifyOnce(ctx, rep, m, mode, percent) == nil {
-			break
-		}
-
-		if attempt >= len(delays) {
-			break // out of retries: let the natural schedule, now advanced past this attempt, take over
-		}
-
-		if !sleepInterruptibly(ctx, delays[attempt]) {
-			return // shutting down
-		}
-	}
-
-	sm.refreshStatus(ctx)
-	s.refreshScheduler("verify finished")
 }
 
 // New creates a Server.

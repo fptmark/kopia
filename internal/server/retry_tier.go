@@ -164,3 +164,59 @@ func (s *Server) retryTierSettings() retryTierSettings {
 
 	return retryTierSettingsFromPreferences(prefs)
 }
+
+// retryState is a retry-tier cycle in progress for one task kind (Snapshot or Verify) on one source.
+// attemptsUsed==0 is the zero value and means no cycle is active -- the natural schedule applies. This is
+// primary state (nobody else computes it; it is just a record of attempts as they happen), not a cache of
+// anything derived, so unlike a cached next-due-time it cannot go stale: it is only ever read by the same
+// due-time computation that advanceRetryState keeps in step with. See docs/retry-tiers.md.
+type retryState struct {
+	often        bool
+	attemptsUsed int
+}
+
+// advanceRetryState is the one place a retry-tier cycle changes, for both Snapshot and Verify: called once
+// after every attempt, scheduled or manual. A success (however triggered) always clears the cycle -- there
+// is nothing left to retry. A scheduled failure starts a fresh cycle (classifying its tier via
+// periodEstimate) or continues an active one, consuming one more of its budget; once the budget is used up
+// it gives up and clears the cycle, letting the natural schedule (with its occasional floor) pick things up.
+// A manual failure never starts, continues, or clears a cycle -- manual attempts never retry, by design, but
+// don't cancel an automatic retry that's already in progress either.
+func advanceRetryState(rs retryState, rt retryTierSettings, failed, scheduled bool, periodEstimate func() (time.Duration, bool)) retryState {
+	if !failed {
+		return retryState{}
+	}
+
+	if !scheduled {
+		return rs
+	}
+
+	if rs.attemptsUsed == 0 {
+		period, ok := periodEstimate()
+		rs.often = !ok || rt.isOften(period)
+	}
+
+	rs.attemptsUsed++
+
+	if rs.attemptsUsed > len(rt.retryDelays(rs.often)) {
+		return retryState{}
+	}
+
+	return rs
+}
+
+// retryDueTime reports the due time an active retry-tier cycle implies -- lastAttempted plus the tier's next
+// delay -- or ok=false when no cycle is active (or it's gone stale, e.g. the retry-tier preferences changed
+// mid-cycle and shortened the burst past attemptsUsed) and the natural schedule applies instead.
+func retryDueTime(rs retryState, rt retryTierSettings, lastAttempted time.Time) (time.Time, bool) {
+	if rs.attemptsUsed == 0 {
+		return time.Time{}, false
+	}
+
+	delays := rt.retryDelays(rs.often)
+	if rs.attemptsUsed > len(delays) {
+		return time.Time{}, false
+	}
+
+	return lastAttempted.Add(delays[rs.attemptsUsed-1]), true
+}

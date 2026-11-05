@@ -94,3 +94,87 @@ func TestFloor(t *testing.T) {
 		require.Equal(t, now, rt.floor(now, time.Time{}, false, false))
 	})
 }
+
+func TestAdvanceRetryState(t *testing.T) {
+	rt := retryTierSettingsFromPreferences(serverapi.UIPreferences{
+		OftenRetryCount: 3, OftenRetryIntervalMinutes: 1,
+		OccasionalRetryCount: 5, OccasionalRetryIntervalMinutes: 5,
+	})
+
+	oftenEstimate := func() (time.Duration, bool) { return 30 * time.Minute, true }
+	occasionalEstimate := func() (time.Duration, bool) { return 4 * time.Hour, true }
+
+	t.Run("success always clears, scheduled or not", func(t *testing.T) {
+		active := retryState{often: true, attemptsUsed: 2}
+		require.Equal(t, retryState{}, advanceRetryState(active, rt, false, true, oftenEstimate))
+		require.Equal(t, retryState{}, advanceRetryState(active, rt, false, false, oftenEstimate))
+	})
+
+	t.Run("manual failure never starts or continues a cycle", func(t *testing.T) {
+		require.Equal(t, retryState{}, advanceRetryState(retryState{}, rt, true, false, oftenEstimate))
+
+		active := retryState{often: true, attemptsUsed: 1}
+		require.Equal(t, active, advanceRetryState(active, rt, true, false, oftenEstimate), "a manual failure leaves an existing automatic cycle untouched")
+	})
+
+	t.Run("scheduled failure starts a fresh cycle, classifying its tier", func(t *testing.T) {
+		got := advanceRetryState(retryState{}, rt, true, true, oftenEstimate)
+		require.Equal(t, retryState{often: true, attemptsUsed: 1}, got)
+
+		got = advanceRetryState(retryState{}, rt, true, true, occasionalEstimate)
+		require.Equal(t, retryState{often: false, attemptsUsed: 1}, got)
+	})
+
+	t.Run("scheduled failure continues an active cycle without reclassifying", func(t *testing.T) {
+		active := retryState{often: false, attemptsUsed: 3}
+		// occasionalEstimate would classify fresh as "often" if this were consulted -- it must not be,
+		// since the cycle is already active.
+		got := advanceRetryState(active, rt, true, true, oftenEstimate)
+		require.Equal(t, retryState{often: false, attemptsUsed: 4}, got)
+	})
+
+	t.Run("scheduled failure exhausting the budget gives up", func(t *testing.T) {
+		// often budget is 3; one more failure at attemptsUsed==3 exhausts it.
+		got := advanceRetryState(retryState{often: true, attemptsUsed: 3}, rt, true, true, oftenEstimate)
+		require.Equal(t, retryState{}, got)
+
+		// occasional budget is 3+5=8.
+		got = advanceRetryState(retryState{often: false, attemptsUsed: 8}, rt, true, true, occasionalEstimate)
+		require.Equal(t, retryState{}, got)
+	})
+
+	t.Run("no schedule to estimate from is conservative: often, no floor later", func(t *testing.T) {
+		noEstimate := func() (time.Duration, bool) { return 0, false }
+		got := advanceRetryState(retryState{}, rt, true, true, noEstimate)
+		require.Equal(t, retryState{often: true, attemptsUsed: 1}, got)
+	})
+}
+
+func TestRetryDueTime(t *testing.T) {
+	rt := retryTierSettingsFromPreferences(serverapi.UIPreferences{
+		OftenRetryCount: 3, OftenRetryIntervalMinutes: 1,
+		OccasionalRetryCount: 5, OccasionalRetryIntervalMinutes: 5,
+	})
+	lastAttempted := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
+
+	t.Run("no active cycle: natural schedule applies", func(t *testing.T) {
+		_, ok := retryDueTime(retryState{}, rt, lastAttempted)
+		require.False(t, ok)
+	})
+
+	t.Run("active cycle: lastAttempted plus the delay at attemptsUsed-1", func(t *testing.T) {
+		got, ok := retryDueTime(retryState{often: true, attemptsUsed: 1}, rt, lastAttempted)
+		require.True(t, ok)
+		require.True(t, lastAttempted.Add(time.Minute).Equal(got))
+
+		got, ok = retryDueTime(retryState{often: false, attemptsUsed: 5}, rt, lastAttempted)
+		require.True(t, ok)
+		require.True(t, lastAttempted.Add(5*time.Minute).Equal(got), "5th slot is the 2nd occasional delay (index 4)")
+	})
+
+	t.Run("stale attemptsUsed past the current budget falls back to the natural schedule", func(t *testing.T) {
+		// e.g. the retry-tier preferences changed mid-cycle and shortened the burst.
+		_, ok := retryDueTime(retryState{often: true, attemptsUsed: 99}, rt, lastAttempted)
+		require.False(t, ok)
+	})
+}

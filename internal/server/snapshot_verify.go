@@ -66,8 +66,14 @@ type snapVerifyOptions struct {
 	ExpectedFiles int64
 	// BlobMap lists the pack blobs in storage, so each content can be checked to be in a pack that is there
 	// and long enough. Nil skips that check.
-	BlobMap  map[blob.ID]blob.Metadata
-	Progress func(snapVerifyStats)
+	BlobMap map[blob.ID]blob.Metadata
+	// BlobReader re-checks a single pack blob live when a BlobMap lookup misses, before reporting it as
+	// really missing. BlobMap is a one-time snapshot taken before a run that can take a long time; Maintenance
+	// can legitimately repack content into a new blob while the run is still in progress, which a miss
+	// against that stale snapshot alone cannot tell apart from the blob actually being gone. Nil skips the
+	// live re-check, so a BlobMap miss is reported as missing immediately.
+	BlobReader blob.Reader
+	Progress   func(snapVerifyStats)
 }
 
 // snapVerify reads a snapshot back. Unlike snapshotfs.Verifier it keeps the path of every failure and never
@@ -136,8 +142,9 @@ func (v *snapVerify) result() snapVerifyResult {
 
 // fail records a read that didn't succeed. A read that failed only because the task was already being
 // canceled, or because the connection kept failing until the retry budget gave up, is not evidence that the
-// stored data is bad -- it's recorded separately, as Interrupted, so it never shows up as a "corrupt" result
-// and the caller can requeue it once the connection looks stable again (see requeueInterruptedVerify).
+// stored data is bad -- it's recorded separately, as Interrupted, so it never shows up as a "corrupt" result.
+// The caller (runSnapshotVerify) turns any Interrupted count into a plain task failure, so the retry-tier
+// mechanism (docs/retry-tiers.md) retries it like any other failure once the connection looks stable again.
 func (v *snapVerify) fail(ctx context.Context, path string, err error) {
 	interrupted := ctx.Err() != nil || retry.IsExhausted(err)
 
@@ -280,7 +287,7 @@ func (v *snapVerify) checkPacks(ctx context.Context, ids []content.ID) error {
 			return errors.Wrapf(err, "content %v is not in the index", id)
 		}
 
-		if err := checkPack(v.opts.BlobMap, ci); err != nil {
+		if err := v.checkPack(ctx, ci); err != nil {
 			return err
 		}
 	}
@@ -288,8 +295,15 @@ func (v *snapVerify) checkPacks(ctx context.Context, ids []content.ID) error {
 	return nil
 }
 
-func checkPack(blobs map[blob.ID]blob.Metadata, ci content.Info) error {
-	bm, found := blobs[ci.PackBlobID]
+// checkPack confirms ci's content lies inside a pack blob that is in storage, long enough to hold it. A
+// miss against BlobMap -- a one-time snapshot taken before this run started -- is re-checked live via
+// BlobReader before being reported as a real failure: see BlobReader's doc comment.
+func (v *snapVerify) checkPack(ctx context.Context, ci content.Info) error {
+	bm, found := v.opts.BlobMap[ci.PackBlobID]
+	if !found {
+		bm, found = v.liveCheckPack(ctx, ci.PackBlobID)
+	}
+
 	if !found {
 		return errors.Errorf("pack blob %v is missing from storage", ci.PackBlobID)
 	}
@@ -299,6 +313,19 @@ func checkPack(blobs map[blob.ID]blob.Metadata, ci content.Info) error {
 	}
 
 	return nil
+}
+
+func (v *snapVerify) liveCheckPack(ctx context.Context, id blob.ID) (blob.Metadata, bool) {
+	if v.opts.BlobReader == nil {
+		return blob.Metadata{}, false
+	}
+
+	bm, err := v.opts.BlobReader.GetMetadata(ctx, id)
+	if err != nil {
+		return blob.Metadata{}, false
+	}
+
+	return bm, true
 }
 
 // verifyNewContents reads back every piece of stored data written between from and to: what a snapshot added
@@ -320,12 +347,13 @@ func verifyNewContents(ctx context.Context, dr repo.DirectRepository, from, to t
 		return snapVerifyResult{}, errors.Wrap(err, "unable to list the stored data")
 	}
 
-	v := &snapVerify{opts: snapVerifyOptions{Progress: progress}}
-	v.total.Store(int64(len(infos)))
-
-	// one lookup per pack blob
+	// one lookup per pack blob, live (not a one-time snapshot of the whole listing), so checkPack's own
+	// live-recheck fallback has nothing to add here and BlobReader is left unset.
 	packs := map[blob.ID]blob.Metadata{}
 	bad := map[blob.ID]bool{}
+
+	v := &snapVerify{opts: snapVerifyOptions{Progress: progress, BlobMap: packs}}
+	v.total.Store(int64(len(infos)))
 
 	for _, ci := range infos {
 		if _, done := packs[ci.PackBlobID]; done || bad[ci.PackBlobID] {
@@ -357,7 +385,7 @@ func verifyNewContents(ctx context.Context, dr repo.DirectRepository, from, to t
 
 				v.files.Add(1)
 
-				if err := checkPack(packs, ci); err != nil {
+				if err := v.checkPack(ctx, ci); err != nil {
 					v.fail(ctx, "content "+ci.ContentID.String(), err)
 					v.report()
 

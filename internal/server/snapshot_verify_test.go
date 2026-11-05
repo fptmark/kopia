@@ -122,6 +122,29 @@ func TestVerifyTreesReportsEveryLostFileWithItsPath(t *testing.T) {
 	require.Equal(t, "/data/docs/f19.txt", paths[manyFiles-1])
 }
 
+// TestVerifyTreesChecksPackLiveWhenBlobMapMisses covers the fix for a real, confirmed false-positive:
+// BlobMap is a one-time snapshot taken before a run that can take a long time, and Maintenance can
+// legitimately repack content into a new blob while the run is still in progress -- which a miss against
+// that stale snapshot alone cannot tell apart from the blob actually being gone. BlobReader re-checks live
+// before reporting a real failure; without it (nil), a miss is still reported immediately, same as before.
+func TestVerifyTreesChecksPackLiveWhenBlobMapMisses(t *testing.T) {
+	ctx, env, m := manyFilesEnv(t)
+
+	bm := blobMapOf(ctx, t, env)
+
+	// simulate BlobMap having gone stale: a real pack blob this snapshot's content actually lives in is
+	// still really there, but missing from this one-time snapshot of the listing, as if it had been written
+	// (by a concurrent Maintenance repack) after BlobMap was captured.
+	delete(bm, packIDs(ctx, t, env)[0])
+
+	withoutLiveRecheck := verifyTrees(ctx, env.Repository, rootOf(t, env, m), snapVerifyOptions{Percent: 100, BlobMap: bm})
+	require.Positive(t, withoutLiveRecheck.Errors, "a BlobMap miss with no BlobReader reports missing immediately, same as before this fix")
+	require.Contains(t, withoutLiveRecheck.Failures[0].Error, "missing from storage")
+
+	withLiveRecheck := verifyTrees(ctx, env.Repository, rootOf(t, env, m), snapVerifyOptions{Percent: 100, BlobMap: bm, BlobReader: env.RootStorage()})
+	require.Zero(t, withLiveRecheck.Errors, "%v", withLiveRecheck.Failures)
+}
+
 func TestVerifyTreesFindsDataThatCannotBeReadBack(t *testing.T) {
 	ctx, env, m := manyFilesEnv(t)
 

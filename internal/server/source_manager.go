@@ -24,18 +24,32 @@ const (
 	refreshTimeout = 30 * time.Second // max amount of time to refresh a single source
 )
 
-// sleepInterruptibly is clock.SleepInterruptibly, overridable in tests so a retry-tier burst's delays
-// (minutes apart, by design) don't make a test actually wait that long.
-var sleepInterruptibly = clock.SleepInterruptibly
-
 type sourceManagerServerInterface interface {
 	runSnapshotTask(ctx context.Context, src snapshot.SourceInfo, inner func(ctx context.Context, ctrl uitask.Controller, result *notifydata.ManifestWithError) error) error
+	runQueuedVerifyOnce(ctx context.Context, rep repo.Repository, m *snapshot.Manifest, mode string, percent float64) error
 	refreshScheduler(reason string)
 	// lastVerificationTime returns when src was last verified in mode's bucket ("new" is its own bucket,
 	// sample and full share one), so a periodic verify schedule knows whether it's due.
 	lastVerificationTime(src snapshot.SourceInfo, mode string) (time.Time, bool)
 	// retryTierSettings resolves the current often/occasional retry-tier preferences. See docs/retry-tiers.md.
 	retryTierSettings() retryTierSettings
+}
+
+// requestKind is which of a source's two scheduled background jobs a scheduledRequest is for.
+type requestKind int
+
+const (
+	requestSnapshot requestKind = iota
+	requestVerify
+)
+
+// scheduledRequest is the one shape every background attempt for a source goes through, whatever triggered
+// it: the scheduler hitting a due time (automatic) or an explicit user action (manual, scheduled==false,
+// never auto-retried). See runLocal and runAttempt -- there is exactly one place per source that actually
+// executes one of these.
+type scheduledRequest struct {
+	kind      requestKind
+	scheduled bool
 }
 
 // sourceManager manages the state machine of each source
@@ -54,10 +68,10 @@ type sourceManager struct {
 	src    snapshot.SourceInfo
 	rep    repo.Repository
 	closed chan struct{}
-	// snapshotRequests carries whether the request came from the automatic scheduler (true, eligible for
-	// the retry-tier burst on failure) or a manual/explicit trigger (false, never auto-retried).
-	snapshotRequests chan bool
-	wg               sync.WaitGroup
+	// requests carries every scheduled or manual Snapshot/Verify request for this source; runLocal is the
+	// only reader, so at most one ever executes at a time.
+	requests chan scheduledRequest
+	wg       sync.WaitGroup
 
 	sourceMutex sync.RWMutex
 	// +checklocks:sourceMutex
@@ -68,10 +82,6 @@ type sourceManager struct {
 	verifyPol policy.VerifySchedulingPolicy
 	// +checklocks:sourceMutex
 	state string
-	// +checklocks:sourceMutex
-	nextSnapshotTime *time.Time
-	// +checklocks:sourceMutex
-	nextVerifyTime *time.Time
 	// +checklocks:sourceMutex
 	lastSnapshot *snapshot.Manifest
 	// +checklocks:sourceMutex
@@ -85,19 +95,27 @@ type sourceManager struct {
 	// +checklocks:sourceMutex
 	lastAttemptedSnapshotTime fs.UTCTimestamp
 	// +checklocks:sourceMutex
-	// lastAttemptedVerifyTime is the Snapshot-side lastAttemptedSnapshotTime's counterpart for the
-	// scheduled Verify: set before every automatic verify attempt (success or failure), so the schedule
-	// computation always advances past "now" after an attempt instead of treating a stale last-success as
-	// still overdue indefinitely. See docs/retry-tiers.md.
+	// lastAttemptedVerifyTime is the Snapshot-side lastAttemptedSnapshotTime's counterpart for Verify: set
+	// before every scheduled verify attempt (success or failure), so the schedule computation always
+	// advances past "now" after an attempt instead of treating a stale last-success as still overdue
+	// indefinitely. See docs/retry-tiers.md.
 	lastAttemptedVerifyTime time.Time
+	// +checklocks:sourceMutex
+	// snapshotRetry and verifyRetry are each kind's retry-tier cycle, if one is in progress. See
+	// docs/retry-tiers.md and advanceRetryState/retryDueTime (retry_tier.go).
+	snapshotRetry retryState
+	// +checklocks:sourceMutex
+	verifyRetry retryState
 	// +checklocks:sourceMutex
 	isReadOnly bool
 	// +checklocks:sourceMutex
-	// snapshotInProgress is set for the duration of an actual upload, so a refreshStatus() landing in
-	// that window (the periodic one, not the one this very upload triggers when it finishes) leaves
-	// the schedule alone instead of judging this source overdue off a manifest that predates the
-	// upload in flight, and arming another run before this one even finishes.
+	// snapshotInProgress and verifyInProgress are set for the duration of an actual attempt, so the next-due
+	// computation -- which is never cached, just computed fresh on every ask -- reports "not due" instead of
+	// judging this source overdue off state that predates the attempt in flight, and arming another one
+	// before this one even finishes.
 	snapshotInProgress bool
+	// +checklocks:sourceMutex
+	verifyInProgress bool
 
 	progress *upload.CountingUploadProgress
 }
@@ -109,7 +127,7 @@ func (s *sourceManager) Status() *serverapi.SourceStatus {
 	st := &serverapi.SourceStatus{
 		Source:           s.src,
 		Status:           s.state,
-		NextSnapshotTime: s.nextSnapshotTime,
+		NextSnapshotTime: s.findClosestNextSnapshotTimeReadLocked(),
 		SchedulingPolicy: s.pol,
 		LastSnapshot:     s.lastSnapshot,
 	}
@@ -139,6 +157,13 @@ func (s *sourceManager) setSnapshotInProgress(v bool) {
 	s.snapshotInProgress = v
 }
 
+func (s *sourceManager) setVerifyInProgress(v bool) {
+	s.sourceMutex.Lock()
+	defer s.sourceMutex.Unlock()
+
+	s.verifyInProgress = v
+}
+
 func (s *sourceManager) isPaused() bool {
 	s.sourceMutex.RLock()
 	defer s.sourceMutex.RUnlock()
@@ -146,46 +171,32 @@ func (s *sourceManager) isPaused() bool {
 	return s.paused
 }
 
+// getNextSnapshotTime computes this source's next snapshot due time fresh, from current policy and attempt
+// state -- never cached, so there is nothing that can go stale between calls. ok is false when nothing is
+// currently due to be scheduled (paused, an upload already in flight, or no real schedule).
 func (s *sourceManager) getNextSnapshotTime() (time.Time, bool) {
 	s.sourceMutex.RLock()
 	defer s.sourceMutex.RUnlock()
 
-	if s.nextSnapshotTime == nil {
+	t := s.findClosestNextSnapshotTimeReadLocked()
+	if t == nil {
 		return time.Time{}, false
 	}
 
-	return *s.nextSnapshotTime, true
+	return *t, true
 }
 
+// getNextVerifyTime is getNextSnapshotTime's Verify counterpart.
 func (s *sourceManager) getNextVerifyTime() (time.Time, bool) {
 	s.sourceMutex.RLock()
 	defer s.sourceMutex.RUnlock()
 
-	if s.nextVerifyTime == nil {
+	t := s.findClosestNextVerifyTimeReadLocked()
+	if t == nil {
 		return time.Time{}, false
 	}
 
-	return *s.nextVerifyTime, true
-}
-
-// verifyTriggerArgs is what a scheduled verify of this source needs to run: its latest complete snapshot and
-// the mode/percent its policy asks for. ok is false when there is no complete snapshot to verify yet. It also
-// clears nextVerifyTime, the same way scheduleSnapshotNow clears nextSnapshotTime: the actual verify runs in
-// its own goroutine and only writes its result (and so only moves the source's last-verify time) once it
-// finishes, so without this the scheduler would see the same due time on its next pass and fire again
-// immediately, in a tight loop, for as long as the verify takes to complete. refreshStatus() recomputes a
-// real next time once it runs again.
-func (s *sourceManager) verifyTriggerArgs() (m *snapshot.Manifest, mode string, percent float64, ok bool) {
-	s.sourceMutex.Lock()
-	defer s.sourceMutex.Unlock()
-
-	s.nextVerifyTime = nil
-
-	if s.lastCompleteSnapshot == nil {
-		return nil, "", 0, false
-	}
-
-	return s.lastCompleteSnapshot, s.verifyPol.EffectiveMode(), s.verifyPol.EffectivePercent(), true
+	return *t, true
 }
 
 func (s *sourceManager) setCurrentTaskID(taskID string) {
@@ -193,13 +204,6 @@ func (s *sourceManager) setCurrentTaskID(taskID string) {
 	defer s.sourceMutex.Unlock()
 
 	s.currentTask = taskID
-}
-
-func (s *sourceManager) setNextSnapshotTime(t time.Time) {
-	s.sourceMutex.Lock()
-	defer s.sourceMutex.Unlock()
-
-	s.nextSnapshotTime = &t
 }
 
 func (s *sourceManager) currentUploader() *upload.Uploader {
@@ -239,6 +243,8 @@ func (s *sourceManager) run(ctx context.Context, isLocal bool) {
 	}
 }
 
+// runLocal is the one place a source's background work actually executes: one request at a time, off the
+// requests channel, for as long as the source manager is running.
 func (s *sourceManager) runLocal(ctx context.Context) {
 	if s.isPaused() {
 		s.setStatus("PAUSED")
@@ -251,82 +257,70 @@ func (s *sourceManager) runLocal(ctx context.Context) {
 		case <-s.closed:
 			return
 
-		case scheduled := <-s.snapshotRequests:
+		case req := <-s.requests:
 			if s.isPaused() {
 				s.setStatus("PAUSED")
-
 				continue
 			}
 
 			s.setStatus("PENDING")
 
-			s.attemptSnapshotWithRetries(ctx, scheduled)
+			switch req.kind {
+			case requestSnapshot:
+				s.runScheduledSnapshot(ctx, req.scheduled)
+			case requestVerify:
+				s.runScheduledVerify(ctx, req.scheduled)
+			}
 
 			s.setStatus("IDLE")
 		}
 	}
 }
 
-// attemptSnapshotWithRetries runs one snapshot cycle: the first attempt, then -- only for an automatic
-// (scheduled) trigger that fails -- the retry-tier burst from docs/retry-tiers.md, classified once at the
-// start of the cycle. A manual trigger never retries: it just reports its own failure.
-func (s *sourceManager) attemptSnapshotWithRetries(ctx context.Context, scheduled bool) {
-	cycleStart := clock.Now()
-
-	var delays []time.Duration
-	if scheduled {
-		rt := s.server.retryTierSettings()
-		often, ok := s.classifySnapshotRetryTier(rt, cycleStart)
-
-		if ok {
-			delays = rt.retryDelays(often)
-		}
+// runAttempt is the one place a retry-tier cycle advances, for both Snapshot and Verify: run attempt(), then
+// update retry's cycle accordingly (see advanceRetryState), refresh this source's cached policy/snapshot
+// state, and nudge the scheduler so whatever the next due time now is takes effect immediately.
+func (s *sourceManager) runAttempt(ctx context.Context, kind string, scheduled bool, retry *retryState, periodEstimateReadLocked func(time.Time) (time.Duration, bool), attempt func(ctx context.Context) error) {
+	err := attempt(ctx)
+	if err != nil {
+		userLog(ctx).Errorf("%s error: %v", kind, err)
 	}
 
-	for attempt := 0; ; attempt++ {
-		userLog(ctx).Debugw("snapshotting", "source", s.src)
+	s.sourceMutex.Lock()
+	*retry = advanceRetryState(*retry, s.server.retryTierSettings(), err != nil, scheduled, func() (time.Duration, bool) {
+		return periodEstimateReadLocked(clock.Now())
+	})
+	s.sourceMutex.Unlock()
 
-		s.setSnapshotInProgress(true)
-		err := s.server.runSnapshotTask(ctx, s.src, s.snapshotInternal)
-		s.setSnapshotInProgress(false)
-
-		if err == nil {
-			s.refreshStatus(ctx)
-			s.server.refreshScheduler("snapshot finished")
-
-			return
-		}
-
-		userLog(ctx).Errorf("snapshot error: %v", err)
-
-		if attempt >= len(delays) {
-			// out of retries (or never eligible for any): let the natural schedule, now advanced past
-			// this attempt, take over.
-			s.refreshStatus(ctx)
-			s.server.refreshScheduler("snapshot finished")
-
-			return
-		}
-
-		if !sleepInterruptibly(ctx, delays[attempt]) {
-			return // shutting down
-		}
-	}
+	s.refreshStatus(ctx)
+	s.server.refreshScheduler(kind + " finished")
 }
 
-// classifySnapshotRetryTier reports whether this source is "often" or "occasional" (see docs/retry-tiers.md).
-// ok is false when there is no real schedule to classify against (e.g. a manual-policy source, which the
-// automatic scheduler never triggers in the first place -- callers should treat that as "don't retry").
-func (s *sourceManager) classifySnapshotRetryTier(rt retryTierSettings, from time.Time) (often, ok bool) {
-	s.sourceMutex.RLock()
-	defer s.sourceMutex.RUnlock()
+func (s *sourceManager) runScheduledSnapshot(ctx context.Context, scheduled bool) {
+	s.setSnapshotInProgress(true)
+	defer s.setSnapshotInProgress(false)
 
-	period, ok := s.snapshotPeriodEstimateReadLocked(from)
-	if !ok {
-		return false, false
+	s.runAttempt(ctx, "snapshot", scheduled, &s.snapshotRetry, s.snapshotPeriodEstimateReadLocked, func(ctx context.Context) error {
+		return s.server.runSnapshotTask(ctx, s.src, s.snapshotInternal)
+	})
+}
+
+func (s *sourceManager) runScheduledVerify(ctx context.Context, scheduled bool) {
+	s.sourceMutex.RLock()
+	m, mode, percent := s.lastCompleteSnapshot, s.verifyPol.EffectiveMode(), s.verifyPol.EffectivePercent()
+	s.sourceMutex.RUnlock()
+
+	if m == nil {
+		return
 	}
 
-	return rt.isOften(period), true
+	s.setVerifyInProgress(true)
+	defer s.setVerifyInProgress(false)
+
+	s.runAttempt(ctx, "verify", scheduled, &s.verifyRetry, s.verifyPeriodEstimateReadLocked, func(ctx context.Context) error {
+		s.markVerifyAttempted()
+		return s.server.runQueuedVerifyOnce(ctx, s.rep, m, mode, percent)
+	})
 }
 
 func (s *sourceManager) isRunningReadOnly() bool {
@@ -346,28 +340,33 @@ func (s *sourceManager) runReadOnly() {
 	<-s.closed
 }
 
+// schedule queues a request for this source -- scheduled (eligible for the retry-tier burst on failure) or
+// manual (never retried). The channel is buffered 1 and the send is non-blocking: a request already queued
+// for this kind makes a duplicate a no-op, since runLocal processes one at a time anyway.
+func (s *sourceManager) schedule(kind requestKind, scheduled bool) {
+	select {
+	case s.requests <- scheduledRequest{kind: kind, scheduled: scheduled}:
+	default:
+	}
+}
+
 // scheduleSnapshotNow queues an explicit, manual snapshot request -- never auto-retried on failure.
 func (s *sourceManager) scheduleSnapshotNow() {
-	s.scheduleSnapshot(false)
+	s.schedule(requestSnapshot, false)
 }
 
 // scheduleAutomaticSnapshot is the scheduler's own trigger for this source: a snapshot request eligible
 // for the retry-tier burst on failure (docs/retry-tiers.md).
 func (s *sourceManager) scheduleAutomaticSnapshot() {
-	s.scheduleSnapshot(true)
+	s.schedule(requestSnapshot, true)
 }
 
-func (s *sourceManager) scheduleSnapshot(scheduled bool) {
-	s.sourceMutex.Lock()
-	defer s.sourceMutex.Unlock()
-
-	// next snapshot time will be recalculated by refreshStatus()
-	s.nextSnapshotTime = nil
-
-	select {
-	case s.snapshotRequests <- scheduled:
-	default: // already scheduled
-	}
+// scheduleAutomaticVerify is the scheduler's own trigger for this source's periodic verify, against its
+// latest complete snapshot, eligible for the retry-tier burst on failure (docs/retry-tiers.md). A manual
+// verify of a specific snapshot goes through startSnapshotVerify directly instead -- a different request
+// (an arbitrary, user-picked snapshot, not necessarily this source's latest), not a duplicate of this one.
+func (s *sourceManager) scheduleAutomaticVerify() {
+	s.schedule(requestVerify, true)
 }
 
 func (s *sourceManager) upload(ctx context.Context) serverapi.SourceActionResponse {
@@ -532,10 +531,6 @@ func (s *sourceManager) snapshotInternal(ctx context.Context, ctrl uitask.Contro
 	})
 }
 
-// instabilityRecheckInterval is how soon scheduling looks again while systemRecentlyUnstable is true: short
-// enough that a real wake is picked up promptly, long enough not to busy-loop the scheduler.
-const instabilityRecheckInterval = time.Minute
-
 // snapshotPeriodEstimateReadLocked is schedulePeriodEstimate for this source's snapshot policy, used only
 // to classify a retry-tier (docs/retry-tiers.md), never as an actual next-run time.
 // +checklocksread:s.sourceMutex
@@ -544,8 +539,21 @@ func (s *sourceManager) snapshotPeriodEstimateReadLocked(from time.Time) (time.D
 	return schedulePeriodEstimate(s.pol.IntervalSeconds, hasTimesOfDayOrCron, s.pol.NextSnapshotTime, from)
 }
 
+// findClosestNextSnapshotTimeReadLocked computes this source's next snapshot due time fresh every time it's
+// asked -- see getNextSnapshotTime and docs/retry-tiers.md. Returns nil when nothing should be scheduled
+// right now: paused, an upload already running, or no real schedule.
 // +checklocksread:s.sourceMutex
 func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
+	if s.paused || s.snapshotInProgress {
+		return nil
+	}
+
+	rt := s.server.retryTierSettings()
+
+	if t, ok := retryDueTime(s.snapshotRetry, rt, s.lastAttemptedSnapshotTime.ToTime()); ok {
+		return &t
+	}
+
 	now := clock.Now()
 
 	var previousSnapshotTime fs.UTCTimestamp
@@ -570,7 +578,6 @@ func (s *sourceManager) findClosestNextSnapshotTimeReadLocked() *time.Time {
 		lastCompletion = s.lastCompleteSnapshot.StartTime.ToTime()
 	}
 
-	rt := s.server.retryTierSettings()
 	period, periodOK := s.snapshotPeriodEstimateReadLocked(now)
 	often := !periodOK || rt.isOften(period) // no schedule to estimate from: be conservative, no floor
 
@@ -588,10 +595,30 @@ func (s *sourceManager) verifyPeriodEstimateReadLocked(from time.Time) (time.Dur
 	return schedulePeriodEstimate(sp.IntervalSeconds, hasTimesOfDayOrCron, s.verifyPol.NextVerifyTime, from)
 }
 
+// findClosestNextVerifyTimeReadLocked is findClosestNextSnapshotTimeReadLocked's Verify counterpart.
 // +checklocksread:s.sourceMutex
 func (s *sourceManager) findClosestNextVerifyTimeReadLocked() *time.Time {
 	if s.verifyPol.SchedulingPolicy.Manual {
 		return nil
+	}
+
+	if s.paused || s.verifyInProgress {
+		return nil
+	}
+
+	if s.lastCompleteSnapshot == nil {
+		// nothing to verify yet: without this, a source with no complete snapshot would report itself
+		// "due" forever (nothing ever advances lastAttemptedVerifyTime to move the natural computation
+		// forward), and the scheduler would busy-loop re-triggering runScheduledVerify, which just no-ops
+		// right back out, instead of simply not scheduling a verify item at all until there's something to
+		// verify.
+		return nil
+	}
+
+	rt := s.server.retryTierSettings()
+
+	if t, ok := retryDueTime(s.verifyRetry, rt, s.lastAttemptedVerifyTime); ok {
+		return &t
 	}
 
 	now := clock.Now()
@@ -608,7 +635,6 @@ func (s *sourceManager) findClosestNextVerifyTimeReadLocked() *time.Time {
 		return nil
 	}
 
-	rt := s.server.retryTierSettings()
 	period, periodOK := s.verifyPeriodEstimateReadLocked(now)
 	often := !periodOK || rt.isOften(period)
 
@@ -619,25 +645,12 @@ func (s *sourceManager) findClosestNextVerifyTimeReadLocked() *time.Time {
 
 // markVerifyAttempted records that a scheduled verify attempt is starting now, the Verify counterpart of
 // snapshotInternal setting lastAttemptedSnapshotTime -- so the schedule computation always advances past
-// "now" after an attempt, succeed or fail.
+// "now" after an attempt instead of treating a stale last-success as still overdue indefinitely.
 func (s *sourceManager) markVerifyAttempted() {
 	s.sourceMutex.Lock()
 	defer s.sourceMutex.Unlock()
 
 	s.lastAttemptedVerifyTime = clock.Now()
-}
-
-// classifyVerifyRetryTier is the Verify counterpart of classifySnapshotRetryTier.
-func (s *sourceManager) classifyVerifyRetryTier(rt retryTierSettings, from time.Time) (often, ok bool) {
-	s.sourceMutex.RLock()
-	defer s.sourceMutex.RUnlock()
-
-	period, ok := s.verifyPeriodEstimateReadLocked(from)
-	if !ok {
-		return false, false
-	}
-
-	return rt.isOften(period), true
 }
 
 func (s *sourceManager) refreshStatus(ctx context.Context) {
@@ -678,21 +691,6 @@ func (s *sourceManager) refreshStatus(ctx context.Context) {
 		}
 	} else {
 		s.lastSnapshot = nil
-	}
-
-	switch {
-	case s.paused:
-		s.nextSnapshotTime = nil
-		s.nextVerifyTime = nil
-	case s.snapshotInProgress:
-		// leave the schedule as it is (nil: scheduleSnapshotNow already cleared it for this run).
-		// Recomputing here would judge this source overdue off lastCompleteSnapshot, which still
-		// predates the upload that is actually running right now, and arm another one before this
-		// one even finishes. The refreshStatus() this very upload calls when it completes is not
-		// skipped: snapshotInProgress is cleared before that call.
-	default:
-		s.nextSnapshotTime = s.findClosestNextSnapshotTimeReadLocked()
-		s.nextVerifyTime = s.findClosestNextVerifyTimeReadLocked()
 	}
 }
 
@@ -815,13 +813,13 @@ func (t *uitaskProgress) EstimationParameters() upload.EstimationParameters {
 
 func newSourceManager(src snapshot.SourceInfo, server *Server, rep repo.Repository) *sourceManager {
 	m := &sourceManager{
-		src:              src,
-		rep:              rep,
-		server:           server,
-		state:            "UNKNOWN",
-		closed:           make(chan struct{}),
-		snapshotRequests: make(chan bool, 1),
-		progress:         &upload.CountingUploadProgress{},
+		src:      src,
+		rep:      rep,
+		server:   server,
+		state:    "UNKNOWN",
+		closed:   make(chan struct{}),
+		requests: make(chan scheduledRequest, 1),
+		progress: &upload.CountingUploadProgress{},
 	}
 
 	return m

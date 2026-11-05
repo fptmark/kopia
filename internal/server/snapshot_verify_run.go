@@ -17,10 +17,6 @@ import (
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
 
-// requeueInterruptedVerifyMaxWait bounds how long an interrupted verify waits for the connection to look
-// stable again before giving up -- long enough for an overnight outage, not an indefinite goroutine.
-const requeueInterruptedVerifyMaxWait = 24 * time.Hour
-
 // runningVerify is a verification that is queued or reading data now.
 type runningVerify struct {
 	SnapshotID string    `json:"snapshotId"`
@@ -254,6 +250,7 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 			}
 
 			opts.BlobMap = blobs
+			opts.BlobReader = dr.BlobReader()
 		}
 
 		root, err := snapshotfs.SnapshotRoot(rep, m)
@@ -294,54 +291,18 @@ func (s *Server) runSnapshotVerify(ctx context.Context, ctrl uitask.Controller, 
 		return errors.Errorf("%d of %d failed to read back", res.Errors, res.Files)
 	}
 
+	if res.Interrupted > 0 {
+		// nothing confirmed bad, but part of this snapshot was never actually read -- a failure like any
+		// other, so the retry-tier burst (docs/retry-tiers.md) picks it up and retries it the same way it
+		// would any other failed Verify, instead of a separate requeue mechanism just for this one.
+		return errors.Errorf("%d of %d reads interrupted by a connection problem; not confirmed bad, will retry", res.Interrupted, res.Files)
+	}
+
 	if hv := s.currentVerifier(); hv != nil {
 		hv.clearIfVerified(ctx)
 	}
 
-	if res.Interrupted > 0 {
-		// nothing confirmed bad, but part of this snapshot was never actually read -- try again once the
-		// connection looks stable, instead of leaving it looking "verified" when it wasn't, in full.
-		userLog(ctx).Infof("%v: %d reads interrupted by a connection problem; will retry once the connection looks stable", m.Source.Path, res.Interrupted)
-		s.requeueInterruptedVerify(ctx, rep, m, rv.Mode, rv.Percent)
-	}
-
 	return nil
-}
-
-// requeueInterruptedVerify re-runs a verify that came back with nothing confirmed bad but some reads
-// interrupted by a connection problem, once the connection looks stable again -- so a blip (of any length)
-// resolves itself instead of leaving a permanent "not fully verified" result for someone to notice and retry
-// by hand. Gives up after requeueInterruptedVerifyMaxWait rather than waiting forever across a repository
-// that may never reconnect.
-func (s *Server) requeueInterruptedVerify(ctx context.Context, rep repo.Repository, m *snapshot.Manifest, mode string, percent float64) {
-	ctx = context.WithoutCancel(ctx)
-	cp := *m
-
-	go func() {
-		deadline := clock.Now().Add(requeueInterruptedVerifyMaxWait)
-
-		for s.systemRecentlyUnstable() {
-			if clock.Now().After(deadline) {
-				userLog(ctx).Infof("%v: giving up retrying an interrupted verify; the connection never looked stable", m.Source.Path)
-				return
-			}
-
-			if !clock.SleepInterruptibly(ctx, instabilityRecheckInterval) {
-				return
-			}
-		}
-
-		s.serverMutex.RLock()
-		current := s.rep
-		s.serverMutex.RUnlock()
-
-		if current == nil || current != rep {
-			// the repository changed under us; a stale connection has nothing useful left to retry.
-			return
-		}
-
-		s.startSnapshotVerify(ctx, rep, &cp, mode, percent)
-	}()
 }
 
 // verifyNewData verifies a snapshot just saved, in the mode the setting names, when the setting asks for it and the snapshot was saved.
@@ -352,12 +313,6 @@ func (s *Server) verifyNewData(ctx context.Context, m *snapshot.Manifest, snapsh
 
 	prefs, err := getUIPreferencesOrEmpty(s)
 	if err != nil || !prefs.VerifyNewData {
-		return
-	}
-
-	// this snapshot itself may well have just been the one catch-up run after waking; its own data
-	// doesn't need a verify queued on top while the connection is still likely to be unstable.
-	if s.systemRecentlyUnstable() {
 		return
 	}
 

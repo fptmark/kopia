@@ -461,12 +461,6 @@ type verifier struct {
 	lastTick time.Time
 	// +checklocks:mu
 	deepRunning bool
-	// instabilityUntil is set only when a tick actually detects a gap consistent with the machine having
-	// just been asleep (never just from server startup, unlike graceUntil above): while now is before it,
-	// scheduling defers starting new Snapshot/Verify/Maintenance work instead of judging a source overdue
-	// off a connection that is likely still mid-reconnect-storm from a sleep/wake cycle.
-	// +checklocks:mu
-	instabilityUntil time.Time
 }
 
 // persistedVerifier is what survives a restart: the latest result of every check and what was last reported,
@@ -644,28 +638,18 @@ func (v *verifier) tick(ctx context.Context) {
 
 	v.mu.Lock()
 	gap := now.Sub(v.lastTick)
-	sleepDetected := gap > verifySleepGap
 
-	if sleepDetected {
+	if gap > verifySleepGap {
 		wakeGrace := v.srv.wakeGraceDuration()
 
 		userLog(ctx).Infof("verifier: last check was %v ago (machine asleep?); not reporting stale snapshots for %v", gap.Round(time.Second), wakeGrace)
 
 		v.graceUntil = now.Add(wakeGrace)
-		v.instabilityUntil = now.Add(wakeGrace)
 	}
 
 	v.lastTick = now
 	due := deepDue(now, v.status.LastDeep)
 	v.mu.Unlock()
-
-	if sleepDetected {
-		// the gap we just saw means whatever was running when the machine fell asleep has likely been
-		// limping through reconnect after reconnect since: let it be canceled and retried fresh once
-		// things settle, instead of possibly burning hours on a race with maintenance (see
-		// recentlyUnstable's doc comment) or just wasted reconnect churn.
-		v.srv.cancelBackgroundTasksForInstability(ctx)
-	}
 
 	if due {
 		v.runDeep(ctx, "scheduled")
@@ -673,21 +657,6 @@ func (v *verifier) tick(ctx context.Context) {
 	}
 
 	v.runQuick(ctx)
-}
-
-// recentlyUnstable reports whether a tick recently detected a gap consistent with the machine having just
-// been asleep (brief DarkWake windows between bouts of real sleep, each one long enough to start a
-// reconnect but rarely long enough to finish anything). Snapshot, Verify and Maintenance scheduling all
-// defer while this is true, rechecking again shortly, rather than starting (or continuing) expensive
-// network operations across a connection that is likely to drop again within seconds -- which, besides
-// wasting hours on reconnect churn, risks a long-running Verify's blob listing going stale enough for a
-// concurrent Maintenance pass to legitimately repack something it still expects to find, reporting a false
-// "missing from storage" failure.
-func (v *verifier) recentlyUnstable(now time.Time) bool {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-
-	return now.Before(v.instabilityUntil)
 }
 
 // deepDue reports whether the full check should run now: never run yet, a day has passed and it is the
