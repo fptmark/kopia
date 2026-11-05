@@ -260,6 +260,8 @@ func (s *sourceManager) runLocal(ctx context.Context) {
 		case req := <-s.requests:
 			if s.isPaused() {
 				s.setStatus("PAUSED")
+				s.clearInProgress(req.kind)
+
 				continue
 			}
 
@@ -296,8 +298,10 @@ func (s *sourceManager) runAttempt(ctx context.Context, kind string, scheduled b
 	s.server.refreshScheduler(kind + " finished")
 }
 
+// runScheduledSnapshot handles one dequeued snapshot request. snapshotInProgress is already true -- schedule()
+// set it atomically, on the scheduler's own calling goroutine, at the moment it decided to enqueue this very
+// request -- so this only ever has to clear it again once the attempt is over.
 func (s *sourceManager) runScheduledSnapshot(ctx context.Context, scheduled bool) {
-	s.setSnapshotInProgress(true)
 	defer s.setSnapshotInProgress(false)
 
 	s.runAttempt(ctx, "snapshot", scheduled, &s.snapshotRetry, s.snapshotPeriodEstimateReadLocked, func(ctx context.Context) error {
@@ -305,7 +309,11 @@ func (s *sourceManager) runScheduledSnapshot(ctx context.Context, scheduled bool
 	})
 }
 
+// runScheduledVerify is runScheduledSnapshot's Verify counterpart. verifyInProgress is already true, set the
+// same way by schedule().
 func (s *sourceManager) runScheduledVerify(ctx context.Context, scheduled bool) {
+	defer s.setVerifyInProgress(false)
+
 	s.sourceMutex.RLock()
 	m, mode, percent := s.lastCompleteSnapshot, s.verifyPol.EffectiveMode(), s.verifyPol.EffectivePercent()
 	s.sourceMutex.RUnlock()
@@ -313,9 +321,6 @@ func (s *sourceManager) runScheduledVerify(ctx context.Context, scheduled bool) 
 	if m == nil {
 		return
 	}
-
-	s.setVerifyInProgress(true)
-	defer s.setVerifyInProgress(false)
 
 	s.runAttempt(ctx, "verify", scheduled, &s.verifyRetry, s.verifyPeriodEstimateReadLocked, func(ctx context.Context) error {
 		s.markVerifyAttempted()
@@ -341,12 +346,60 @@ func (s *sourceManager) runReadOnly() {
 }
 
 // schedule queues a request for this source -- scheduled (eligible for the retry-tier burst on failure) or
-// manual (never retried). The channel is buffered 1 and the send is non-blocking: a request already queued
-// for this kind makes a duplicate a no-op, since runLocal processes one at a time anyway.
+// manual (never retried).
+//
+// Marks the relevant in-progress flag true as part of this same call, under sourceMutex, before sending --
+// not after runLocal eventually dequeues the request on its own goroutine. The due-time computation
+// (findClosestNextSnapshotTimeReadLocked / ...VerifyTimeReadLocked) already treats that flag as "not due",
+// which is what actually de-duplicates a repeat trigger; the old check (is a request already sitting
+// unconsumed in the channel) only closed that window while something was still buffered, not in the gap
+// between it being dequeued and the flag being set, which is wide enough in practice to let a genuine
+// second request through -- confirmed live: the scheduler fired "snapshot /Applications" twice, 533
+// microseconds apart, because the flag hadn't been set yet when it polled a second time. Doing the
+// check-and-set here, on the scheduler's own goroutine, closes that gap to zero.
 func (s *sourceManager) schedule(kind requestKind, scheduled bool) {
+	s.sourceMutex.Lock()
+
+	if s.inProgressLocked(kind) {
+		s.sourceMutex.Unlock()
+		return
+	}
+
+	s.setInProgressLocked(kind, true)
+	s.sourceMutex.Unlock()
+
 	select {
 	case s.requests <- scheduledRequest{kind: kind, scheduled: scheduled}:
 	default:
+		// the channel has a slot per kind (see newSourceManager), so this should not happen; if it ever
+		// does, undo the flag so a future legitimate trigger isn't wedged off forever.
+		s.clearInProgress(kind)
+	}
+}
+
+// +checklocks:s.sourceMutex
+func (s *sourceManager) inProgressLocked(kind requestKind) bool {
+	if kind == requestVerify {
+		return s.verifyInProgress
+	}
+
+	return s.snapshotInProgress
+}
+
+// +checklocks:s.sourceMutex
+func (s *sourceManager) setInProgressLocked(kind requestKind, v bool) {
+	if kind == requestVerify {
+		s.verifyInProgress = v
+	} else {
+		s.snapshotInProgress = v
+	}
+}
+
+func (s *sourceManager) clearInProgress(kind requestKind) {
+	if kind == requestVerify {
+		s.setVerifyInProgress(false)
+	} else {
+		s.setSnapshotInProgress(false)
 	}
 }
 
@@ -818,7 +871,7 @@ func newSourceManager(src snapshot.SourceInfo, server *Server, rep repo.Reposito
 		server:   server,
 		state:    "UNKNOWN",
 		closed:   make(chan struct{}),
-		requests: make(chan scheduledRequest, 1),
+		requests: make(chan scheduledRequest, 2), // one slot per kind: snapshot and verify never contend
 		progress: &upload.CountingUploadProgress{},
 	}
 

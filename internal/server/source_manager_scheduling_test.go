@@ -19,6 +19,41 @@ import (
 	"github.com/kopia/kopia/snapshot/policy"
 )
 
+// TestScheduleIsAtomicAgainstARapidSecondCall is the regression test for a real double-snapshot:
+// schedule() used to let a second call through whenever something had already dequeued the first request
+// but hadn't yet set the in-progress flag -- that used to happen inside runScheduledSnapshot, on a
+// different goroutine, a moment later. A gap of microseconds in practice, but wide enough: the live
+// scheduler hit it, firing "snapshot /Applications" for real a second time, 533 microseconds after the
+// first. schedule() now sets the flag atomically, under sourceMutex, before sending, so a second call with
+// nothing having dequeued the first must be rejected outright rather than relying on the channel buffer
+// alone to de-duplicate.
+func TestScheduleIsAtomicAgainstARapidSecondCall(t *testing.T) {
+	sm := &sourceManager{
+		src:      snapshot.SourceInfo{Host: "h", UserName: "u", Path: "/x"},
+		server:   noopSMServer{},
+		requests: make(chan scheduledRequest, 2),
+	}
+
+	sm.scheduleAutomaticSnapshot()
+	sm.scheduleAutomaticSnapshot() // the "scheduler polls again before anything dequeues" scenario
+
+	require.Len(t, sm.requests, 1, "only one request should ever have been queued")
+	require.True(t, sm.snapshotInProgress)
+
+	// draining the one real request and marking it done must restore normal scheduling.
+	<-sm.requests
+	sm.clearInProgress(requestSnapshot)
+	require.False(t, sm.snapshotInProgress)
+
+	sm.scheduleAutomaticSnapshot()
+	require.Len(t, sm.requests, 1, "a legitimate new trigger after completion must queue normally")
+
+	// verify is independently gated: a pending snapshot must not block it, and vice versa.
+	sm.scheduleAutomaticVerify()
+	require.Len(t, sm.requests, 2, "snapshot and verify each get their own slot, not one shared one")
+	require.True(t, sm.verifyInProgress)
+}
+
 // noopSMServer is the minimal sourceManagerServerInterface a refreshStatus()-only test needs: no
 // verification history, so the verify schedule is just "not due" throughout.
 type noopSMServer struct{}
