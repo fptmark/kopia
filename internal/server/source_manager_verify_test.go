@@ -32,8 +32,6 @@ func (s *stubSourceManagerServer) lastVerificationTime(snapshot.SourceInfo, stri
 	return s.lastVerify, s.lastVerifyOK
 }
 
-func (s *stubSourceManagerServer) systemRecentlyUnstable() bool { return false }
-
 func (s *stubSourceManagerServer) retryTierSettings() retryTierSettings {
 	if s.rt == (retryTierSettings{}) {
 		return retryTierSettingsFromPreferences(serverapi.UIPreferences{})

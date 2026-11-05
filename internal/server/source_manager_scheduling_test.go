@@ -32,17 +32,9 @@ func (noopSMServer) lastVerificationTime(snapshot.SourceInfo, string) (time.Time
 	return time.Time{}, false
 }
 
-func (noopSMServer) systemRecentlyUnstable() bool { return false }
-
 func (noopSMServer) retryTierSettings() retryTierSettings {
 	return retryTierSettingsFromPreferences(serverapi.UIPreferences{})
 }
-
-// unstableSMServer is noopSMServer with systemRecentlyUnstable forced true, for tests of the deferral it
-// drives in findClosestNextSnapshotTimeReadLocked/findClosestNextVerifyTimeReadLocked.
-type unstableSMServer struct{ noopSMServer }
-
-func (unstableSMServer) systemRecentlyUnstable() bool { return true }
 
 // setClock pins clock.Now() to t and restores the real clock when the test ends. Requires the
 // "testing" build tag (clock.Now is a plain func otherwise, not an overridable var).
@@ -184,11 +176,18 @@ func TestRefreshStatusCatchesUpOnceAfterBeingAsleepThroughTheScheduledTime(t *te
 		"resumes the normal hourly cadence instead of firing again immediately")
 }
 
-// TestSchedulingDefersWhileRecentlyUnstable covers the "don't start a job while the machine looks like it's
-// still sleep-cycling" rule: even a badly overdue source must not get an immediate catch-up time while
-// systemRecentlyUnstable is true -- it gets a near-future recheck instead, so the scheduler keeps polling
-// without actually starting a snapshot or verify into what is likely still a flaky connection.
-func TestSchedulingDefersWhileRecentlyUnstable(t *testing.T) {
+// TestFindClosestNextTimeIgnoresInstability is the regression test for a real double-snapshot: deferring
+// while the machine looks recently unstable used to be decided twice -- once generically by
+// deferredSchedulerItem (see TestDeferredSchedulerItemTreatsEveryTaskKindTheSame), and a second time inside
+// findClosestNextSnapshotTimeReadLocked/findClosestNextVerifyTimeReadLocked, which replaced the real due
+// time with a "recheck in a minute" placeholder and let refreshStatus() cache it into
+// nextSnapshotTime/nextVerifyTime. That cache is not re-examined until the next refreshStatus() call (on the
+// next completed attempt, or the next explicit schedule), which can be minutes away -- by then the cached
+// placeholder, stamped from whenever instability was first noticed, read as badly overdue, so the very next
+// scheduler tick fired an unscheduled extra snapshot (and verify) the moment deferredSchedulerItem stopped
+// deferring on its own. Deferral is deferredSchedulerItem's job alone now: these two functions must always
+// compute and cache the real due time, regardless of how unstable the machine looks when they happen to run.
+func TestFindClosestNextTimeIgnoresInstability(t *testing.T) {
 	ctx, env := repotesting.NewEnvironment(t, repotesting.FormatNotImportant)
 	si := snapshot.SourceInfo{Host: "host", UserName: "user", Path: "/tmp/src"}
 
@@ -201,28 +200,29 @@ func TestSchedulingDefersWhileRecentlyUnstable(t *testing.T) {
 	setClock(t, t0)
 	saveTestSnapshot(t, env, si, t0)
 
-	// badly overdue: a real wake right now would trigger an immediate catch-up.
-	wayLater := t0.Add(5 * time.Hour)
-	advanceClock(t, wayLater)
-
-	sm := &sourceManager{src: si, rep: env.RepositoryWriter, server: unstableSMServer{}}
+	// a refresh lands right as a real attempt completes -- in the field, this is exactly when a brief wake
+	// instability is most likely to be in effect. lastVerifiedAt(t0, true) stands in for a verify that
+	// completed alongside the snapshot, so nextVerifyTime has a real baseline to advance from too.
+	sm := &sourceManager{src: si, rep: env.RepositoryWriter, server: lastVerifiedAtSMServer{lastVerify: t0}}
 	sm.refreshStatus(ctx)
 
 	nextSnapshot, ok := sm.getNextSnapshotTime()
 	require.True(t, ok)
-	require.False(t, nextSnapshot.After(wayLater.Add(instabilityRecheckInterval)),
-		"a near-future recheck, not left stuck at the real (badly overdue) catch-up time")
-	require.True(t, nextSnapshot.After(wayLater), "not in the past either -- genuinely deferred, not due now")
+	require.True(t, t0.Add(time.Hour).Equal(nextSnapshot),
+		"must cache the real due time, never a transient near-future placeholder")
 
 	nextVerify, ok := sm.getNextVerifyTime()
 	require.True(t, ok)
-	require.False(t, nextVerify.After(wayLater.Add(instabilityRecheckInterval)))
+	require.True(t, t0.Add(time.Hour).Equal(nextVerify))
+}
 
-	// stability returns: a normal refresh now computes the real (immediate, one-time catch-up) time again.
-	sm.server = noopSMServer{}
-	sm.refreshStatus(ctx)
+// lastVerifiedAtSMServer is noopSMServer reporting a specific last-verification time, for tests that need
+// findClosestNextVerifyTimeReadLocked to have a real baseline to advance from.
+type lastVerifiedAtSMServer struct {
+	noopSMServer
+	lastVerify time.Time
+}
 
-	caughtUp, ok := sm.getNextSnapshotTime()
-	require.True(t, ok)
-	require.True(t, wayLater.Equal(caughtUp), "due right away once stable, the normal catch-up-once behavior")
+func (s lastVerifiedAtSMServer) lastVerificationTime(snapshot.SourceInfo, string) (time.Time, bool) {
+	return s.lastVerify, true
 }
