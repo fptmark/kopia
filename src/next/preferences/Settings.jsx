@@ -113,8 +113,8 @@ export function Settings({ draft, change }) {
           </div>
           <div className="col-lg-8">
             <Field
-              label="Wait this long after waking from sleep before resuming backups"
-              help="A connection is often still settling right after a real wake. Snapshot, Verify and Maintenance tasks hold off starting until this much time has passed."
+              label="Treat a snapshot as stale for this long after waking from sleep"
+              help="A real wake can leave the latest snapshot briefly looking overdue before scheduling has caught up. The health check waits this long after a start or a wake before flagging it."
             >
               {(id) => (
                 <div className="nx-row">
